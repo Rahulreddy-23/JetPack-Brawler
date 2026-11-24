@@ -1,0 +1,226 @@
+# Architecture: combat, projectiles, gadgets, hazard and effects on netfox
+
+Status: design accepted by the lead on 24 Nov 2026, subject to experiment E1 below passing.
+Nothing in this file is built yet except task 1.1 (networked movement) and the three modules
+under `combat/`, `hazard/` and `effects/`. Designed by the Opus architect from the netfox
+v1.49.12 source; netfox facts are summarised in
+`research_notes/Foundations from successful arena games/netfox_patterns.md`.
+
+## netfox behaviour this design depends on (read from source, not yet run)
+
+1. On every loop tick, including re-simulated ones, the host simulates every node whose
+   input is present for that tick plus every inputless node
+   (`servers/rollback-simulation-server.gd`, `_get_nodes_to_simulate`). When a client's input
+   for tick T arrives late, the host re-runs T..now.
+2. Per tick: restore, `on_process_tick`, simulate in tree order, `after_process_tick`, record
+   T+1, send T+1 (`rollback/network-rollback.gd`). A write made in `after_process_tick` is
+   recorded as part of the state for T+1.
+3. Recording captures every owned subject; a subject with no input for the tick is marked
+   non-authoritative and is not sent to peers. The host's guesses about a client bot whose
+   input has not arrived are therefore never sent out.
+4. `mutate()` is not needed on the host for this design (to be confirmed by E1).
+5. Despawn through liveness is local to each peer and freed about 64 ticks later, which is
+   why this design avoids spawned rollback nodes.
+6. Child nodes with `_rollback_tick` under a bot's RollbackSynchronizer are simulated in tree
+   order after the root.
+7. The latency and loss simulator is `addons/netfox.extras/network-simulator.gd` (a UDP proxy
+   reading `netfox/autoconnect/*` settings, active only with the `editor` feature tag).
+
+## Decisions
+
+D1. Every gameplay consequence is netfox rollback state on host-owned nodes: health,
+knockback, ammo, cooldowns, gadget inventory, knockout, credit and repair. netfox restores
+tick-T state before every re-run of T, so recomputing T gives the same writes instead of
+adding to them. Hits are applied idempotently, not "once". Rules for all simulation code
+(`_rollback_tick` and the resolver): write only registered state properties; no RPCs, no
+spawning or freeing, no signals to presentation; never read `NetworkTime.tick` or the default
+config directly, use the `tick` argument and `MatchSettings.tuning_at(tick)`.
+
+D2. `combat/combat_math.gd` is used unchanged. `combat/fighter_health.gd` and
+`combat/combat_ledger.gd` are retired: their dictionaries are not restored by rollback, so
+the host would apply a late client's hit once per re-run (2 to 5 times at normal latency) and
+would keep damage from a hit that a later re-run removes. Their rules and test cases are
+ported onto bot state in task B: no damage while knocked out; a push with no damage still
+sets the last attacker; older ticks never replace a newer attacker; the credit window; repair
+deferred to the end of the tick; the trade rule.
+
+D3. One stateless `CombatResolver` on the host, connected to
+`NetworkRollback.after_process_tick(tick)`. It runs after every bot and object has moved for
+the tick and before T+1 is recorded. It collects shots, melee, gadget use, rocket contacts,
+blasts, plate launches, pickups and the hazard into a list of `Hit` objects and applies them
+in one pass with bots sorted by peer id, never by tree order. It returns at once on clients.
+
+D4. Hit tests are pure geometry, never physics queries. Bots are rectangles taken from state,
+the world is the arena layout's solid rectangles, bombs and rockets are circles. One file,
+`combat_geometry.gd`, provides segment against rectangle, first hit against a list of
+rectangles with the surface normal, and circle against rectangle. This removes the question
+of stale physics queries during rollback. Bullets and thrown objects ignore thin platforms in
+phase 1.
+
+D5. Firing is the shooter's own state. `BotArsenal._rollback_tick` decides, on the client and
+on the host, whether the bot fires at T from the fire input, `fire_ready_tick` and ammo, and
+writes `last_shot_tick`, `shots_fired`, `shot_dir`, ammo and the next ready tick; the scrap
+blaster's recoil goes into the shooter's velocity there. The resolver treats
+`last_shot_tick == tick` as "fired this tick". No RewindableAction and no NetworkWeapon.
+
+D6. Rockets, bombs and plates live in a fixed pool of slot nodes created identically on every
+peer (`Objects/Obj0..ObjN-1`), each owned by peer 1 with an inputless RollbackSynchronizer
+and a TickInterpolator. Launching writes state into a slot: the slot range is fixed per owner
+and per kind; the lowest free index is used, otherwise the slot with the oldest `spawn_tick`
+(which gives "placing a third trap removes the oldest"). Objects move on the host only;
+clients display host state. There is no MultiplayerSpawner, no despawn and no duplicate on
+re-runs.
+
+D7. One-shot outcomes come from counters in state (`hits_taken`, `ko_serial`, `shots_fired`,
+`melee_serial`, `gadget_serial`, and per object `launches` and `blasts`). On each phone an
+`EffectsDirector` compares each counter with the highest value it has seen for that node,
+triggers once per increase, and records without triggering the first time it sees a node. The
+shooter's own `shots_fired` and `melee_serial` are predicted, so muzzle flash and swing are
+immediate. Known imperfection: the host phone, and a shooter's own muzzle flash, can show one
+effect for an event a later re-run removes.
+
+D8. `round_start_tick`, and later Chaos Card entries, are plain host values sent by reliable
+RPC ahead of time and read by tick. Score (phase 2) is committed on the host only for ticks
+that can no longer be re-run.
+
+D9. New timers are absolute ticks (`*_ready_tick: int`), not counting-down floats.
+
+D10. A GDD push number becomes a velocity change of `push x push_speed_scale` bot heights
+per second, scaled by the low-health multiplier computed from health before that tick's
+damage. `push_speed_scale` is a first guess to tune.
+
+## State
+
+| State | Node | Kind |
+|---|---|---|
+| position, velocity (with knockback), fuel, dash and the rest of movement | `Bot` | rollback state (exists) |
+| health, knocked_out, respawn_tick, ko_serial, hits_taken, last_hit_push, last_hit_damage, last_attacker, last_attack_tick, knockouts | `Bot/Vitals` | rollback state, written by the resolver |
+| active_slot, picked_weapon, picked_ammo, fire_ready_tick, last_shot_tick, shots_fired, shot_dir, melee_ready_tick, last_melee_tick, melee_serial | `Bot/Arsenal` | rollback state, written by the bot's own tick |
+| gadget_a, gadget_b, gadget_ready_tick, last_gadget_tick, gadget_dir, gadget_serial | `Bot/Gadgets` | rollback state |
+| active, kind, owner_peer, position, velocity, spawn_tick, arm_tick, fuse_tick, explode_tick, landed, launches, blasts | `Objects/ObjN` | rollback state, inputless, host-owned |
+| pickup spot ready_tick | `Pickups/SpotN` | rollback state, inputless, host-owned |
+| round_start_tick, later card entries | `MatchSettings` autoload | host value, reliable RPC, read by tick |
+| effect high-water marks | `EffectsDirector` | local to each phone |
+
+## Interfaces fixed by task A
+
+```gdscript
+class_name Hit extends RefCounted
+var victim: Bot
+var attacker_peer: int
+var damage: float
+var push: Vector2          # bot heights per second, before the low-health multiplier
+var bullet: bool           # true: ignored while the victim is dashing
+var scale_push: bool = true
+
+# CombatResolver.after_process_tick(tick), host only, bots sorted by peer id:
+#   WeaponRules.collect(tick, bots, objects, solids, cfg, hits)   # task C
+#   GadgetRules.collect(tick, bots, objects, solids, cfg, hits)   # task D
+#   pickups.resolve(tick, bots, cfg)                              # task C
+#   CombatRules.apply(tick, bots, hits, layout, cfg)              # task B
+
+BotVitals:    is_out() -> bool; reset_for_spawn(cfg) -> void
+BotArsenal:   fired_at(tick) -> bool; meleed_at(tick) -> bool; active_weapon() -> int;
+              give_weapon(id, cfg) -> void; reset_for_spawn(cfg) -> void
+BotGadgets:   used_at(tick) -> bool; used_id() -> int; give(id) -> bool; reset_for_spawn(cfg) -> void
+WorldObjects: launch(kind, owner_slot, owner_peer, pos_px, vel_px, tick, cfg) -> WorldObject;
+              slots() -> Array[WorldObject]; reset() -> void
+CombatGeometry (static): segment_rect(a, b, r) -> float   # entry fraction, -1 for none
+                         cast(a, b, rects) -> CastResult   # t and normal
+                         circle_rect(c, radius, r) -> bool
+MatchSettings: round_start_tick: int; tuning_at(tick) -> TuningConfig;
+               hazard_ticks(tick) -> int; start_round(start_tick) -> void   # host only
+```
+
+## Tasks
+
+Task A lands first and is the only task that edits shared files. B to F then run in
+parallel, each in its own files against A's stubs.
+
+- A. Foundation and contracts. Edits `bot.gd` (config by tick, early return while knocked
+  out, drawing moved to a Visual child, `body_rect()`, `center()`), `bot.tscn` (children
+  Vitals, Arsenal, Gadgets, Visual with HitFreeze and HitFlash; all state and input paths),
+  `bot_input.gd` (fire, melee, gadget, swap vars and a `dummy` flag), the config schema and
+  `tuning.tres` (a `WeaponStats` sub-resource for each weapon and every number listed in the
+  rulings below, all flagged as first guesses), the arena layout (dummy spawn, hazard top,
+  pickup spots, `solid_rects_px`), `main.tscn` (Objects, Pickups, Resolver, Effects,
+  PartsBurst, ScreenShake, HazardVisual), `project.godot` (MatchSettings autoload, the
+  vendored `netfox.extras` simulator behind dev flags `--sim-latency-ms=` and `--sim-loss=`).
+  Creates `match_settings.gd`, `hit.gd`, `combat_resolver.gd`, `item_ids.gd` and typed stubs
+  for every script B to F own. Implements no rule. Checks: the movement test and smoke test
+  still pass; every synchronizer path resolves; no new config field is zero; the smoke test
+  passes at 75 ms simulated latency; a grep finds no `NetworkTime.tick`, default-config read
+  or `rpc` in simulation scripts.
+- B. Combat core. Owns `bot_vitals.gd`, `combat_rules.gd`, the dummy and respawn in
+  `bot_spawner.gd`. Checks: the ported ledger cases; multiplier 1 at 25 health and 2 at 0;
+  applying the same tick twice from restored state gives identical results; a hazard knockout
+  lands on the tick `HazardMath` predicts; a two-process run at 75 ms where host and client
+  agree on the knockout tick, `ko_serial` and respawn tick.
+- C. Weapons, melee, pickups. Owns `bot_arsenal.gd`, `weapon_rules.gd`, `pickups.gd`. Checks:
+  exact fire cadence, ammo run-down and fall-back to the rivet gun, exact recoil, nearest
+  target wins, walls block, deterministic pellets, no bullet hit on a dashing bot, melee arc
+  and deflect; two-process runs at 0 ms, 75 ms and 75 ms with 5 percent loss where the
+  dummy's final health is `max - N x damage` on both sides, at least one fire tick was
+  processed twice on the host, and each side shows exactly one hit effect per hit tick.
+- D. World objects and gadgets. Owns `world_objects.gd`, `world_object.gd`, its scene,
+  `bot_gadgets.gd`, `gadget_rules.gd`. Checks: rocket wall hit on the predicted tick, bomb
+  explodes after exactly 3 seconds of ticks, blast push 5 at the centre and 0 at 3 bot
+  heights, a third plate replaces the oldest; a two-process run at 75 ms where explosion tick
+  and position match and each side shows exactly one explosion effect per launch.
+- E. Presentation. Owns `scripts/fx/effects_director.gd`, `bot_visual.gd`, hazard visual
+  wiring. Never writes a simulation property. Checks: one trigger per increase, none on a
+  drop then rise to the same value, none on first sight, and every state property of bots and
+  objects is identical before and after 120 frames of effects.
+- F. Input and HUD. Owns input gathering in `bot_input.gd`, `touch_controls.gd`,
+  `input_actions.gd`, `hud.gd`. Fire when the aim stick passes the outer ring; a quick tap on
+  the aim stick and the separate melee button each latch melee for one tick; gadget button;
+  weapon swap icon; health, weapon, ammo and gadgets on the HUD.
+
+## Rulings on the architect's open questions (lead and product owner)
+
+1. Push units: D10 stands. Only bullets miss a dashing bot (GDD: bullet immunity); blasts,
+   melee and plates still affect it.
+2. Phase 1 has no crates. The three pickup weapons and the Spring Plate come from fixed
+   pickup spots on the map, which the GDD's Combat section already describes.
+3. Phase 1 has no rounds. The hazard runs on a repeating 45-second test cycle (rises from 30
+   to 45 seconds, then everything resets), and a knocked-out bot respawns after a short
+   config delay. Both are test scaffolding that phase 2 replaces with rounds.
+4. Blasts push and damage everyone in range, the owner included. Self-damage is scaled by a
+   config value (first guess one half) so a rocket jump costs health without ending the round.
+5. Plates launch whoever steps on them, the owner included, and a plate can be destroyed by a
+   bullet, as the GDD's trap rules say. Bombs and rockets collide with solids only in phase 1.
+6. Plate launches are decided by the host.
+7. Weapon damage, fire rate and ammo are first guesses in the config, set so the bolt thrower
+   takes about one second to empty a full health bar at mid range.
+8. A bomb or rocket that is punched or shot away belongs to whoever deflected it, for credit
+   and for arming.
+9. The modules stay at `res://combat`, `res://hazard` and `res://effects`.
+
+## Experiments before tasks B to F start
+
+- E0. The vendored simulator runs headless with the dev flags and the client's measured
+  round trip is about twice the configured latency. If the `editor` feature tag blocks it,
+  copy its proxy loop (MIT) into `scripts/dev`.
+- E1. A throwaway spike: `hp` as state on the bot, a trivial resolver at
+  `after_process_tick` that subtracts 1 and adds a push when the shooter fired this tick and
+  the target is in range, a client autopilot firing 10 shots at the dummy at 75 ms. Pass:
+  final `hp` is `max - 10` on host, client and a second client; at least one fire tick was
+  processed twice on the host; the change appears exactly at T+1; it works without
+  `mutate()`. Variant: the host shoots the client's bot, the client's reconciled trace matches
+  the host's, and the client never receives a hit that is absent from the host's final trace.
+- E2. On a budget phone (Rahul): the `netfox/Rollback loop duration (ms)` monitor with 5 bots
+  and the full object pool.
+
+## Risks
+
+- The design relies on how netfox 1.49.12 re-simulates and records. An addon upgrade needs E1
+  rerun as a regression test.
+- No shooter favouring: players see others about one round trip behind and must lead their
+  aim. Fine on a hotspot, poor at 150 ms.
+- A push reaches the victim's own bot through reconciliation, so it snaps about two one-way
+  latencies after the hit, and a rocket jump has the same lag. Judge on phones.
+- Ground braking may cancel pushes quickly and make them feel weak. Tuning.
+- A full pool replaces the oldest live object; size the per-kind counts above fire rate times
+  lifetime.
+- Bandwidth estimate, to be measured: about 20 KB/s per client and 60 KB/s up from the host
+  at 4 players.
