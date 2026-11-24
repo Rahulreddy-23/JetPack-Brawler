@@ -4,16 +4,24 @@ Current stage: Prototype, phase 1. Gate not passed.
 
 ## Phase 1 tasks
 
-- [ ] 1.1 Project, config resource, netfox, grey-box Smelter arena, synced movement (run,
-      jetpack, dash, wall-slide, wall-jump), touch and keyboard input, host and join-by-IP,
-      Android debug export. This is the GDD's "verify in the first week" check.
-- [ ] 1.2 Health, damage and knockback core; dummy bot; rising molten metal hazard; knockout
-      credit to whoever pushed.
-- [ ] 1.3 Weapons: rivet gun, bolt thrower, scrap blaster, festival rocket tube; melee swing
-      with deflect.
-- [ ] 1.4 Gadgets: Cooker Bomb, Spring Plate.
-- [ ] 1.5 Impact feel: hit freeze, screen shake, flash, parts burst (show physics).
-- [ ] 1.6 Dabba fight.
+- [x] 1.1 Project, config resource, netfox, grey-box Smelter, synced movement, touch and
+      keyboard input, host and join-by-IP, Android debug export. Merged to `main`
+      (`5135ef6`). Not yet played on a phone.
+- [x] Modules built and reviewed, merged (`cbcb8e4`), not yet wired into the game: combat
+      maths, hazard, impact effects, hit-test geometry.
+- [ ] 1.1b-N netfox hardening that does not hurt honest play (in progress).
+- [ ] 1.1b-G fixes accepted from the geminiceo audit in the game scripts (in progress).
+- [ ] Experiment E1: a host-decided hit survives re-simulation (in progress). Tasks B to F
+      do not start until it passes.
+- [ ] Device checkpoint 1 (Rahul): sticks, jetpack and dash on two phones over a hotspot.
+- [ ] A Foundation and contracts (see `docs/ARCHITECTURE.md`).
+- [ ] B Combat core, hazard wiring, dummy, push window.
+- [ ] C Weapons, melee, pickups.
+- [ ] D World objects and gadgets.
+- [ ] E Presentation: effects wired to state counters.
+- [ ] F Input and HUD for fire, melee, gadget, swap.
+- [ ] Device checkpoint 2 (Rahul): the knockback sandbox, 10 minutes of play.
+- [ ] 1.6 Dabba fight, built last.
 - [ ] Phase review and `docs/reviews/phase-1-handoff.md`.
 
 ## Gate
