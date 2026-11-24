@@ -87,15 +87,14 @@ func _on_peer_join(id: int) -> void:
 	if not multiplayer.is_server():
 		return
 	if _accepted.size() + 2 > _cfg.max_players:
-		var server_peer: MultiplayerPeer = multiplayer.multiplayer_peer
 		_match_full.rpc_id(id)
 		# The turned-away client closes its own connection when it gets the notice.
 		# Dropping a live peer from this side is only the fallback for a client that
 		# does not: ENet clears the peer's channels at once, but it stays in
 		# get_peers() for a frame or two, and netfox sending to it then fails.
 		await get_tree().create_timer(_cfg.reject_notice_seconds).timeout
-		if is_inside_tree() and multiplayer.multiplayer_peer == server_peer and multiplayer.get_peers().has(id):
-			server_peer.disconnect_peer(id)
+		if multiplayer.get_peers().has(id):
+			multiplayer.multiplayer_peer.disconnect_peer(id)
 		return
 	_accepted[id] = true
 	peer_accepted.emit(id)

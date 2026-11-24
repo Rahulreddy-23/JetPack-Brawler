@@ -192,6 +192,7 @@ func launch(kind: int, owner_slot: int, owner_peer: int, pos_px: Vector2, vel_px
 	if kind == ItemIds.OBJECT_BOMB:
 		chosen.fuse_tick = tick + seconds_to_ticks(cfg.bomb_fuse_time, cfg)
 	elif kind == ItemIds.OBJECT_ROCKET:
+		chosen.rocket_step_start = pos_px
 		chosen.arm_tick = tick + seconds_to_ticks(cfg.rocket_arm_time, cfg)
 		chosen.fuse_tick = _rocket_range_tick(vel_px, tick, cfg)
 	# A launch can start overlapping a solid (a shooter hugging a wall): a rocket explodes at once

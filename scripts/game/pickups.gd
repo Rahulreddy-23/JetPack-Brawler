@@ -24,10 +24,24 @@ func _ready() -> void:
 	# See WorldObjects: netfox fixes ownership at registration and re-registers only when this
 	# peer joins a game, so a phone that joined, left and then hosted needs it done again.
 	NetworkEvents.on_server_start.connect(_on_server_start)
+	# The main scene stays loaded between sessions, and a new session starts its tick count
+	# again, so pickup cooldowns of the old session must not carry into the new one.
+	NetworkEvents.on_server_start.connect(reset_session)
+	NetworkEvents.on_server_stop.connect(reset_session)
+	NetworkEvents.on_client_start.connect(_on_client_start)
+	NetworkEvents.on_client_stop.connect(reset_session)
 
 func _on_server_start() -> void:
 	for spot: PickupSpot in _spots:
 		(spot.get_node("RollbackSynchronizer") as RollbackSynchronizer).process_settings()
+
+func _on_client_start(_id: int) -> void:
+	reset_session()
+
+## Make every pickup spot ready again (a session started or stopped).
+func reset_session() -> void:
+	for spot: PickupSpot in _spots:
+		spot.ready_tick = 0
 
 ## All spots in index order.
 func spots() -> Array[PickupSpot]:

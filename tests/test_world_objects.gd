@@ -908,7 +908,7 @@ func _test_cycle_reset() -> void:
 	_check(bomb.active, "nothing is reset just before the cycle ends")
 	_tick(start + cycle)
 	_check(not bomb.active, "everything is reset when the cycle restarts")
-	bomb = _pool.launch(ItemIds.OBJECT_BOMB, 0, 1, Vector2.ZERO, Vector2.ZERO, 0, _cfg)
+	bomb = _pool.launch(ItemIds.OBJECT_BOMB, 0, 1, Vector2.ZERO, Vector2.ZERO, start + cycle + 1, _cfg)
 	bomb.fuse_tick = 100000
 	_tick(start + cycle + 1)
 	_check(bomb.active, "a new object survives the ticks after the reset")

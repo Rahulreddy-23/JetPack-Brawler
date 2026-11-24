@@ -13,18 +13,24 @@ extends RefCounted
 
 const CombatMath: GDScript = preload("res://combat/combat_math.gd")
 
-## Collect this tick's hits from bombs, blasts and plates, in this order: gadget use, rocket
-## contact, blasts, plate launches, the phase 1 cycle reset. bots are sorted by peer id. The
-## slots take the arena's solid rectangles from WorldObjects.solids, so the solids passed in
-## are not needed here.
+## Collect this tick's hits from bombs, blasts and plates, in this order: phase 1 cycle reset
+## of prior-cycle objects, gadget use, rocket contact, blasts, plate launches. bots are sorted
+## by peer id. The slots take the arena's solid rectangles from WorldObjects.solids, so the
+## solids passed in are not needed here.
 static func collect(tick: int, bots: Array[Bot], objects: WorldObjects, _solids: Array[Rect2], cfg: TuningConfig, hits: Array[Hit]) -> void:
+	# Phase 1 test cycle: once a later cycle begins, clear any object from an earlier cycle
+	# before blasts, plates or new throws run, even if a stall skipped the exact boundary tick.
+	var into_cycle: int = MatchSettings.hazard_ticks(tick)
+	if into_cycle >= 0:
+		var cycle_start: int = tick - into_cycle
+		if cycle_start > MatchSettings.round_start_tick:
+			for slot: WorldObject in objects.slots():
+				if slot.active and slot.spawn_tick < cycle_start:
+					slot.active = false
 	_use_gadgets(tick, bots, objects, cfg)
 	_rocket_contacts(tick, bots, objects, cfg)
 	_blasts(tick, bots, objects, cfg, hits)
 	_plates(tick, bots, objects, cfg, hits)
-	# Phase 1 test cycle: when the hazard cycle restarts (not at its first start), clear the field.
-	if MatchSettings.hazard_ticks(tick) == 0 and MatchSettings.hazard_ticks(tick - 1) >= 0:
-		objects.reset()
 
 # A bomb is thrown, a plate dropped or tossed, along the direction the gadget was used in.
 static func _use_gadgets(tick: int, bots: Array[Bot], objects: WorldObjects, cfg: TuningConfig) -> void:
@@ -40,22 +46,19 @@ static func _use_gadgets(tick: int, bots: Array[Bot], objects: WorldObjects, cfg
 				objects.launch(ItemIds.OBJECT_PLATE, bot.slot, bot.peer_id, bot.center(), direction * cfg.plate_throw_speed * px, tick, cfg)
 
 # A rocket that touches a bot sets itself off, at the contact point. Its owner is safe until the
-# rocket is armed. Contact is the rocket's path of this tick (its end position minus one tick of
-# velocity, up to its end position) swept against each bot's rectangle grown by the rocket's
-# radius, with the bot at its end-of-tick position (the rules run after every bot has moved).
+# rocket is armed. Contact sweeps the path the rocket actually traveled this tick (up to any
+# wall or range stop on this tick) against each bot's end-of-tick rectangle grown by the
+# rocket's radius. Deflection affects the next move.
 # What this misses: a bot's own movement during the tick is not subtracted, so a bot that crossed
 # the path and ended beyond it is missed unless the end-of-tick rectangle still meets the path;
-# a rocket deflected this tick is swept along its new velocity, not the one it moved with; the
-# grown rectangle has square corners, so a near miss past a corner counts as a hit.
+# the grown rectangle has square corners, so a near miss past a corner counts as a hit.
 static func _rocket_contacts(tick: int, bots: Array[Bot], objects: WorldObjects, cfg: TuningConfig) -> void:
-	var step: float = 1.0 / float(cfg.tick_rate)
 	for slot: WorldObject in objects.slots():
-		if not slot.active or slot.kind != ItemIds.OBJECT_ROCKET or slot.explode_tick >= 0:
+		if not slot.active or slot.kind != ItemIds.OBJECT_ROCKET or (slot.explode_tick >= 0 and slot.explode_tick != tick):
 			continue
 		var radius: float = WorldObjects.round_radius(slot, cfg)
 		var end: Vector2 = slot.global_position
-		# A rocket launched this tick has not moved yet.
-		var start: Vector2 = end if slot.spawn_tick == tick else end - slot.velocity * step
+		var start: Vector2 = slot.rocket_step_start
 		var first: float = -1.0
 		for bot: Bot in bots:
 			if bot.vitals.knocked_out or (bot.peer_id == slot.owner_peer and tick < slot.arm_tick):

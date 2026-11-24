@@ -241,3 +241,57 @@ Merged `origin/main` (`8ec8146`, covering Tasks A, B, C, F, `12394b2`, `cf94537`
 1. **Huge velocity and discipline:** Tasks A, B, C, and F are all merged on `main` with 500+ passing automated checks, `server_relay = false` enforced, and D-4..D-9 incorporated cleanly.
 2. **Watch bandwidth immediately (`232 KB/s` per player with diff states off!):** `docs/reviews/phase-1-findings.md` D-5 notes that disabling `enable_diff_states` pushed the idle `WorldObjects` pool to ~232 KB/s per player (~700 KB/s host upload for 4 players, ~1.6 MB/s for 8 players!). That is a **ship-blocker** for Indian 4G/hotspot play. Prioritize fixing the netfox diff-merge bug (`worktree-agent-abdc8cb18a9ad9d79`) and merging `1.1b-N` right after Tasks D and E so bandwidth drops back near the 20 KB/s target before the Phase 1 phone playtest.
 3. **Next milestone:** Once Task D (Cooker Bomb, Spring Plate, rocket flight) and Task E (hit freeze, flash, parts burst, shake, rising metal visual) land, put the APK on two Android phones immediately and run the 10-minute knockback fun test before touching Dabba (Task 1.6).
+
+
+---
+
+## Iteration 4 Audit Update (24 Nov 2026 23:45 — against `origin/main` `f479130`)
+
+Merged `origin/main` (`8ec8146..f479130`: `1.1b-N` netfox hardening patches 1..13, ENet packet throttle hold `242e7b4`, `G-13`/`G-14` disposition `8ab8550`, and Task D world objects & gadgets `f479130`). Reverted our previous `scripts/net/session.gd` G-13.3 timer guard to match `origin/main` per the lead's ruling in `8ab8550`, while keeping our unreviewed Iteration 2/3 fixes (`weapon_rules.gd`, `pickups.gd`, `hud.gd`, `touch_controls.gd`) intact.
+
+### New Confirmed Findings (Most Severe First)
+
+#### 21. Rocket hitting a wall, floor, or max-range tick skips bot contact and explodes behind/past the bot (plus deflected rocket swept path)
+- **Severity:** high
+- **Category:** Crashes and logic bugs
+- **Location:** `scripts/game/world_object.gd:126-139` (`_step_rocket`), `scripts/game/gadget_rules.gd:50-68` (`_rocket_contacts`), `scripts/game/world_objects.gd:194-196` (`launch`)
+- **What happens and how to trigger it:** `WorldObject._rollback_tick` moves rockets before `GadgetRules._rocket_contacts` runs. When a rocket hits a solid surface (`hit.index >= 0`) or reaches its max-range tick (`tick >= fuse_tick`), `_step_rocket` immediately sets `explode_tick = tick` at the wall or range-end point. `_rocket_contacts` then skips any slot with `slot.explode_tick >= 0`. Trigger: (a) fire a rocket downward at an angle at a bot standing on the floor (or next to a wall) so the rocket enters the bot's grown rectangle before hitting the floor/wall on the same tick — the rocket passes through the bot and detonates on the floor/wall behind/below it, flipping vertical knockback; (b) hit a bot on the rocket's final range tick (`fuse_tick == tick`) — it detonates past the bot instead of at contact; (c) deflect a rocket via bullet/melee in `WeaponRules` on tick `T` — `_rocket_contacts` reconstructs `start = end - slot.velocity * step` from the post-deflection velocity rather than the path actually traveled (also spotted in local `dev` `782da7b`).
+- **Suggested fix:** Store host-only `rocket_step_start` on `WorldObject` (set in `WorldObjects.launch` and at the top of `_step_rocket`), and in `_rocket_contacts` sweep `[rocket_step_start, global_position]` for rockets where `explode_tick < 0 or explode_tick == tick` so an earlier bot contact moves the blast point to the bot. *(Fixed on `geminiceo`; tested in `tests/test_security_audit.gd`.)*
+
+#### 22. Phase 1 cycle reset in `GadgetRules.collect` runs after blasts/plates/throws and misses stalled boundary ticks
+- **Severity:** high
+- **Category:** Crashes and logic bugs
+- **Location:** `scripts/game/gadget_rules.gd:20-27` (`collect`)
+- **What happens and how to trigger it:** (a) On cycle boundary tick `start + cycle`, `BotVitals._rollback_tick` has already respawned every bot at `spawn_position` with 100 HP. Because `GadgetRules.collect` runs `_rocket_contacts`, `_blasts`, and `_plates` *before* `objects.reset()`, a cycle-0 Cooker Bomb whose `fuse_tick == start + cycle` explodes on freshly respawned bots (dealing up to 50 damage/knockback on tick 0 of cycle 1), and a cycle-0 armed Spring Plate placed on a spawn point launches the freshly respawned bot before being cleared. (b) If a player presses gadget on tick `start + cycle`, `BotGadgets._rollback_tick` consumes their fresh starting Cooker Bomb and `_use_gadgets` launches it, then line 27 `objects.reset()` immediately deletes it. (c) If a host stall jumps `NetworkTime.tick` past `start + cycle`, `MatchSettings.hazard_ticks(tick) == 0` never triggers, leaving fuseless Spring Plates on the arena permanently into the next cycle.
+- **Suggested fix:** Run the cycle reset at the top of `GadgetRules.collect` (before `_use_gadgets`, `_rocket_contacts`, `_blasts`, `_plates`) and deactivate any active slot with `slot.spawn_tick < cycle_start` whenever `cycle_start > MatchSettings.round_start_tick`. *(Fixed on `geminiceo`; tested in `tests/test_security_audit.gd` and `tests/test_world_objects.gd`.)*
+
+#### 23. `Pickups` never resets `PickupSpot.ready_tick` between sessions
+- **Severity:** medium
+- **Category:** Crashes and logic bugs
+- **Location:** `scripts/game/pickups.gd:15-31` (`_ready`)
+- **What happens and how to trigger it:** Unlike `WorldObjects` (which connects `reset_session()` to all four `NetworkEvents` session signals because `Main` stays loaded across sessions while `NetworkTime.tick` resets to `0`), `Pickups` never resets `spot.ready_tick`. Trigger: play Session 1 past tick 5000, take a weapon/gadget pickup (`spot.ready_tick = 5450`), click Leave, and host Session 2 — `spot.ready_tick` remains `5450`, locking that pickup out for the entire first 45-second hazard cycle (`ticks 0..1349`).
+- **Suggested fix:** Add `Pickups.reset_session()` to set `spot.ready_tick = 0` on every spot and connect it to `NetworkEvents.on_server_start`, `on_server_stop`, `on_client_start`, and `on_client_stop`. *(Fixed on `geminiceo`; tested in `tests/test_security_audit.gd`.)*
+
+#### 24. Oversized-packet warning in netfox `_is_acceptable` is not rate-limited and serializer warning maps leak per-peer entries
+- **Severity:** medium
+- **Category:** Denial of service / Performance bugs
+- **Location:** `addons/netfox/servers/network-synchronization-server.gd:154-166, 449-459` (`erase_peer`, `reset`, `_is_acceptable`), `addons/netfox/serializers/base-snapshot-serializer.gd:10` (`_last_warning_msec`)
+- **What happens and how to trigger it:** As noted under "Not done" in `addons/NETFOX_PATCHES.md:361-362`, every oversized packet sent by a peer logs a full `_logger.warning(...)` (`push_warning` with backtrace) without rate limiting. A hostile client sending 100 packets/sec over `limit` floods the log and burns host CPU on stack-trace formatting. In addition, `_dense_serializer._last_warning_msec` and `_sparse_serializer._last_warning_msec` are never pruned in `erase_peer()` or `reset()`.
+- **Suggested fix:** Rate-limit `_is_acceptable`'s size warning to once per 1000 ms per peer (preserving the first warning so `net_smoke` still fails on honest oversized packets) and clear per-peer warning timestamps in `erase_peer()` and `reset()`. *(Fixed on `geminiceo`; tested in `tests/test_security_audit.gd`.)*
+
+### Areas With No New Findings (Iteration 4)
+- **Network trust:** None found in Task D (`WorldObjects`/`WorldObject` are host-owned, `BotGadgets` sanitizes `input.gadget` with `Bot.clean_bool` and `input.aim` with `Bot.clean_vector`, `Session._on_peer_connected` only configures ENet throttle on local peer).
+- **Desync:** None found in Task D or `242e7b4`.
+- **Untrusted input:** None found in Task D or `launch_args.gd` (`--sim-jitter-ms` is ignored in release builds and clamped `>= 0`).
+- **Purchases and unlocks:** None present yet (none found).
+- **Android and privacy:** None found.
+- **Repository hygiene:** None found (no new secrets, keystores, or third-party addons).
+
+### Could Not Check (Iteration 4)
+- Multi-process loopback UDP tests (`net_smoke.sh`, `net_combat.sh`, `net_combat_objects.sh`, `net_world_objects.sh`, `net_world_objects_join.sh`, `net_hitch.sh`, `net_diffs.sh`, `net_reject.sh`, `net_rejoin.sh`, `net_full.sh`) cannot send localhost UDP sockets inside the sandbox; all single-process headless tests (23 suites, including `test_world_objects.tscn` 251/251, `test_netfox_handlers.tscn` host+client, `test_netfox_diffs.tscn`, `test_slow_frames.tscn`, and `test_security_audit.tscn` 22/22) passed; `test_full_state_coverage.tscn` also performs a loopback UDP handshake and could not complete inside the sandbox.
+- Real Android device touch feel, Wi-Fi hotspot jitter with ENet `throttle_deceleration = 0`, and unfinished Task E worktree (`effects_director.gd` is still a stub on `main`).
+
+### CEO Review (Iteration 4)
+1. **Huge technical milestone landed:** Netfox hardening (`c69179c`, patches 1..13), the ENet throttle fix (`242e7b4`), and Task D (`f479130`: Cooker Bomb, Spring Plate, rockets, deflection, idle-slot send throttling) are all on `main` with 48/48 passing on the lead's machine. Throttling idle world-object slots (`object_idle_send_interval = 1.0 s`) directly addresses the bandwidth spike from Iteration 2/3!
+2. **Finish Task E and get onto two phones immediately:** Task E (presentation/effects) is the only remaining piece before Device Checkpoints 1 & 2. Do NOT start Task 1.6 (Dabba) until Rahul plays the 10-minute knockback sandbox on two real Android phones over a hotspot — especially to validate ENet `throttle_deceleration = 0` on real Wi-Fi/hotspot packet loss and test the aim-ring flick + melee/gadget thumb ergonomics on actual screens.
+3. **Bandwidth & diff-states decision:** Keeping `enable_diff_states = false` for Phase 1 is the right pragmatic call (avoiding lost-diff stale state without a custom packet reference tick), provided idle-slot throttling keeps 4-player hotspot bandwidth comfortably inside budget during Device Checkpoint 2. Measure host upload KB/s with 4 bots firing/throwing during the phone test.
