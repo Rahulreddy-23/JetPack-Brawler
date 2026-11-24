@@ -1,8 +1,7 @@
 class_name Session
 extends Node
 ## Starts and stops the ENet connection. Solo play is a host with no clients.
-## The server owns everything; this node only creates and closes the peer.
-## It defines no RPCs.
+## Manages the local peer and sends the server's full-room notice.
 
 ## The host went away, the match was full, or the connection could not be made.
 signal ended(message: String)
@@ -12,6 +11,7 @@ signal peer_accepted(id: int)
 const MATCH_FULL_MESSAGE: String = "Match full. Try again when someone leaves."
 
 var _active: bool = false
+var _rejected_peer: MultiplayerPeer = null
 ## Peers the server let in. A peer being turned away is connected but not in here.
 var _accepted: Dictionary[int, bool] = {}
 var _cfg: TuningConfig = TuningConfig.get_default()
@@ -55,6 +55,7 @@ func join(address: String, port: int) -> Error:
 
 ## Close the connection and go back to offline.
 func leave() -> void:
+	_rejected_peer = null
 	# netfox only stops its clock when the server drops us, not when we close our
 	# own peer, so a second join would find the clock still running and never sync.
 	NetworkTime.stop()
@@ -93,22 +94,26 @@ func _on_peer_join(id: int) -> void:
 # Only the server (this node's authority) may call this; clients just receive it.
 @rpc("authority", "call_remote", "reliable")
 func _match_full() -> void:
-	_close_with.call_deferred(MATCH_FULL_MESSAGE)
+	var peer: MultiplayerPeer = multiplayer.multiplayer_peer
+	if not _active or peer == null:
+		return
+	_rejected_peer = peer
+	_close_rejected_peer.call_deferred(peer)
 
 # netfox cannot be stopped while its first clock sync is still pending (the pending
 # start would run again on the next join), so wait for that sync before closing.
-func _close_with(message: String) -> void:
-	var peer: MultiplayerPeer = multiplayer.multiplayer_peer
-	while _active and multiplayer.multiplayer_peer == peer and not NetworkTime.is_initial_sync_done():
+func _close_rejected_peer(peer: MultiplayerPeer) -> void:
+	while _rejected_peer == peer and multiplayer.multiplayer_peer == peer and not NetworkTime.is_initial_sync_done():
 		await get_tree().process_frame
-	if _active and multiplayer.multiplayer_peer == peer:
+	if _rejected_peer == peer and multiplayer.multiplayer_peer == peer:
 		leave()
-		ended.emit(message)
+		ended.emit(MATCH_FULL_MESSAGE)
 
 func _on_connection_failed() -> void:
 	leave()
 	ended.emit("Could not connect. Check the address and that the host is running and not full.")
 
 func _on_server_disconnected() -> void:
+	var message: String = MATCH_FULL_MESSAGE if _rejected_peer != null else "The host went away."
 	leave()
-	ended.emit("The host went away.")
+	ended.emit(message)
