@@ -51,22 +51,27 @@ Not on `main` yet, in the order to finish them:
 1. Task D (world objects, gadgets), branch `worktree-agent-aaec92fe475a64453` at `a3ffc82`.
    Squash-merged into the working tree of the main checkout and staged, not committed, with
    one lead edit in `tests/test_combat_rules.gd` (respawn now expects one Cooker Bomb). A
-   full suite on that tree and an independent review of the fix round (`0889988..a3ffc82`)
-   were running when this was written. Commit only when the suite passes; act on the review
-   before or straight after.
+   full suite on that tree was running when this was written; commit only when it passes.
+   The independent review of the fix round (`0889988..a3ffc82`) was stopped before it
+   reported, at Rahul's request before the pause: start it again from the beginning.
 2. Netfox follow-ups, branch `worktree-agent-abdc8cb18a9ad9d79` at `1632338`: mutation table
    rows, four negative checks, and `has_authoritative_state` now takes a `Variant` and
    returns false for a freed node. Read by the lead, looks right; merge after D.
-3. Task E (effects), branch `worktree-agent-a0ba5c0a664836773`, last step in progress: merge
-   `main`, wire `EffectsDirector.host_state_check` to `has_authoritative_state`, remove the
-   catch-up limit. Then verify and merge.
+3. Task E (effects), branch `worktree-agent-a0ba5c0a664836773` at `b435e4d`. Its last step
+   (merge `main`, wire `EffectsDirector.host_state_check` to `has_authoritative_state`,
+   remove the catch-up limit) was stopped part-way, at Rahul's request before the pause.
+   Its worktree holds an unfinished merge of `main` (conflict in `config/tuning.tres` not
+   resolved) and uncommitted edits in `scripts/fx/`; nothing from the last step is
+   committed. Resume the same implementer or redo the step; it had reached the mutation
+   checks. Then verify and merge.
 4. Full suite on `main` with everything merged, rebuild the debug APK into `builds/`, update
    `docs/reviews/device-checkpoint-1.md` or write the checkpoint 2 script.
 5. Rahul: device checkpoints 1 and 2. Then task 1.6 (Dabba), the phase review and the
    handoff.
 
 Reviewer branches last reviewed: `dev` at `beaf6cb` (later commits only merge `main`),
-`geminiceo` at `60fabd3`.
+`geminiceo` at `60fabd3`. The 10-minute check of those branches was a session-only schedule
+and was cancelled before the pause; set it up again when work resumes.
 
 Open with Rahul: whether to report the netfox defects to its maintainers (a public action).
 
