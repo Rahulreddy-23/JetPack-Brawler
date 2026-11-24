@@ -21,7 +21,7 @@ const BOT_STATE: Array[String] = [
 	":facing", ":drop_left", ":aim_dir",
 	"Vitals:health", "Vitals:knocked_out", "Vitals:respawn_tick", "Vitals:ko_serial", "Vitals:hits_taken",
 	"Vitals:last_hit_push", "Vitals:last_hit_damage", "Vitals:last_attacker", "Vitals:last_attack_tick",
-	"Vitals:knockouts", "Vitals:push_until_tick",
+	"Vitals:knockouts", "Vitals:push_until_tick", "Vitals:cycle_index",
 	"Arsenal:active_slot", "Arsenal:picked_weapon", "Arsenal:picked_ammo", "Arsenal:fire_ready_tick",
 	"Arsenal:last_shot_tick", "Arsenal:shots_fired", "Arsenal:shot_dir", "Arsenal:melee_ready_tick",
 	"Arsenal:last_melee_tick", "Arsenal:melee_serial",

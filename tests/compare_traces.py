@@ -35,7 +35,8 @@ def read(path):
     for line in text.splitlines():
         if line.startswith("TRACE "):
             f = dict(FIELD.findall(line))
-            if f["peer"] != "1":
+            # Peer 1 is the host and peer 0 is the dummy; the client bot is any other peer.
+            if f["peer"] not in ("0", "1"):
                 rows[int(f["tick"])] = f
         elif line.startswith("STALL "):
             f = dict(FIELD.findall(line))

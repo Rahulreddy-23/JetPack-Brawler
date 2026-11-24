@@ -38,7 +38,8 @@ sleep 1
 
 if grep -q "SCRIPT ERROR\|^ERROR" "$TMP"/*.log; then echo "FAIL: errors in logs"; grep -H -B2 -A8 "SCRIPT ERROR\|^ERROR" "$TMP"/*.log | head -30; exit 1; fi
 [ "$STATUS" -eq 0 ] || { echo "FAIL: rejected client checks (exit $STATUS)"; exit 1; }
-BOTS=$(grep -c "^BOT_SPAWNED" "$TMP/host.log")
+# The dummy (peer 0) is not a player and does not count against the match limit.
+BOTS=$(grep "^BOT_SPAWNED" "$TMP/host.log" | grep -vc "peer=0$")
 [ "$BOTS" -eq 4 ] || { echo "FAIL: host spawned $BOTS bots, expected 4"; exit 1; }
 for n in 1 2 3; do grep -q "SESSION_ENDED" "$TMP/c$n.log" && { echo "FAIL: client $n was dropped"; exit 1; }; done
 echo "PASS"

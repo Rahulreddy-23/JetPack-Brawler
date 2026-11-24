@@ -45,3 +45,11 @@ func solid_rects_px(px: float) -> Array[Rect2]:
 	for rect: Rect2 in solids:
 		result.append(Rect2(rect.position * px, rect.size * px))
 	return result
+
+## The hazard's floor in pixels: the bottom of the interior. The metal starts here.
+func hazard_floor_px(px: float) -> float:
+	return bounds.end.y * px
+
+## The hazard's top in pixels: hazard_top bot heights below the top of the interior.
+func hazard_top_px(px: float) -> float:
+	return (bounds.position.y + hazard_top) * px

@@ -36,6 +36,7 @@ func clear() -> void:
 
 func _on_server_start() -> void:
 	_server_spawn(1)
+	_server_spawn(Bot.DUMMY_PEER)
 
 ## Called by Main for each peer the Session accepted (the limit is checked there).
 func on_peer_accepted(id: int) -> void:
@@ -57,7 +58,8 @@ func _on_peer_leave(id: int) -> void:
 func _server_spawn(id: int) -> void:
 	if _bots.has(id):
 		return
-	spawn({"peer_id": id, "slot": _free_slot()})
+	# The dummy has the slot after the last player's, which _free_slot never hands out.
+	spawn({"peer_id": id, "slot": _cfg.max_players if id == Bot.DUMMY_PEER else _free_slot()})
 
 # A player's slot: the lowest of 0 to max_players - 1 that no bot uses. The dummy's slot
 # (max_players) is never handed out.
@@ -84,10 +86,13 @@ func _spawn_bot(data: Variant) -> Node:
 		bot.position = layout.dummy_spawn * _cfg.bot_height_px
 	else:
 		bot.position = layout.spawns[slot % layout.spawns.size()] * _cfg.bot_height_px
-	# The server owns the bot. The player owns only the input node.
+	(bot.get_node("Vitals") as BotVitals).spawn_position = bot.position
+	# The server owns the bot. The player owns only the input node; the dummy's input
+	# belongs to the server and stays neutral.
 	bot.set_multiplayer_authority(1)
 	var input: BotInput = bot.get_node("Input") as BotInput
-	input.set_multiplayer_authority(peer_id)
+	input.dummy = peer_id == Bot.DUMMY_PEER
+	input.set_multiplayer_authority(1 if input.dummy else peer_id)
 	input.autopilot = autopilot and peer_id == multiplayer.get_unique_id()
 	input.autopilot_delay_ticks = _cfg.tick_rate
 	_bots[peer_id] = bot

@@ -49,6 +49,8 @@ run hazard     "$GODOT" --headless --path "$ROOT" --script res://tests/test_haza
 run effects    "$GODOT" --headless --path "$ROOT" --script res://tests/test_effects.gd
 run geometry   "$GODOT" --headless --path "$ROOT" --script res://tests/test_combat_geometry.gd
 run foundation "$GODOT" --headless --path "$ROOT" res://tests/test_foundation.tscn
+run combat_rules "$GODOT" --headless --path "$ROOT" res://tests/test_combat_rules.tscn
+run net_combat env PORT="$((BASE + 40))" "$ROOT/tests/net_combat.sh"
 run net_smoke  env PORT="$((BASE + 9))" "$ROOT/tests/net_smoke.sh"
 run net_smoke_lag env PORT="$((BASE + 20))" SIM_LATENCY_MS=75 "$ROOT/tests/net_smoke.sh"
 run net_rejoin env PORT="$((BASE + 6))" "$ROOT/tests/net_rejoin.sh"

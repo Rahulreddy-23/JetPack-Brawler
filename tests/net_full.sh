@@ -40,7 +40,8 @@ run c4 8 --join=127.0.0.1
 
 wait_all 60 || { echo "FAIL: processes did not exit in time"; exit 1; }
 
-BOTS=$(grep -c "^FINAL" "$TMP/host.log")
+# The dummy (peer 0) is not a player and does not count against the match limit.
+BOTS=$(grep "^FINAL" "$TMP/host.log" | grep -vc " peer=0 ")
 echo "host saw $BOTS bots"
 grep -h "SESSION_ENDED" "$TMP/c4.log" "$TMP/c1.log" "$TMP/c2.log" "$TMP/c3.log" | sed 's/^/client message: /'
 if grep -q "SCRIPT ERROR\|^ERROR" "$TMP"/*.log; then echo "FAIL: script errors"; grep -H -B3 "SCRIPT ERROR\|^ERROR" "$TMP"/*.log | head -20; exit 1; fi
