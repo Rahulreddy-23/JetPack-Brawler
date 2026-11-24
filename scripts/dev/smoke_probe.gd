@@ -35,6 +35,10 @@ var _bw_ended_msec: int = -1
 var _bw_sent: int = 0
 var _bw_received: int = 0
 
+## ENet packet peer (by remote port) -> {min throttle seen, last throttle, highest loss seen}.
+## Throttle 32 is ENet's maximum; below it ENet drops that share of unreliable packets.
+var _throttle: Dictionary = {}
+
 ## How far ahead of this process's own tick the received input and state
 ## snapshots were stamped, at most (first arrivals only).
 var _max_input_lead: int = -1000000
@@ -52,6 +56,21 @@ func _process(delta: float) -> void:
 	if delta > NetworkTime.stall_threshold:
 		_stalled_frames += 1
 	_track_bandwidth()
+	_track_throttle()
+
+func _track_throttle() -> void:
+	var connection: ENetConnection = _connection()
+	if connection == null:
+		return
+	for peer: ENetPacketPeer in connection.get_peers():
+		if peer.get_state() != ENetPacketPeer.STATE_CONNECTED:
+			continue
+		var value: int = int(peer.get_statistic(ENetPacketPeer.PEER_PACKET_THROTTLE))
+		var loss: int = int(peer.get_statistic(ENetPacketPeer.PEER_PACKET_LOSS))
+		var row: Dictionary = _throttle.get_or_add(peer.get_remote_port(), {"min": value, "last": value, "loss": 0, "limit": int(peer.get_statistic(ENetPacketPeer.PEER_PACKET_THROTTLE_LIMIT))}) as Dictionary
+		row["min"] = mini(row["min"] as int, value)
+		row["last"] = value
+		row["loss"] = maxi(row["loss"] as int, loss)
 
 ## Per-tick passes in which a bot fired: peer id -> {tick: passes}.
 func fire_passes() -> Dictionary:
@@ -176,10 +195,18 @@ func dump(role: String) -> void:
 			for fire_tick: int in fire_ticks:
 				print("FIRE peer=%d tick=%d passes=%d" % [peer_id, fire_tick, passes[fire_tick] as int])
 	_print_bandwidth(role)
+	_print_throttle(role)
 	_print_pool()
 	print("CLOCK role=%s rtt_ms=%.2f jitter_ms=%.2f unresolved_offset_ms=%.2f" % [role, NetworkTimeSynchronizer.rtt * 1000.0, NetworkTimeSynchronizer.rtt_jitter * 1000.0, NetworkTimeSynchronizer._offset * 1000.0])
 	print("LEAD role=%s max_input_lead=%d max_state_lead=%d" % [role, _max_input_lead, _max_state_lead])
 	print("STALL role=%s frames=%d floor_jumps=%d" % [role, _stalled_frames, _floor_jumps])
+
+# Loss is ENet's own measure, scaled by 65536. limit is the throttle's maximum.
+func _print_throttle(role: String) -> void:
+	for port: int in _throttle:
+		var row: Dictionary = _throttle[port]
+		print("THROTTLE role=%s peer_port=%d min=%d last=%d limit=%d loss_max=%.4f" % [
+			role, port, row["min"] as int, row["last"] as int, row["limit"] as int, float(row["loss"] as int) / 65536.0])
 
 func _print_bandwidth(role: String) -> void:
 	var connection: ENetConnection = _connection()

@@ -121,6 +121,15 @@ static var _cached: TuningConfig = null
 @export var reject_notice_seconds: float = 0.0
 ## ENet port for host and join.
 @export var port: int = 0
+## ENet packet throttle (first guesses). ENet lowers a connection's throttle, and with it the
+## share of unreliable packets it sends at all, whenever a round trip is slower than the
+## recent best, which Wi-Fi jitter does constantly. Input and state travel as unreliable
+## packets, so a lowered throttle loses them. Interval is how often (ms) ENet re-measures the
+## best round trip, acceleration is how fast the throttle climbs back, and deceleration is how
+## fast it falls: 0 keeps it at the maximum so the throttle never drops a packet.
+@export var throttle_interval_ms: int = 0
+@export var throttle_acceleration: int = 0
+@export var throttle_deceleration: int = 0
 
 @export_group("Health and push")
 ## GDD: health 100, no regeneration.

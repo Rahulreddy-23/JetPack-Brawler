@@ -74,7 +74,7 @@ func _on_host() -> void:
 	if _args.simulates_network():
 		_sim = NetSim.new()
 		add_child(_sim)
-		_sim.start(_port(), _args.sim_latency_ms, _args.sim_loss)
+		_sim.start(_port(), _args.sim_latency_ms, _args.sim_loss, _args.sim_jitter_ms)
 	# Phase 1 has no rounds: the hazard cycle counts from the moment the host starts.
 	MatchSettings.start_round(NetworkTime.tick)
 	_touch.visible = _touch_capable

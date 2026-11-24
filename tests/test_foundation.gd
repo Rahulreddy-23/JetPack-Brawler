@@ -34,6 +34,9 @@ const OBJECT_STATE: Array[String] = [
 	":fuse_tick", ":explode_tick", ":landed", ":launches", ":blasts",
 ]
 
+## Top-level config fields that are zero on purpose (ENet's throttle must never fall).
+const CONFIG_ZERO_ON_PURPOSE: Array[String] = ["throttle_deceleration"]
+
 ## WeaponStats fields that are zero on purpose, by weapon index (rivet, bolt, scrap, rocket).
 ## Everything else in the config must be above zero.
 const ZERO_MEANS_NONE: Dictionary = {
@@ -145,7 +148,10 @@ func _test_config_numbers() -> void:
 		var value: Variant = _cfg.get(field)
 		match typeof(value):
 			TYPE_FLOAT, TYPE_INT:
-				if value == 0:
+				if CONFIG_ZERO_ON_PURPOSE.has(field):
+					if value != 0:
+						zero_fields.append(field + " (listed as zero but is not)")
+				elif value == 0:
 					zero_fields.append(field)
 			TYPE_VECTOR2:
 				if (value as Vector2).x == 0.0 or (value as Vector2).y == 0.0:

@@ -34,6 +34,7 @@ sleep 3
 STATUS=$?
 grep "^FAIL" "$TMP/reject.log"
 echo "$(grep -c '^PASS round' "$TMP/reject.log") of $ROUNDS rounds passed"
+grep "rounds ended by" "$TMP/reject.log"
 sleep 1
 
 if grep -q "SCRIPT ERROR\|^ERROR" "$TMP"/*.log; then echo "FAIL: errors in logs"; grep -H -B2 -A8 "SCRIPT ERROR\|^ERROR" "$TMP"/*.log | head -30; exit 1; fi

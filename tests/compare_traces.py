@@ -11,9 +11,11 @@ A tick is compared only when all of these hold:
   - the input the host used on every tick of the run equals the input the
     client sent.
 Positions on those ticks must agree to within TOLERANCE pixels.
-A measured disagreement on comparable ticks is a failure, whatever else happened. Without
-one, a host stall, a client stall, or too few comparable ticks is inconclusive, because
-client prediction may then differ for reasons that are not a bug.
+A measured disagreement on comparable ticks is a failure, whatever else happened. So is a
+host that lacked the client's input on more than MAX_HOST_LACKED of the candidate ticks while
+no stall was logged: that is a transport failure, not a prediction question, and on loopback
+it must not happen. Without either, a host stall, a client stall, or too few comparable ticks
+is inconclusive, because client prediction may then differ for reasons that are not a bug.
 
 With simulated latency the client rarely re-simulates a tick from a state it has just
 received, so the rule above finds nothing to compare. --settled TICKS then replaces it:
@@ -27,6 +29,7 @@ import sys
 TOLERANCE = 0.01          # pixels
 MIN_QUALIFIED = 0.8       # fraction of candidate ticks that must be comparable
 MIN_MOVE = 200.0          # pixels the client bot must travel
+MAX_HOST_LACKED = 2       # candidate ticks the host may lack the client's input for
 FIELD = re.compile(r"(\w+)=(\S+)")
 
 
@@ -109,8 +112,9 @@ def main():
     first = xs[0]
     travelled = max(((x - first[0]) ** 2 + (y - first[1]) ** 2) ** 0.5 for x, y in xs)
     share = len(qualified) / max(len(candidates), 1)
-    print("candidate ticks %d, compared %d (%.0f%%; %d of them one step from a received state), host lacked input for %d, host/client input differed on %d"
-          % (len(candidates), len(qualified), share * 100, strict, host_lacked, mismatched))
+    print("candidate ticks %d, compared %d (%.0f%%; %d of them one step from a received state), host/client input differed on %d"
+          % (len(candidates), len(qualified), share * 100, strict, mismatched))
+    print("host lacked the client's input for %d of %d ticks" % (host_lacked, len(candidates)))
     print("worst position difference on compared ticks %.4f px, client bot travelled %.1f px, neutral-stick dash ticks compared %d"
           % (worst, travelled, neutral))
     print("stall evidence: host stalled-frames+floor-jumps=%s logged=%s, client stalled-frames+floor-jumps=%s logged=%s"
@@ -123,7 +127,11 @@ def main():
         late = [t for t in qualified if (((float(client[t]["x"]) - float(host[t]["x"])) ** 2 + (float(client[t]["y"]) - float(host[t]["y"])) ** 2) ** 0.5) > TOLERANCE]
         print("FAIL: host and client positions disagree on ticks with identical input, first at tick %d" % late[0])
         return 1
-    if host_stall or client_stall or host_logged or client_logged:
+    stalled = host_stall or client_stall or host_logged or client_logged
+    if host_lacked > MAX_HOST_LACKED and not stalled:
+        print("FAIL: host lacked the client's input for %d of %d ticks with no stall logged (transport failure)" % (host_lacked, len(candidates)))
+        return 1
+    if stalled:
         print("INCONCLUSIVE: a stall was seen; prediction may differ for reasons that are not a bug")
         return 2
     if share < MIN_QUALIFIED or neutral == 0:

@@ -64,6 +64,7 @@ run combat_rules "$GODOT" --headless --path "$ROOT" res://tests/test_combat_rule
 run net_combat env PORT="$((BASE + 40))" "$ROOT/tests/net_combat.sh"
 run net_smoke  env PORT="$((BASE + 9))" "$ROOT/tests/net_smoke.sh"
 run net_smoke_lag env PORT="$((BASE + 20))" SIM_LATENCY_MS=75 "$ROOT/tests/net_smoke.sh"
+run net_smoke_jitter env PORT="$((BASE + 22))" SIM_JITTER_MS=150 "$ROOT/tests/net_smoke.sh"
 run net_rejoin env PORT="$((BASE + 6))" "$ROOT/tests/net_rejoin.sh"
 run net_full   env PORT="$((BASE + 8))" "$ROOT/tests/net_full.sh"
 run net_reject env PORT="$((BASE + 3))" "$ROOT/tests/net_reject.sh"
