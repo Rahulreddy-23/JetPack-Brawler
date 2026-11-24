@@ -1,6 +1,7 @@
 # Architecture: combat, projectiles, gadgets, hazard and effects on netfox
 
-Status: design accepted by the lead on 24 Nov 2026, subject to experiment E1 below passing.
+Status: design accepted by the lead on 24 Nov 2026. Experiment E1 has been run; its results,
+and the one change they force, are in the section "E1 results" below.
 Nothing in this file is built yet except task 1.1 (networked movement) and the three modules
 under `combat/`, `hazard/` and `effects/`. Designed by the Opus architect from the netfox
 v1.49.12 source; netfox facts are summarised in
@@ -210,6 +211,54 @@ parallel, each in its own files against A's stubs.
   the host's, and the client never receives a hit that is absent from the host's final trace.
 - E2. On a budget phone (Rahul): the `netfox/Rollback loop duration (ms)` monitor with 5 bots
   and the full object pool.
+
+## E1 results (24 Nov 2026)
+
+Run as a throwaway spike (branch `worktree-agent-a0e740ce9169c5afb`, commit `f8fe07b`, not
+merged): host, two clients and a dummy, 6 runs per configuration at 0 ms and at 75 ms
+one-way simulated latency, some with 5 percent loss.
+
+Confirmed on the host:
+
+- A hit decided in `after_process_tick` is applied idempotently. In every run the host's
+  settled trace shows health falling by exactly 1 on the tick after each fire tick and
+  nowhere else, with and without `mutate()`. Fire ticks were processed up to 4 times each.
+- A hit decided from a stale position is removed when the victim's late input arrives
+  (scenario 4, 6 of 6 at both latencies), and the removed hit never reached a client.
+- Children run in tree order after the root. Resolving inside the shooter's own tick gives
+  results that depend on tree order, which supports decision D3.
+
+Not confirmed on clients:
+
+- With netfox's diff states on (the default), clients kept wrong values for a property that
+  changes rarely. The dummy's health trace matched the host's on a client in 0 of 6 runs at
+  75 ms, and in one run a client showed the wrong health until the process ended. Cause,
+  from the source and from logs of what the host sent: a diff carries only what changed
+  relative to the host's own sent history and is merged on top of the client's local guess
+  for that tick, which is then marked authoritative; and periodic full states rarely include
+  client-input bots.
+- With `netfox/rollback/enable_diff_states=false`, health and position traces matched on
+  every client in 18 of 18 runs at 75 ms. Cost: about 78 KB/s received per client with 4
+  bots, against about 11.5 KB/s with diffs on; about 157 KB/s sent by the host.
+- Claim 3 above is only true for a bot whose own input is missing. A host-owned subject that
+  depends on another peer's late input (the dummy, and later rockets, bombs and pickups) is
+  sent with its first-pass value and corrected afterwards. With diffs off the correction
+  arrives within about 2 ticks.
+
+Decision (lead): the prototype runs with diff states off. Correct replication matters more
+than bandwidth on a hotspot. Before online rooms, either fix the diff merge in the addon or
+measure and accept the data cost; this is on the "before online play" list.
+
+Consequence for effects (D7): a client can briefly show an effect for a value that the host
+corrects a tick or two later. Counters and the high-water mark keep it to one false
+trigger; it is cosmetic.
+
+Measured at 75 ms with 4 bots: the host re-simulated about 3 ticks per loop on average
+(worst 7, or 20 with 5 percent loss). Not measured: 5 bots, 150 ms, a real phone.
+
+The spike's latency proxy (`scripts/dev/net_sim.gd`, flags `--sim-latency-ms=` and
+`--sim-loss=`) is the starting point for task A's simulator; netfox's stock simulator node
+cannot be used because it creates its own connection.
 
 ## Risks
 
