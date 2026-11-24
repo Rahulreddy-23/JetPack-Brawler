@@ -54,7 +54,9 @@ Connection
 
 Controls (the main point of this checkpoint)
 
-6. Can you reach both sticks and the dash button without shifting your grip?
+6. Can you reach both sticks and the dash button without shifting your grip? Keep steering
+   or flying with your left thumb. With your right thumb, aim, tap dash, then aim again.
+   Can you do it without releasing the left stick or needing a third finger?
 7. Is the bot ever hidden under a thumb?
 8. Push the left stick up: does the steam pack feel right? Is a quick tap a hop you can
    see, or too small? (Measured on the Mac: a 3-tick tap lifts about 18 pixels.)
