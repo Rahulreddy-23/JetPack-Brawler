@@ -69,20 +69,30 @@ func read_from(peer: int, properties: _PropertyPool, buffer: StreamPeerBuffer, i
 		# Read header, including identity reference
 		var idref := netref.decode(buffer) as _NetworkIdentityReference
 		var node_data_size := varuint.decode(buffer) as int
-		var changed_bits := varbits.decode(buffer) as _Bitset
-		node_buffer.data_array = buffer.get_partial_data(node_data_size)[1]
 
 		# Resolve to identifier
 		var identifier := _get_identity_server()._resolve_reference(peer, idref)
 		if not identifier:
 			# TODO(#563): Handle unknown IDs gracefully
-			_logger.warning("Received unknown identity reference %s, skipping data", [idref])
+			_warn_peer(peer, "Received unknown identity reference %s from #%s, skipping data", [idref, peer])
 			break
 		var node := identifier.get_subject() as Node
+		var node_props := properties.get_properties_of(node)
+
+		# PATCH (see addons/NETFOX_PATCHES.md): an honest changed-bits field has
+		# one bit per property, and names no property the node does not have
+		var changed_bits := varbits.decode_limited(buffer, node_props.size()) as _Bitset
+		if changed_bits == null:
+			_warn_peer(peer, "Received malformed changed-bits field from #%s, skipping data", [peer])
+			break
+		var changed_indices := changed_bits.get_set_indices()
+		if not changed_indices.is_empty() and changed_indices.back() >= node_props.size():
+			_warn_peer(peer, "Received a changed-bits index past the property count from #%s, skipping data", [peer])
+			break
+		node_buffer.data_array = buffer.get_partial_data(node_data_size)[1]
 
 		# Read changed properties
-		var node_props := properties.get_properties_of(node)
-		for idx in changed_bits.get_set_indices():
+		for idx in changed_indices:
 			var property := node_props[idx]
 			var value := _read_property(node, property, node_buffer)
 			snapshot.set_property(node, property, value)

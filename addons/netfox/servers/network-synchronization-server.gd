@@ -40,6 +40,7 @@ var _rb_full_scheduler := _IntervalScheduler.new(_rb_full_interval)
 var _input_redundancy := NetworkRollback.input_redundancy
 
 var _rb_sent_state_history := {} # peer to _HistoryBuffer of _Snapshot
+var _rb_last_full_tick := {} # PATCH: peer to (subject to tick of the last full state sent)
 
 var _last_sync_state_sent := _Snapshot.new(0)
 var _sync_enable_diffs := ProjectSettings.get_setting("netfox/state_synchronizer/enable_diff_states", true) as bool
@@ -132,6 +133,9 @@ func deregister_visibility_filter(node: Node) -> void:
 
 ## Deregister any and all settings associated with [param node]
 func deregister(node: Node) -> void:
+	for subjects: Dictionary in _rb_last_full_tick.values():
+		subjects.erase(node)
+
 	_rb_state_properties.erase_subject(node)
 	_rb_input_properties.erase_subject(node)
 	_rb_owned_state_properties.erase_subject(node)
@@ -149,6 +153,7 @@ func deregister(node: Node) -> void:
 ## Called by default when a peer leaves
 func erase_peer(peer: int) -> void:
 	_rb_sent_state_history.erase(peer)
+	_rb_last_full_tick.erase(peer)
 
 ## Forget what was sent to other peers, while keeping the registered properties
 ## [br][br]
@@ -157,6 +162,7 @@ func erase_peer(peer: int) -> void:
 ## [method _NetworkTime.stop].
 func reset() -> void:
 	_rb_sent_state_history.clear()
+	_rb_last_full_tick.clear()
 	_last_sync_state_sent = _Snapshot.new(0)
 
 func _get_peer_rb_sent_history(peer: int) -> _HistoryBuffer:
@@ -164,24 +170,41 @@ func _get_peer_rb_sent_history(peer: int) -> _HistoryBuffer:
 		_rb_sent_state_history[peer] = _HistoryBuffer.new(NetworkRollback.history_limit)
 	return _rb_sent_state_history[peer]
 
-func _get_last_sent_rollback_state(peer: int, tick: int) -> _Snapshot:
+# PATCH (see addons/NETFOX_PATCHES.md): what a diff is relative to, per subject.
+# The latest full values sent to `peer` for each of `subjects` at or before `tick`,
+# as a snapshot; a subject that was never sent is absent. This is what a client
+# that lays diffs over its latest authoritative state holds.
+func _get_last_sent_rollback_state(peer: int, subjects: Array, tick: int) -> _Snapshot:
+	var result := _Snapshot.new(tick)
 	var history: _HistoryBuffer = _rb_sent_state_history.get(peer, null)
-	if history == null or not history.has_latest_at(tick):
-		return null
-	return history.get_latest_at(tick)
+	if history == null:
+		return result
 
-func _remember_sent_rollback_state(peer: int, snapshot: _Snapshot) -> void:
-	var reference := _get_last_sent_rollback_state(peer, snapshot.tick)
-	var remembered := reference.duplicate() if reference else _Snapshot.new(snapshot.tick)
+	for subject in subjects:
+		var at := tick
+		while history.has_latest_at(at):
+			var index := history.get_latest_index_at(at)
+			var sent := history.get_at(index) as _Snapshot
+			if sent != null and sent.has_subject(subject):
+				sent.copy_subject_to(subject, result)
+				result.set_auth(subject, true)
+				break
+			at = index - 1
+	return result
 
-	# `snapshot` might be a diff state, hence the merging
-	for subject in snapshot.get_subjects():
-		for property in snapshot.get_subject_properties(subject):
-			remembered.set_property(subject, property, snapshot.get_property(subject, property))
+# PATCH (see addons/NETFOX_PATCHES.md): remember the full values of the `subjects`
+# that were sent for the tick of `snapshot`, and only those. A subject that was not
+# sent for a tick has no entry there, so what a later diff is relative to stays the
+# latest thing that was sent, however that tick is re-simulated afterwards.
+func _remember_sent_rollback_state(peer: int, snapshot: _Snapshot, subjects: Array) -> void:
+	var history := _get_peer_rb_sent_history(peer)
+	var remembered := history.get_at(snapshot.tick, _Snapshot.new(snapshot.tick)) as _Snapshot
+
+	for subject in subjects:
+		snapshot.copy_subject_to(subject, remembered)
 		remembered.set_auth(subject, snapshot.is_auth(subject))
-	remembered.tick = snapshot.tick
 
-	_get_peer_rb_sent_history(peer).set_at(snapshot.tick, remembered)
+	history.set_at(snapshot.tick, remembered)
 
 # Prepare snapshot to be sent to `peer`
 # Only contains visible subjects' auth properties
@@ -269,42 +292,67 @@ func _synchronize_state(tick: int) -> void:
 		# Nothing to send
 		return
 
-	# Figure out whether to send full- or diff state
-	var is_full := _rb_full_scheduler.is_now()
-	if not _rb_enable_diffs:
-		is_full = true
-
 	for peer in multiplayer.get_peers():
 		var peer_snapshot := _make_peer_snapshot(snapshot, peer, _rb_owned_state_properties)
 		if peer_snapshot.is_empty():
 			continue
 
-		var peer_is_full := is_full
-		var reference_snapshot := _get_last_sent_rollback_state(peer, tick)
-		if reference_snapshot == null:
-			peer_is_full = true
+		# PATCH (see addons/NETFOX_PATCHES.md): full or diff state is decided per
+		# subject, so every subject gets a full state at least once per interval
+		var reference_snapshot: _Snapshot = null
+		if _rb_enable_diffs:
+			reference_snapshot = _get_last_sent_rollback_state(peer, peer_snapshot.get_subjects(), tick)
+		var full_subjects := _pick_full_state_subjects(peer, peer_snapshot, reference_snapshot, tick)
 
-		if peer_is_full:
-			var packets := _dense_serializer.write_for(peer, peer_snapshot, _rb_owned_state_properties)
+		if not full_subjects.is_empty():
+			var packets: Array[PackedByteArray]
+			if full_subjects.size() == peer_snapshot.get_subjects().size():
+				packets = _dense_serializer.write_for(peer, peer_snapshot, _rb_owned_state_properties)
+			else:
+				var filter := func(subject): return full_subjects.has(subject)
+				packets = _dense_serializer.write_for(peer, peer_snapshot, _rb_owned_state_properties, filter)
 			for packet in packets:
 				_cmd_full_state.send(packet, peer)
 
-			_remember_sent_rollback_state(peer, peer_snapshot)
 			NetworkPerformance.push_full_state_props(peer_snapshot.size())
 			NetworkPerformance.push_sent_state_props(peer_snapshot.size())
-		else:
+
+		var sent_subjects := full_subjects.duplicate()
+		if reference_snapshot != null:
 			var diff := _Snapshot.make_patch(reference_snapshot, peer_snapshot)
-			if diff.is_empty():
-				# Nothing changed, don't send anything
-				continue
+			for subject in full_subjects:
+				diff.erase_subject(subject)
 
-			var packets := _sparse_serializer.write_for(peer, diff, _rb_owned_state_properties)
-			for packet in packets:
-				_cmd_diff_state.send(packet, peer)
+			# Nothing changed, don't send anything
+			if not diff.is_empty():
+				var packets := _sparse_serializer.write_for(peer, diff, _rb_owned_state_properties)
+				for packet in packets:
+					_cmd_diff_state.send(packet, peer)
 
-			_remember_sent_rollback_state(peer, diff)
-			NetworkPerformance.push_full_state_props(peer_snapshot.size())
-			NetworkPerformance.push_sent_state_props(diff.size())
+				NetworkPerformance.push_full_state_props(peer_snapshot.size())
+				NetworkPerformance.push_sent_state_props(diff.size())
+				sent_subjects.append_array(diff.get_subjects())
+
+		if _rb_enable_diffs:
+			_remember_sent_rollback_state(peer, peer_snapshot, sent_subjects)
+
+# PATCH (see addons/NETFOX_PATCHES.md): the subjects of `peer_snapshot` to send in
+# full: all of them with diffs off, one the peer has not been sent yet, and one
+# that has gone `full_state_interval` ticks (not calls) without a full state
+func _pick_full_state_subjects(peer: int, peer_snapshot: _Snapshot, reference: _Snapshot, tick: int) -> Array:
+	var result := []
+	if not _rb_last_full_tick.has(peer):
+		_rb_last_full_tick[peer] = {}
+	var last_full := _rb_last_full_tick[peer] as Dictionary
+
+	for subject in peer_snapshot.get_subjects():
+		var is_due := not _rb_enable_diffs or reference == null or not reference.has_subject(subject)
+		if not is_due and _rb_full_interval > 0:
+			is_due = not last_full.has(subject) or tick - last_full[subject] >= _rb_full_interval
+		if is_due:
+			last_full[subject] = tick
+			result.append(subject)
+	return result
 
 func _synchronize_sync_state(tick: int) -> void:
 	# We don't own sync state, nothing to synchronize
@@ -391,7 +439,29 @@ func _ready() -> void:
 	elif is_instance_valid(multiplayer):
 		multiplayer.peer_disconnected.connect(erase_peer)
 
+# PATCH (see addons/NETFOX_PATCHES.md): who may send snapshots, and how big
+# they may be. On a client only the server sends snapshots, so anything else is
+# dropped. Packets are cut by PacketBuffer to max_sync_packet_size, so a packet
+# over the headroom below, per snapshot it may carry, is not honest.
+const _SERVER_PEER_ID := 1
+const _PACKET_SIZE_HEADROOM := 2
+
+func _is_acceptable(sender: int, data: PackedByteArray, snapshots_per_packet: int) -> bool:
+	if not multiplayer.is_server() and sender != _SERVER_PEER_ID:
+		_logger.trace("Dropping snapshot packet from #%d, only the server sends them", [sender])
+		return false
+
+	# A size of zero or less means no limit, as in PacketBuffer
+	var limit := _max_packet_size * _PACKET_SIZE_HEADROOM * snapshots_per_packet
+	if _max_packet_size > 0 and data.size() > limit:
+		_logger.warning("Dropping %d byte packet from #%d, over the limit of %d bytes (netfox/general/max_sync_packet_size)", [data.size(), sender, limit])
+		return false
+	return true
+
 func _handle_input(sender: int, data: PackedByteArray) -> void:
+	if not _is_acceptable(sender, data, _input_redundancy):
+		return
+
 	var buffer := StreamPeerBuffer.new()
 	buffer.data_array = data
 
@@ -399,12 +469,17 @@ func _handle_input(sender: int, data: PackedByteArray) -> void:
 
 	for snapshot in snapshots:
 		snapshot.sanitize(sender)
+		if snapshot.is_empty():
+			continue
 
 		_logger.trace("Ingesting input: %s", [snapshot])
 		if NetworkHistoryServer._merge_rollback_input(snapshot):
 			_on_input.emit(snapshot)
 
 func _handle_full_state(sender: int, data: PackedByteArray) -> void:
+	if not _is_acceptable(sender, data, 1):
+		return
+
 	var buffer := StreamPeerBuffer.new()
 	buffer.data_array = data
 
@@ -413,37 +488,52 @@ func _handle_full_state(sender: int, data: PackedByteArray) -> void:
 	_ingest_state(sender, snapshot)
 
 func _handle_diff_state(sender: int, data: PackedByteArray) -> void:
+	if not _is_acceptable(sender, data, 1):
+		return
+
 	var buffer := StreamPeerBuffer.new()
 	buffer.data_array = data
 
 	var diff := _sparse_serializer.read_from(sender, _rb_state_properties, buffer)
 	_logger.trace("Received diff state for @%d", [diff.tick])
 
-	_ingest_state(sender, diff)
+	_ingest_state(sender, diff, true)
 
 func _handle_full_sync(sender: int, data: PackedByteArray) -> void:
+	if not _is_acceptable(sender, data, 1):
+		return
+
 	var buffer := StreamPeerBuffer.new()
 	buffer.data_array = data
 
 	var snapshot := _dense_serializer.read_from(sender, _sync_state_properties, buffer, true)
 	snapshot.sanitize(sender)
+	if snapshot.is_empty():
+		return
 
 	NetworkHistoryServer._merge_synchronizer_state(snapshot)
 	_logger.trace("Ingested sync state: %s", [snapshot])
 
 func _handle_diff_sync(sender: int, data: PackedByteArray) -> void:
+	if not _is_acceptable(sender, data, 1):
+		return
+
 	var buffer := StreamPeerBuffer.new()
 	buffer.data_array = data
 
 	var snapshot := _sparse_serializer.read_from(sender, _sync_state_properties, buffer)
 	snapshot.sanitize(sender)
+	if snapshot.is_empty():
+		return
 
-	NetworkHistoryServer._merge_synchronizer_state(snapshot)
+	NetworkHistoryServer._merge_synchronizer_state(snapshot, true)
 	_logger.trace("Ingested sync diff: %s", [snapshot])
 
-func _ingest_state(sender: int, snapshot: _Snapshot) -> void:
+func _ingest_state(sender: int, snapshot: _Snapshot, is_diff: bool = false) -> void:
 	snapshot.sanitize(sender)
+	if snapshot.is_empty():
+		return
 
-	if NetworkHistoryServer._merge_rollback_state(snapshot):
+	if NetworkHistoryServer._merge_rollback_state(snapshot, is_diff):
 		_on_state.emit(snapshot)
 	_logger.trace("Ingested state: %s", [snapshot])

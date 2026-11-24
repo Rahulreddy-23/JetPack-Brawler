@@ -21,6 +21,10 @@ var _sync_history_size := ProjectSettings.get_setting("netfox/state_synchronizer
 
 var _ignored_subjects := _Set.new()
 
+# PATCH (see addons/NETFOX_PATCHES.md): subjects that state from their authority
+# has been merged for in this session
+var _authoritative_subjects := _Set.new()
+
 # Source of truth for history
 var _rb_input_history := _PerObjectHistory.new(_rb_history_size)
 var _rb_state_history := _PerObjectHistory.new(_rb_history_size)
@@ -65,6 +69,8 @@ func deregister(node: Node) -> void:
 	_rb_input_properties.erase_subject(node)
 	_sync_state_properties.erase_subject(node)
 
+	_authoritative_subjects.erase(node)
+
 	# Erase from per-object history
 	_rb_state_history.erase_subject(node)
 	_rb_input_history.erase_subject(node)
@@ -90,6 +96,7 @@ func reset() -> void:
 	_sync_state_snapshots = _HistoryBuffer.new(_sync_history_size)
 
 	_ignored_subjects.clear()
+	_authoritative_subjects.clear()
 
 ## Do not record [param subject]
 ## [br][br]
@@ -134,6 +141,18 @@ func get_input_age_for(subjects: Array, tick: int) -> int:
 		return -1
 	else:
 		return tick - latest_input
+
+## Return true if [param subject] has state that came from its authority
+## [br][br]
+## On a peer that is not the authority, rollback and synchronized state of a
+## subject is predicted locally until the authority's state arrives. This is
+## true once any state received from the authority has been merged for
+## [param subject] in this session, and always true on the authority itself. It
+## is false again after [method _NetworkTime.stop], which calls [method reset].
+func has_authoritative_state(subject: Object) -> bool:
+	if subject is Node and (subject as Node).is_multiplayer_authority():
+		return true
+	return _authoritative_subjects.has(subject)
 
 ## Record currently registered rollback state properties for [param subject] at
 ## [param tick].
@@ -199,17 +218,47 @@ func _merge_rollback_input(snapshot: _Snapshot) -> bool:
 	_merge_snapshot(snapshot, _rb_input_snapshots, true)
 	return _merge_history(snapshot, _rb_input_history, true)
 
-func _merge_rollback_state(snapshot: _Snapshot) -> bool:
+func _merge_rollback_state(snapshot: _Snapshot, is_diff: bool = false) -> bool:
 	if not _can_merge_tick(snapshot.tick, _rb_state_history):
 		return false
+	_mark_authoritative(snapshot)
+	if is_diff:
+		_complete_diff(snapshot, _rb_state_history)
 	_merge_snapshot(snapshot, _rb_state_snapshots)
 	return _merge_history(snapshot, _rb_state_history)
 
-func _merge_synchronizer_state(snapshot: _Snapshot) -> bool:
+func _merge_synchronizer_state(snapshot: _Snapshot, is_diff: bool = false) -> bool:
 	if not _can_merge_tick(snapshot.tick, _sync_history):
 		return false
+	_mark_authoritative(snapshot)
+	if is_diff:
+		_complete_diff(snapshot, _sync_history)
 	_merge_snapshot(snapshot, _sync_state_snapshots, true)
 	return _merge_history(snapshot, _sync_history)
+
+# PATCH (see addons/NETFOX_PATCHES.md): remember which subjects state came in for
+func _mark_authoritative(snapshot: _Snapshot) -> void:
+	for subject in snapshot.get_auth_subjects():
+		_authoritative_subjects.add(subject)
+
+# PATCH (see addons/NETFOX_PATCHES.md): a diff holds only what changed since the
+# last state the sender sent. Make it whole by adding the properties of the
+# latest authoritative snapshot before its tick, so merging it never lets this
+# peer's own prediction for the tick fill in the properties it left out. A
+# subject that already has an authoritative snapshot at the tick (an earlier
+# diff or a full state) is layered on as before.
+func _complete_diff(snapshot: _Snapshot, history: _PerObjectHistory) -> void:
+	for subject in snapshot.get_subjects():
+		if not snapshot.is_auth(subject) or history.is_auth(snapshot.tick, subject):
+			continue
+
+		var base := history.get_latest_auth_snapshot_before(snapshot.tick, subject)
+		if base == null:
+			continue
+
+		for property in base._data:
+			if not snapshot.has_property(subject, property):
+				snapshot.set_property(subject, property, base._data[property])
 
 func _record(tick: int, history: _PerObjectHistory, snapshots: _HistoryBuffer, property_pool: _PropertyPool, only_auth: bool, auth_filter: Callable) -> void:
 	var snapshot := snapshots.get_at(tick, _Snapshot.new(tick)) as _Snapshot
@@ -296,15 +345,25 @@ func _merge_history(snapshot: _Snapshot, history: _PerObjectHistory, reverse: bo
 	return has_updated
 
 func _can_merge_tick(tick: int, history: _PerObjectHistory) -> bool:
-	# PATCH (see addons/NETFOX_PATCHES.md): refuse ticks more than one tick-loop
-	# burst ahead of the current tick. The history buffers hold only
-	# history_limit ticks, so a snapshot stamped further ahead pushes the
-	# buffer's old edge past the current tick and discards what this peer just
-	# recorded. A lead of up to max_ticks_per_frame is accepted, so under attack
-	# the rollback window shrinks by at most that many ticks.
-	if tick > NetworkTime.tick + NetworkTime.max_ticks_per_frame:
-		_logger.trace("Dropping snapshot @%d from too far in the future", [tick])
-		return false
+	# PATCH (see addons/NETFOX_PATCHES.md): a server refuses ticks that are too
+	# far ahead of its own clock. The history buffers hold only history_limit
+	# ticks, so a snapshot stamped further ahead pushes the buffer's old edge
+	# past the current tick and discards what this peer just recorded. Commands
+	# arrive before NetworkTime runs its loop, and after a short main-thread
+	# hitch NetworkTime.tick lags the clock; honest inputs are stamped with the
+	# real time. So the bound is measured from the clock (never from less than
+	# NetworkTime.tick) and never reaches the history size of the buffers it
+	# guards (history_limit, or the state synchronizer's own) ticks past
+	# NetworkTime.tick. Clients only take the server's snapshots, which they
+	# trust (see the synchronization server).
+	if multiplayer.is_server():
+		var reference_tick := maxi(NetworkTime.tick, NetworkTime.seconds_to_ticks(NetworkTimeSynchronizer.get_time()))
+		var latest_tick := reference_tick + NetworkTime.max_ticks_per_frame + NetworkRollback.input_delay
+		var history_size := _sync_history_size if history == _sync_history else _rb_history_size
+		latest_tick = mini(latest_tick, NetworkTime.tick + history_size - 1)
+		if tick > latest_tick:
+			_logger.trace("Dropping snapshot @%d from too far in the future", [tick])
+			return false
 
 	if tick >= NetworkRollback.history_start:
 		return true

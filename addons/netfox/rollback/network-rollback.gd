@@ -161,6 +161,9 @@ var _tick: int = 0
 var _resim_from: int
 var _history_floor: int = 0
 
+# PATCH (see addons/NETFOX_PATCHES.md): the tick the latest tick loop started at
+var _loop_start_tick: int = 0
+
 var _rollback_from: int = -1
 var _rollback_to: int = -1
 var _rollback_stage: String = ""
@@ -362,6 +365,7 @@ func _handle_tick_jump(p_tick: int) -> void:
 func _ready() -> void:
 	NetfoxLogger.register_tag(_get_rollback_tag)
 
+	NetworkTime.before_tick_loop.connect(func() -> void: _loop_start_tick = NetworkTime.tick)
 	NetworkSynchronizationServer._on_input.connect(_handle_input)
 	NetworkSynchronizationServer._on_state.connect(_handle_state)
 
@@ -379,7 +383,10 @@ func _rollback() -> void:
 		return
 
 	# Ask all rewindables to submit their earliest inputs
-	_resim_from = NetworkTime.tick
+	# PATCH (see addons/NETFOX_PATCHES.md): start from where the tick loop
+	# started. NetworkTime.tick is already past every tick the loop ran, so
+	# starting from it simulated only the last tick of a loop that ran several.
+	_resim_from = _loop_start_tick
 	before_loop.emit()
 
 	# Figure out where to start rollback from

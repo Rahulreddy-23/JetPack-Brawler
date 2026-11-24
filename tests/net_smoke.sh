@@ -81,6 +81,12 @@ if grep -q "SCRIPT ERROR\|^ERROR" "$TMP/host.log" "$TMP/client.log"; then
 	echo "FAIL: errors in logs"; grep -h "SCRIPT ERROR\|^ERROR" "$TMP/host.log" "$TMP/client.log" | head; exit 1
 fi
 
+# An honest session never sends a packet over netfox's size limit, so a size
+# warning means the limit is too tight for an honest packet.
+if grep -q "Dropping .* byte packet" "$TMP/host.log" "$TMP/client.log"; then
+	echo "FAIL: a packet was dropped for size"; grep -h "Dropping .* byte packet" "$TMP/host.log" "$TMP/client.log" | head -3; exit 1
+fi
+
 # Compare the client bot (every peer id except the host's 1) tick by tick, only
 # on ticks where the comparison is meaningful. See compare_traces.py.
 # With simulated latency the strict one-step rule finds nothing, so compare the ticks that have

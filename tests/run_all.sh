@@ -32,8 +32,15 @@ echo "PASS  import"
 BASE="${PORT_BASE:-24990}"
 
 run movement   "$GODOT" --headless --path "$ROOT" res://tests/test_movement.tscn
-run input_flood "$GODOT" --headless --path "$ROOT" res://tests/test_input_flood.tscn
-run clock_hijack "$GODOT" --headless --path "$ROOT" res://tests/test_clock_hijack.tscn
+run input_flood env TEST_PORT="$((BASE + 0))" "$GODOT" --headless --path "$ROOT" res://tests/test_input_flood.tscn
+run clock_hijack env TEST_PORT="$((BASE + 2))" "$GODOT" --headless --path "$ROOT" res://tests/test_clock_hijack.tscn
+run netfox_host "$GODOT" --headless --path "$ROOT" res://tests/test_netfox_handlers.tscn -- --mode=host --port="$((BASE + 1))"
+run netfox_client "$GODOT" --headless --path "$ROOT" res://tests/test_netfox_handlers.tscn -- --mode=client --port="$((BASE + 40))"
+run host_hitch env PORT="$((BASE + 4))" "$ROOT/tests/net_hitch.sh"
+run slow_frames env TEST_PORT="$((BASE + 15))" "$GODOT" --headless --path "$ROOT" res://tests/test_slow_frames.tscn
+run netfox_diffs "$GODOT" --headless --path "$ROOT" res://tests/test_netfox_diffs.tscn -- --port="$((BASE + 41))"
+run full_state_coverage env TEST_PORT="$((BASE + 17))" "$GODOT" --headless --path "$ROOT" res://tests/test_full_state_coverage.tscn
+run host_diffs env PORT="$((BASE + 18))" "$ROOT/tests/net_diffs.sh"
 run menu_touch "$GODOT" --headless --path "$ROOT" --script res://tests/test_menu_touch.gd
 run touch_focus "$GODOT" --headless --path "$ROOT" --script res://tests/test_touch_focus.gd
 run main_touch "$GODOT" --headless --path "$ROOT" res://tests/test_main_touch.tscn -- --touch-ui --port="$((BASE + 13))"

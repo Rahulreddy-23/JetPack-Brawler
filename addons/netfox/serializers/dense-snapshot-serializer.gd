@@ -61,6 +61,11 @@ func read_from(peer: int, properties: _PropertyPool, buffer: StreamPeerBuffer, i
 	var tick := buffer.get_u32()
 	var snapshot := _Snapshot.new(tick)
 
+	# PATCH (see addons/NETFOX_PATCHES.md): an honest packet has a frame per
+	# subject, so a packet with more frames of unknown identity than there are
+	# subjects is not honest; drop the rest of it
+	var unknown_frames_left := properties.get_subjects_raw().size()
+
 	while buffer.get_available_bytes() > 0:
 		# Read identity reference, data size, and data
 		var idref := netref.decode(buffer) as _NetworkIdentityReference
@@ -71,7 +76,10 @@ func read_from(peer: int, properties: _PropertyPool, buffer: StreamPeerBuffer, i
 		var identifier := _get_identity_server()._resolve_reference(peer, idref)
 		if not identifier:
 			# TODO(#563): Handle unknown IDs gracefully
-			_logger.warning("Received unknown identity reference %s from #%s, skipping data", [idref, peer])
+			_warn_peer(peer, "Received unknown identity reference %s from #%s, skipping data", [idref, peer])
+			unknown_frames_left -= 1
+			if unknown_frames_left < 0:
+				break
 			continue
 		var node := identifier.get_subject() as Node
 		assert(is_instance_valid(node), "Where node?")

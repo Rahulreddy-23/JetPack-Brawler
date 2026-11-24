@@ -251,7 +251,12 @@ func _discipline_clock() -> void:
 		_offset = offset - nudge
 
 func _handle_ping(sender: int, data: PackedByteArray) -> void:
-	var idx := bytes_to_var(data) as int
+	# PATCH (see addons/NETFOX_PATCHES.md): a malformed payload is not an index.
+	var decoded: Variant = bytes_to_var(data)
+	if typeof(decoded) != TYPE_INT:
+		return
+
+	var idx := decoded as int
 	var ping_received := _clock.get_time()
 
 	_cmd_pong.send(var_to_bytes([idx, ping_received, _clock.get_time()]), sender)

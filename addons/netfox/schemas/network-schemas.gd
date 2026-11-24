@@ -75,7 +75,7 @@ static func uint64() -> NetworkSchemaSerializer:
 static func varuint() -> NetworkSchemaSerializer:
 	return _VaruintSerializer.instance
 
-static func _varbits() -> NetworkSchemaSerializer:
+static func _varbits() -> _VariableBitsetSerializer:
 	return _VariableBitsetSerializer.instance
 
 ## Serialize signed integers as 8 bits.
@@ -610,9 +610,19 @@ class _VariableBitsetSerializer extends NetworkSchemaSerializer:
 			b.put_u8(byte)
 
 	func decode(b: StreamPeerBuffer) -> Variant:
+		return decode_limited(b, b.get_available_bytes() * 7)
+
+	# PATCH (see addons/NETFOX_PATCHES.md): read at most the bytes needed for
+	# max_bits bits and never past the end of the buffer. Returns null when the
+	# bitset is longer than that or the buffer ends first, so a run of
+	# continuation bytes cannot cost more than the caller allows.
+	func decode_limited(b: StreamPeerBuffer, max_bits: int) -> Variant:
 		var bools := []
 
-		while true:
+		for __ in (max_bits + 6) / 7:
+			if b.get_available_bytes() == 0:
+				return null
+
 			var byte := b.get_u8()
 
 			bools.append(byte & 0x01)
@@ -625,9 +635,9 @@ class _VariableBitsetSerializer extends NetworkSchemaSerializer:
 
 			# Stop if no more data to read
 			if byte & 0x80 == 0:
-				break
+				return _Bitset.of_bools(bools)
 
-		return _Bitset.of_bools(bools)
+		return null
 
 class _Float16Serializer extends NetworkSchemaSerializer:
 	func encode(v: Variant, b: StreamPeerBuffer) -> void:
