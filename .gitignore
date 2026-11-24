@@ -5,3 +5,4 @@
 *.apk
 *.aab
 .DS_Store
+.claude/worktrees/
