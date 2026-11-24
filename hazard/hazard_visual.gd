@@ -1,3 +1,4 @@
+class_name HazardVisual
 extends ColorRect
 ## Flat rectangle for the rising metal. The caller sets floor_y and arena_width once,
 ## position.x to the arena's left edge, and calls set_surface_y() each frame.

@@ -12,13 +12,10 @@ func _ready() -> void:
 	var cfg: TuningConfig = TuningConfig.get_default()
 	var px: float = cfg.bot_height_px
 	var bounds: Rect2 = layout.bounds
-	var t: float = layout.wall_thickness
 
 	_add_visual(Rect2(bounds.position * px, bounds.size * px), Color.DARK_SLATE_GRAY)
-	_add_body(Rect2(-t, -t, t, bounds.size.y + 2.0 * t), false, Color.DIM_GRAY)
-	_add_body(Rect2(bounds.size.x, -t, t, bounds.size.y + 2.0 * t), false, Color.DIM_GRAY)
-	_add_body(Rect2(0.0, bounds.size.y, bounds.size.x, t), false, Color.DIM_GRAY)
-	_add_body(Rect2(0.0, -t, bounds.size.x, t), false, Color.DIM_GRAY)
+	for rect: Rect2 in layout.wall_rects():
+		_add_body(rect, false, Color.DIM_GRAY)
 	for rect: Rect2 in layout.solids:
 		_add_body(rect, false, Color.SLATE_GRAY)
 	for rect: Rect2 in layout.thins:

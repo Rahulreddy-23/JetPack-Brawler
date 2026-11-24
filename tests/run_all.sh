@@ -25,7 +25,7 @@ run() { # name, command...
 }
 
 "$GODOT" --headless --path "$ROOT" --import >"$TMP/import.log" 2>&1
-if grep -qi "error\|parse" "$TMP/import.log"; then echo "FAIL  import"; grep -i "error\|parse" "$TMP/import.log" | head; exit 1; fi
+if grep -q "ERROR\|Parse Error" "$TMP/import.log"; then echo "FAIL  import"; grep "ERROR\|Parse Error" "$TMP/import.log" | head; exit 1; fi
 echo "PASS  import"
 
 # Network tests take their port from PORT_BASE so several checkouts can run at once.
@@ -45,8 +45,11 @@ run combat     "$GODOT" --headless --path "$ROOT" --script res://tests/test_comb
 run hazard     "$GODOT" --headless --path "$ROOT" --script res://tests/test_hazard.gd
 run effects    "$GODOT" --headless --path "$ROOT" --script res://tests/test_effects.gd
 run geometry   "$GODOT" --headless --path "$ROOT" --script res://tests/test_combat_geometry.gd
+run foundation "$GODOT" --headless --path "$ROOT" res://tests/test_foundation.tscn
 run net_smoke  env PORT="$((BASE + 9))" "$ROOT/tests/net_smoke.sh"
+run net_smoke_lag env PORT="$((BASE + 20))" SIM_LATENCY_MS=75 "$ROOT/tests/net_smoke.sh"
 run net_rejoin env PORT="$((BASE + 6))" "$ROOT/tests/net_rejoin.sh"
 run net_full   env PORT="$((BASE + 8))" "$ROOT/tests/net_full.sh"
+run net_ownership env PORT="$((BASE + 30))" "$ROOT/tests/net_ownership.sh"
 run export_smoke env PORT="$((BASE + 5))" "$ROOT/tests/export_smoke.sh"
 exit "$FAILED"

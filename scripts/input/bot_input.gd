@@ -5,7 +5,7 @@ extends Node
 ## Per netfox guidance, values are recorded after each network tick: held
 ## values are sampled, one-off presses are latched until the next tick.
 
-## These four are Variant on purpose: a remote client can send any type, and the
+## These are Variant on purpose: a remote client can send any type, and the
 ## bot treats a wrong type as neutral input (see Bot.clean_vector).
 ## Left stick: x runs, y up fires the jetpack, y down drops through thin platforms.
 var move: Variant = Vector2.ZERO
@@ -15,7 +15,17 @@ var aim: Variant = Vector2.ZERO
 var jet: Variant = false
 ## True if the dash button was pressed at any frame since the last tick.
 var dash: Variant = false
+## True while the fire button (or the aim stick past its outer ring) is held. Gathered by task F.
+var fire: Variant = false
+## True for the one tick after a melee request (quick tap on the aim stick or the melee button).
+var melee: Variant = false
+## True for the one tick after the gadget button was pressed.
+var gadget: Variant = false
+## True for the one tick after the weapon swap icon was pressed.
+var swap: Variant = false
 
+## True for the dummy bot: nobody plays it, so it gathers nothing and its input stays neutral.
+var dummy: bool = false
 ## Scripted input for the network smoke test (set by the launcher).
 var autopilot: bool = false
 ## Ticks to wait after spawning before the autopilot script starts.
@@ -40,7 +50,7 @@ func _enter_tree() -> void:
 		NetworkTime.after_tick.connect(_on_after_tick)
 
 func _process(_delta: float) -> void:
-	if not is_multiplayer_authority():
+	if dummy or not is_multiplayer_authority():
 		return
 	if Input.get_action_strength(InputActions.MOVE_UP) > _cfg.stick_digital_threshold:
 		_jet_latch = true
@@ -48,7 +58,7 @@ func _process(_delta: float) -> void:
 		_dash_latch = true
 
 func _on_after_tick(_delta: float, tick: int) -> void:
-	if not is_multiplayer_authority():
+	if dummy or not is_multiplayer_authority():
 		return
 	if autopilot:
 		_gather_autopilot(tick)

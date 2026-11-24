@@ -4,6 +4,12 @@
 [ext_resource type="Script" path="res://scripts/input/bot_input.gd" id="2"]
 [ext_resource type="Script" path="res://addons/netfox/rollback/rollback-synchronizer.gd" id="3"]
 [ext_resource type="Script" path="res://addons/netfox/tick-interpolator.gd" id="4"]
+[ext_resource type="Script" path="res://scripts/game/bot_vitals.gd" id="5"]
+[ext_resource type="Script" path="res://scripts/game/bot_arsenal.gd" id="6"]
+[ext_resource type="Script" path="res://scripts/game/bot_gadgets.gd" id="7"]
+[ext_resource type="Script" path="res://scripts/game/bot_visual.gd" id="8"]
+[ext_resource type="Script" path="res://effects/hit_freeze.gd" id="9"]
+[ext_resource type="Script" path="res://effects/hit_flash.gd" id="10"]
 
 [node name="Bot" type="CharacterBody2D"]
 collision_layer = 4
@@ -16,11 +22,29 @@ script = ExtResource("1")
 [node name="Input" type="Node" parent="."]
 script = ExtResource("2")
 
+[node name="Vitals" type="Node" parent="."]
+script = ExtResource("5")
+
+[node name="Arsenal" type="Node" parent="."]
+script = ExtResource("6")
+
+[node name="Gadgets" type="Node" parent="."]
+script = ExtResource("7")
+
+[node name="Visual" type="Node2D" parent="."]
+script = ExtResource("8")
+
+[node name="HitFreeze" type="Node" parent="Visual"]
+script = ExtResource("9")
+
+[node name="HitFlash" type="Node" parent="Visual"]
+script = ExtResource("10")
+
 [node name="RollbackSynchronizer" type="Node" parent="." node_paths=PackedStringArray("root")]
 script = ExtResource("3")
 root = NodePath("..")
-state_properties = Array[String]([":global_position", ":velocity", ":fuel", ":thrust_level", ":dash_left", ":dash_cooldown_left", ":dash_dir", ":jet_buffer", ":jet_held_prev", ":dash_buffer", ":wall_grace_left", ":wall_nx", ":facing", ":drop_left", ":aim_dir"])
-input_properties = Array[String](["Input:move", "Input:aim", "Input:jet", "Input:dash"])
+state_properties = Array[String]([":global_position", ":velocity", ":fuel", ":thrust_level", ":dash_left", ":dash_cooldown_left", ":dash_dir", ":jet_buffer", ":jet_held_prev", ":dash_buffer", ":wall_grace_left", ":wall_nx", ":facing", ":drop_left", ":aim_dir", "Vitals:health", "Vitals:knocked_out", "Vitals:respawn_tick", "Vitals:ko_serial", "Vitals:hits_taken", "Vitals:last_hit_push", "Vitals:last_hit_damage", "Vitals:last_attacker", "Vitals:last_attack_tick", "Vitals:knockouts", "Vitals:push_until_tick", "Arsenal:active_slot", "Arsenal:picked_weapon", "Arsenal:picked_ammo", "Arsenal:fire_ready_tick", "Arsenal:last_shot_tick", "Arsenal:shots_fired", "Arsenal:shot_dir", "Arsenal:melee_ready_tick", "Arsenal:last_melee_tick", "Arsenal:melee_serial", "Gadgets:gadget_a", "Gadgets:gadget_b", "Gadgets:gadget_ready_tick", "Gadgets:last_gadget_tick", "Gadgets:last_gadget_id", "Gadgets:gadget_dir", "Gadgets:gadget_serial"])
+input_properties = Array[String](["Input:move", "Input:aim", "Input:jet", "Input:dash", "Input:fire", "Input:melee", "Input:gadget", "Input:swap"])
 
 [node name="TickInterpolator" type="Node" parent="." node_paths=PackedStringArray("root")]
 script = ExtResource("4")

@@ -59,6 +59,8 @@ func _server_spawn(id: int) -> void:
 		return
 	spawn({"peer_id": id, "slot": _free_slot()})
 
+# A player's slot: the lowest of 0 to max_players - 1 that no bot uses. The dummy's slot
+# (max_players) is never handed out.
 func _free_slot() -> int:
 	var used: Array[int] = []
 	for bot: Bot in _bots.values():
@@ -72,12 +74,16 @@ func _free_slot() -> int:
 func _spawn_bot(data: Variant) -> Node:
 	var info: Dictionary = data as Dictionary
 	var peer_id: int = info.get("peer_id", 0) as int
-	var slot: int = clampi(info.get("slot", 0) as int, 0, _cfg.max_players - 1)
+	# Slots 0 to max_players - 1 belong to players; the slot max_players is the dummy's.
+	var slot: int = clampi(info.get("slot", 0) as int, 0, _cfg.max_players)
 	var bot: Bot = bot_scene.instantiate() as Bot
 	bot.peer_id = peer_id
 	bot.slot = slot
 	bot.name = "Bot%d" % peer_id
-	bot.position = layout.spawns[slot % layout.spawns.size()] * _cfg.bot_height_px
+	if slot == _cfg.max_players:
+		bot.position = layout.dummy_spawn * _cfg.bot_height_px
+	else:
+		bot.position = layout.spawns[slot % layout.spawns.size()] * _cfg.bot_height_px
 	# The server owns the bot. The player owns only the input node.
 	bot.set_multiplayer_authority(1)
 	var input: BotInput = bot.get_node("Input") as BotInput

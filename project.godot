@@ -29,6 +29,7 @@ NetworkIdentityServer="*res://addons/netfox/servers/network-identity-server.gd"
 NetworkCommandServer="*res://addons/netfox/servers/network-command-server.gd"
 RollbackLivenessServer="*res://addons/netfox/servers/rollback-liveness-server.gd"
 InterpolationServer="*res://addons/netfox/servers/interpolation-server.gd"
+MatchSettings="*res://scripts/game/match_settings.gd"
 
 [debug]
 
@@ -62,6 +63,8 @@ logging/log_level=3
 logging/netfox_log_level=3
 time/tickrate=30
 rollback/enable_input_broadcast=false
+rollback/enable_diff_states=false
+rollback/input_redundancy=4
 
 [rendering]
 

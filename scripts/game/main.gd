@@ -8,6 +8,7 @@ var _cfg: TuningConfig = TuningConfig.get_default()
 var _args: LaunchArgs = LaunchArgs.new()
 var _local_bot: Bot = null
 var _probe: SmokeProbe = null
+var _sim: NetSim = null
 var _role: String = "menu"
 var _joined_text: String = ""
 var _touch_capable: bool = false
@@ -70,6 +71,12 @@ func _on_host() -> void:
 		_menu.show_menu("Could not host: %s" % error_string(err))
 		return
 	_role = "host"
+	if _args.simulates_network():
+		_sim = NetSim.new()
+		add_child(_sim)
+		_sim.start(_port(), _args.sim_latency_ms, _args.sim_loss)
+	# Phase 1 has no rounds: the hazard cycle counts from the moment the host starts.
+	MatchSettings.start_round(NetworkTime.tick)
 	_touch.visible = _touch_capable
 	var addresses: PackedStringArray = Session.local_ipv4_addresses()
 	var text: String = "Hosting on %s port %d" % [", ".join(addresses) if not addresses.is_empty() else "no network address found", _port()]
@@ -82,7 +89,9 @@ func _on_join(address: String) -> void:
 	if not address.is_valid_ip_address():
 		_menu.show_menu("Type the host's IP address, for example 192.168.1.20.")
 		return
-	var err: Error = _session.join(address, _port())
+	# A client that simulates latency talks to the host's proxy, one port up.
+	var join_port: int = _port() + 1 if _args.simulates_network() else _port()
+	var err: Error = _session.join(address, join_port)
 	if err != OK:
 		_menu.show_menu("Could not connect: %s" % error_string(err))
 		return
@@ -100,6 +109,9 @@ func _on_session_ended(message: String) -> void:
 	_return_to_menu(message)
 
 func _return_to_menu(message: String) -> void:
+	if _sim != null:
+		_sim.free()
+		_sim = null
 	_spawner.clear()
 	_local_bot = null
 	_hud.bot = null
