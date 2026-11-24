@@ -9,12 +9,16 @@ Current stage: Prototype, phase 1. Gate not passed.
       (`5135ef6`). Not yet played on a phone.
 - [x] Modules built and reviewed, merged (`cbcb8e4`), not yet wired into the game: combat
       maths, hazard, impact effects, hit-test geometry.
-- [ ] 1.1b-N netfox hardening that does not hurt honest play (in progress).
-- [ ] 1.1b-G fixes accepted from the geminiceo audit in the game scripts (in progress).
-- [ ] Experiment E1: a host-decided hit survives re-simulation (in progress). Tasks B to F
-      do not start until it passes.
+- [x] 1.1b-G fixes accepted from the geminiceo audit in the game scripts. Merged (`cf94537`).
+- [x] Experiment E1. Host-decided hits are idempotent; clients kept wrong values with
+      netfox diff states on. See `docs/ARCHITECTURE.md`, "E1 results".
+- [ ] 1.1b-N netfox hardening. Built; second fix round in progress after review: netfox
+      skips ticks on frames slower than one tick, diff states merge onto the client's guess,
+      and one cheap host freeze remains.
+- [ ] Fifth-player test fails about 1 run in 9; fix in progress.
+- [ ] A Foundation and contracts. Built; in review. Open problem: with diff states off the
+      idle pool of world objects costs about 232 KB/s per player.
 - [ ] Device checkpoint 1 (Rahul): sticks, jetpack and dash on two phones over a hotspot.
-- [ ] A Foundation and contracts (see `docs/ARCHITECTURE.md`).
 - [ ] B Combat core, hazard wiring, dummy, push window.
 - [ ] C Weapons, melee, pickups.
 - [ ] D World objects and gadgets.

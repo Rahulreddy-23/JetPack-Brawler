@@ -16,8 +16,8 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `78f7e99` | 24 Nov 2026 20:30 | One reviewer commit, `78f7e99` (finding D-5, accepted). `d273544` only merges `main` into `dev`. |
-| `geminiceo` | `e66eee1` | 24 Nov 2026 18:50 | Audit verified against the current code and decided finding by finding; see "geminiceo audit" below. |
+| `dev` | `3ac46a8` | 24 Nov 2026 21:01 | No reviewer changes since `78f7e99` (finding D-5); `3ac46a8` only merges `main` into `dev`. |
+| `geminiceo` | `e66eee1` | 24 Nov 2026 21:01 | No commits since the audit, which is decided finding by finding below. |
 
 ## Findings
 
