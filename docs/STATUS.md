@@ -16,14 +16,13 @@ Current stage: Prototype, phase 1. Gate not passed.
       skips ticks on frames slower than one tick, diff states merge onto the client's guess,
       and one cheap host freeze remains.
 - [ ] Fifth-player test fails about 1 run in 9; fix in progress.
-- [ ] A Foundation and contracts. Built; in review. Open problem: with diff states off the
-      idle pool of world objects costs about 232 KB/s per player.
-- [ ] Device checkpoint 1 (Rahul): sticks, jetpack and dash on two phones over a hotspot.
-- [ ] B Combat core, hazard wiring, dummy, push window.
-- [ ] C Weapons, melee, pickups.
-- [ ] D World objects and gadgets.
-- [ ] E Presentation: effects wired to state counters.
-- [ ] F Input and HUD for fire, melee, gadget, swap.
+- [x] A Foundation and contracts. Reviewed, merged (`afc2eee`). No gameplay rule yet; the
+      game still plays as movement only.
+- [ ] B Combat core, hazard wiring, dummy, push window (in progress).
+- [ ] C Weapons, melee, pickups (in progress).
+- [ ] D World objects and gadgets (in progress).
+- [ ] E Presentation: effects wired to state counters (in progress).
+- [ ] F Input and HUD for fire, melee, gadget, swap (in progress).
 - [ ] Device checkpoint 2 (Rahul): the knockback sandbox, 10 minutes of play.
 - [ ] 1.6 Dabba fight, built last.
 - [ ] Phase review and `docs/reviews/phase-1-handoff.md`.
