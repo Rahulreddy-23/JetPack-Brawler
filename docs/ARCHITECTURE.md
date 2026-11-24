@@ -157,6 +157,9 @@ parallel, each in its own files against A's stubs.
   applying the same tick twice from restored state gives identical results; a hazard knockout
   lands on the tick `HazardMath` predicts; a two-process run at 75 ms where host and client
   agree on the knockout tick, `ko_serial` and respawn tick.
+  Also check a non-bullet push applied after a dash tick. It must change movement on the next
+  tick and survive dash exit. `_tick_dash()` currently sets velocity for each dash tick and
+  sets it again on exit, so a push applied only to `velocity` would be erased.
 - C. Weapons, melee, pickups. Owns `bot_arsenal.gd`, `weapon_rules.gd`, `pickups.gd`. Checks:
   exact fire cadence, ammo run-down and fall-back to the rivet gun, exact recoil, nearest
   target wins, walls block, deterministic pellets, no bullet hit on a dashing bot, melee arc
