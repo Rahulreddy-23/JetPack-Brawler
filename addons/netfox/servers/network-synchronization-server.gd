@@ -391,7 +391,18 @@ func _ready() -> void:
 	elif is_instance_valid(multiplayer):
 		multiplayer.peer_disconnected.connect(erase_peer)
 
+func _is_packet_rejected(sender: int, data: PackedByteArray) -> bool:
+	var limit: int = maxi(_max_packet_size * 4, 4096)
+	if data.is_empty():
+		return true
+	if data.size() > limit:
+		_logger.warning("Dropping oversized sync packet (%d bytes, limit %d) from #%d", [data.size(), limit, sender])
+		return true
+	return false
+
 func _handle_input(sender: int, data: PackedByteArray) -> void:
+	if _is_packet_rejected(sender, data):
+		return
 	var buffer := StreamPeerBuffer.new()
 	buffer.data_array = data
 
@@ -399,12 +410,16 @@ func _handle_input(sender: int, data: PackedByteArray) -> void:
 
 	for snapshot in snapshots:
 		snapshot.sanitize(sender)
+		if snapshot.is_empty():
+			continue
 
 		_logger.trace("Ingesting input: %s", [snapshot])
 		if NetworkHistoryServer._merge_rollback_input(snapshot):
 			_on_input.emit(snapshot)
 
 func _handle_full_state(sender: int, data: PackedByteArray) -> void:
+	if _is_packet_rejected(sender, data):
+		return
 	var buffer := StreamPeerBuffer.new()
 	buffer.data_array = data
 
@@ -413,6 +428,8 @@ func _handle_full_state(sender: int, data: PackedByteArray) -> void:
 	_ingest_state(sender, snapshot)
 
 func _handle_diff_state(sender: int, data: PackedByteArray) -> void:
+	if _is_packet_rejected(sender, data):
+		return
 	var buffer := StreamPeerBuffer.new()
 	buffer.data_array = data
 
@@ -422,27 +439,37 @@ func _handle_diff_state(sender: int, data: PackedByteArray) -> void:
 	_ingest_state(sender, diff)
 
 func _handle_full_sync(sender: int, data: PackedByteArray) -> void:
+	if _is_packet_rejected(sender, data):
+		return
 	var buffer := StreamPeerBuffer.new()
 	buffer.data_array = data
 
 	var snapshot := _dense_serializer.read_from(sender, _sync_state_properties, buffer, true)
 	snapshot.sanitize(sender)
+	if snapshot.is_empty():
+		return
 
 	NetworkHistoryServer._merge_synchronizer_state(snapshot)
 	_logger.trace("Ingested sync state: %s", [snapshot])
 
 func _handle_diff_sync(sender: int, data: PackedByteArray) -> void:
+	if _is_packet_rejected(sender, data):
+		return
 	var buffer := StreamPeerBuffer.new()
 	buffer.data_array = data
 
 	var snapshot := _sparse_serializer.read_from(sender, _sync_state_properties, buffer)
 	snapshot.sanitize(sender)
+	if snapshot.is_empty():
+		return
 
 	NetworkHistoryServer._merge_synchronizer_state(snapshot)
 	_logger.trace("Ingested sync diff: %s", [snapshot])
 
 func _ingest_state(sender: int, snapshot: _Snapshot) -> void:
 	snapshot.sanitize(sender)
+	if snapshot.is_empty():
+		return
 
 	if NetworkHistoryServer._merge_rollback_state(snapshot):
 		_on_state.emit(snapshot)

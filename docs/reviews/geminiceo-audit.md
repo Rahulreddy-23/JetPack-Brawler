@@ -182,3 +182,62 @@ Synced `geminiceo` with `origin/main` (`e75514d`) and aligned `_can_merge_tick`'
 ### CEO Note (Iteration 1)
 - All three product recommendations from the first audit (push window so ground braking does not cancel knockback, Dabba deferred until after the 10-minute phone sandbox test, and early phone test of touch controls after Task 1.1) are now recorded in `docs/DECISIONS.md`.
 - Keep the focus strictly on merging Task 1.1 to `main` and getting the Android Debug APK onto two phones for Rahul's touch-stick and hotspot check before Task F adds four more buttons.
+
+---
+
+## Iteration 2/3 Audit (24 Nov 2026 23:20, after `origin/main` `8ec8146`)
+
+Merged `origin/main` (`8ec8146`, covering Tasks A, B, C, F, `12394b2`, `cf94537`, and D-4 through D-9) into `geminiceo` and audited all new combat, weapon, pickup, match-settings, HUD, touch-input, and session scripts.
+
+### New Confirmed Findings (All Fixed & Regression-Tested on `geminiceo`)
+
+#### 15. Rocket muzzle spawns inside solid walls when firing flush against a wall
+- **Severity:** high
+- **Category:** Crashes and logic bugs / Gameplay
+- **Location:** `scripts/game/weapon_rules.gd:45-50` (`_collect_shot`)
+- **What happens and how to trigger it:** When a bot stands flush against a solid wall or column (such as Smelter's 1-bh columns at `x = 11` and `x = 28`, left face at `704 px`) and shoots the Festival Rocket Tube into the wall, `muzzle = origin + dir * (leave + stats.projectile_radius * px)` places the rocket 16 px (`0.25 * 64`) inside the solid wall (`x = 720 px`), bypassing the wall face before Task D's flight/contact code runs.
+- **Suggested fix:** Cast `CombatGeometry.cast(origin, muzzle, solids)` and clamp `muzzle = origin.lerp(muzzle, wall.t)` when `wall.index >= 0 and wall.t < 1.0`. *(Fixed on `geminiceo`; tested in `tests/test_security_audit.gd`.)*
+
+#### 16. Server-side full-room rejection timer lacks tree/peer guard (server counterpart of D-7)
+- **Severity:** high
+- **Category:** Crashes and logic bugs
+- **Location:** `scripts/net/session.gd:81-90` (`_on_peer_join`)
+- **What happens and how to trigger it:** Finding D-7 guarded the client-side deferred close (`_close_rejected_peer`) against leaving/re-hosting before the deferred work runs, but `_on_peer_join` on the server still awaits `get_tree().create_timer(_cfg.reject_notice_seconds).timeout` and then unconditionally accesses `multiplayer.get_peers()` and `multiplayer.multiplayer_peer`. If the host leaves and `Session` exits the tree or starts a new server peer within `0.5 s`, the resumed coroutine errors on null `multiplayer` or operates on the wrong peer.
+- **Suggested fix:** Capture `var server_peer: MultiplayerPeer = multiplayer.multiplayer_peer` before the `await` and check `is_inside_tree() and multiplayer.multiplayer_peer == server_peer and multiplayer.get_peers().has(id)` after it. *(Fixed on `geminiceo`; tested in `tests/test_security_audit.gd`.)*
+
+#### 17. Pickup cycle reset is missed if a host stall skips the exact boundary tick
+- **Severity:** medium
+- **Category:** Crashes and logic bugs
+- **Location:** `scripts/game/pickups.gd:41-45` (`resolve`)
+- **What happens and how to trigger it:** Unlike `BotVitals` (which tracks `cycle_index` specifically so a skipped tick cannot lose a cycle reset), `Pickups.resolve` checks `MatchSettings.hazard_ticks(tick) == 0`. If the host stalls over tick `1350` (resuming at `1352`), any pickup spot taken near the end of cycle 0 stays on its 15-second cooldown into cycle 1.
+- **Suggested fix:** Compute `cycle_start = tick - into_cycle` and reset any spot whose `ready_tick > cycle_start` and `ready_tick - respawn_ticks < cycle_start` (was taken in an earlier cycle) to `cycle_start`. Zero new state properties and rollback-idempotent. *(Fixed on `geminiceo`; tested in `tests/test_security_audit.gd`.)*
+
+#### 18. HUD does not redraw on viewport resize and lacks `_max_health > 0.0` guard
+- **Severity:** medium
+- **Category:** Crashes and logic bugs
+- **Location:** `scripts/ui/hud.gd:36-39, 85`
+- **What happens and how to trigger it:** `Hud._ready()` does not connect `resized.connect(queue_redraw)`. When a phone rotates or window resizes while bot state is unchanged, the right-aligned weapon/gadget lines (`size.x - 2.0 * _cfg.hud_margin_px`) stay drawn at the old width. Also `_health / _max_health` divides by zero if `_max_health <= 0.0`.
+- **Suggested fix:** Connect `resized.connect(queue_redraw)` in `_ready()` and guard `_max_health > 0.0` before dividing. *(Fixed on `geminiceo`; tested in `tests/test_security_audit.gd`.)*
+
+#### 19. Quick flick curving past the fire ring fires at the initial crossing angle instead of release angle
+- **Severity:** medium
+- **Category:** Crashes and logic bugs
+- **Location:** `scripts/ui/touch_controls.gd:193-199` (`_update_aim`)
+- **What happens and how to trigger it:** `_update_aim` only wrote `InputActions.pending_touch_fire_aim` when `not was_firing and _is_fire_held()`. If a player flicks past the fire ring in one direction, curves their thumb to a new aim direction while still past the ring, and lifts before the next network tick (< 33 ms), the shot fires along the stale initial crossing angle.
+- **Suggested fix:** Update `InputActions.pending_touch_fire_aim = _aim.value(_cfg.stick_radius_px)` whenever `_is_fire_held()` is true. *(Fixed on `geminiceo`; tested in `tests/test_security_audit.gd`.)*
+
+#### 20. Accepted netfox hardening (`1.1b-N`) still unmerged on `origin/main` (`8ec8146`)
+- **Severity:** critical (2.26 s / 837 ms single-packet host freeze DoS)
+- **Category:** Denial of service / Network trust
+- **Location:** `addons/netfox/schemas/network-schemas.gd`, `addons/netfox/serializers/redundant-snapshot-serializer.gd`, `addons/netfox/serializers/sparse-snapshot-serializer.gd`, `addons/netfox/servers/network-synchronization-server.gd`, `addons/netfox/servers/data/snapshot.gd`, `addons/netfox/servers/data/network-identifier.gd`, `addons/netfox/network-time-synchronizer.gd`
+- **Status:** Accepted in `docs/reviews/phase-1-findings.md` (G-2b, G-2c, G-3a, G-3b, G-4, G-5, G-6) but not yet merged to `main`; re-applied cleanly on `geminiceo` with strict assertions in `tests/test_security_audit.tscn`.
+
+### Areas With No New Findings
+- **Combat rules (`combat_rules.gd`, `bot_vitals.gd`, `bot_arsenal.gd`):** Clean deterministic hit sorting, `0 <= age <= window` knockout credit, trade handling, and finite guards.
+- **Desync:** None found in Tasks A/B/C/F.
+- **Purchases/unlocks, Android/privacy, Repository hygiene:** None found.
+
+### CEO Review (Iteration 2/3)
+1. **Huge velocity and discipline:** Tasks A, B, C, and F are all merged on `main` with 500+ passing automated checks, `server_relay = false` enforced, and D-4..D-9 incorporated cleanly.
+2. **Watch bandwidth immediately (`232 KB/s` per player with diff states off!):** `docs/reviews/phase-1-findings.md` D-5 notes that disabling `enable_diff_states` pushed the idle `WorldObjects` pool to ~232 KB/s per player (~700 KB/s host upload for 4 players, ~1.6 MB/s for 8 players!). That is a **ship-blocker** for Indian 4G/hotspot play. Prioritize fixing the netfox diff-merge bug (`worktree-agent-abdc8cb18a9ad9d79`) and merging `1.1b-N` right after Tasks D and E so bandwidth drops back near the 20 KB/s target before the Phase 1 phone playtest.
+3. **Next milestone:** Once Task D (Cooker Bomb, Spring Plate, rocket flight) and Task E (hit freeze, flash, parts burst, shake, rising metal visual) land, put the APK on two Android phones immediately and run the 10-minute knockback fun test before touching Dabba (Task 1.6).

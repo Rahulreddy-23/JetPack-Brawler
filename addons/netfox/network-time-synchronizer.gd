@@ -251,7 +251,12 @@ func _discipline_clock() -> void:
 		_offset = offset - nudge
 
 func _handle_ping(sender: int, data: PackedByteArray) -> void:
-	var idx := bytes_to_var(data) as int
+	if data.is_empty():
+		return
+	var raw_idx: Variant = bytes_to_var(data)
+	if typeof(raw_idx) != TYPE_INT:
+		return
+	var idx: int = raw_idx as int
 	var ping_received := _clock.get_time()
 
 	_cmd_pong.send(var_to_bytes([idx, ping_received, _clock.get_time()]), sender)

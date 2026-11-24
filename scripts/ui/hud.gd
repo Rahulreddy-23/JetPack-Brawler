@@ -36,6 +36,7 @@ var _gadget_b: int = ItemIds.NONE
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	resized.connect(queue_redraw)
 
 func _process(_delta: float) -> void:
 	# Redraw only when something the HUD shows has changed.
@@ -82,7 +83,7 @@ func _draw() -> void:
 	draw_string(font, dash_center + Vector2(-radius, -radius - font_size / 2.0), "DASH", HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size)
 
 	var health_origin: Vector2 = origin + Vector2(0.0, _cfg.hud_gauge_size_px.y + _cfg.hud_margin_px + font_size + font_size)
-	_draw_gauge(Rect2(health_origin, _cfg.hud_gauge_size_px), _health / _max_health, Color.RED)
+	_draw_gauge(Rect2(health_origin, _cfg.hud_gauge_size_px), _health / _max_health if _max_health > 0.0 else 0.0, Color.RED)
 	draw_string(font, health_origin + Vector2(0.0, -font_size / 2.0), health_text(), HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size)
 
 	var lines: PackedStringArray = info_lines()

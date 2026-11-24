@@ -38,10 +38,16 @@ func spots() -> Array[PickupSpot]:
 ## takes it, and set the spot's ready_tick. bots are not assumed to be sorted. Writes state
 ## only. The dummy never picks anything up.
 func resolve(tick: int, bots: Array[Bot], cfg: TuningConfig) -> void:
-	# Phase 1 test scaffolding: when the hazard cycle restarts, every spot is on offer again.
-	if MatchSettings.hazard_ticks(tick) == 0 and tick > MatchSettings.round_start_tick:
-		for spot: PickupSpot in _spots:
-			spot.ready_tick = mini(spot.ready_tick, tick)
+	# Phase 1 test scaffolding: when the hazard cycle restarts, every spot taken in an earlier
+	# cycle is on offer again, even if a stall skipped the exact cycle-boundary tick.
+	var into_cycle: int = MatchSettings.hazard_ticks(tick)
+	var respawn_ticks: int = WeaponRules.seconds_to_ticks(cfg.pickup_respawn_time, cfg)
+	if into_cycle >= 0:
+		var cycle_start: int = tick - into_cycle
+		if cycle_start > MatchSettings.round_start_tick:
+			for spot: PickupSpot in _spots:
+				if into_cycle == 0 or spot.ready_tick - respawn_ticks < cycle_start:
+					spot.ready_tick = mini(spot.ready_tick, cycle_start)
 	var radius: float = cfg.pickup_radius * cfg.bot_height_px
 	for spot: PickupSpot in _spots:
 		if tick < spot.ready_tick:

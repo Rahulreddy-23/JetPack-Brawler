@@ -105,3 +105,21 @@ fail without the patch and pass with it.
  
  	_logger.debug("Received initial timestamp @ %.4fs raw time", [_clock.get_raw_time()])
 ```
+
+## 3. Packet hardening (accepted findings G-2b, G-2c, G-3a, G-3b, G-4, G-5, G-6)
+
+- Files:
+  - `addons/netfox/servers/data/snapshot.gd` (`sanitize`)
+  - `addons/netfox/servers/network-synchronization-server.gd` (`_is_packet_rejected`, `_handle_*`, `_ingest_state`)
+  - `addons/netfox/serializers/sparse-snapshot-serializer.gd` (`read_from`)
+  - `addons/netfox/serializers/redundant-snapshot-serializer.gd` (`read_from`)
+  - `addons/netfox/schemas/network-schemas.gd` (`_VariableBitsetSerializer.decode`)
+  - `addons/netfox/servers/data/network-identifier.gd` (`set_id_for`)
+  - `addons/netfox/network-time-synchronizer.gd` (`_handle_ping`)
+- Why: Bound `_VariableBitsetSerializer.decode` (fixes 2.26 s freeze on 300 KB
+  `0x80` packet), bound redundant input snapshot loops and incoming sync packet
+  sizes with a warning on drop (fixes 837 ms freeze on 64 KB zero-filled packet),
+  bounds-check `node_props[idx]` in sparse diff decoding, clear `_auth_subjects`
+  and skip empty snapshots after `sanitize(sender)`, ignore conflicting peer IDs
+  instead of asserting, and type-check `_handle_ping` before `as int`.
+- Test: `tests/test_security_audit.tscn`.

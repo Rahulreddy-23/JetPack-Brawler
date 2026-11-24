@@ -83,6 +83,10 @@ func read_from(peer: int, properties: _PropertyPool, buffer: StreamPeerBuffer, i
 		# Read changed properties
 		var node_props := properties.get_properties_of(node)
 		for idx in changed_bits.get_set_indices():
+			if idx < 0 or idx >= node_props.size():
+				continue
+			if node_buffer.get_available_bytes() == 0:
+				break
 			var property := node_props[idx]
 			var value := _read_property(node, property, node_buffer)
 			snapshot.set_property(node, property, value)
