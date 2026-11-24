@@ -16,7 +16,7 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `d91d4d0` | 24 Nov 2026 19:33 | One reviewer commit, `d91d4d0` (finding D-4, accepted). `2231a14` only merges `main` into `dev`. |
+| `dev` | `78f7e99` | 24 Nov 2026 20:30 | One reviewer commit, `78f7e99` (finding D-5, accepted). `d273544` only merges `main` into `dev`. |
 | `geminiceo` | `e66eee1` | 24 Nov 2026 18:50 | Audit verified against the current code and decided finding by finding; see "geminiceo audit" below. |
 
 ## Findings
@@ -67,6 +67,18 @@ these.
 - Outcome: accepted and cherry-picked onto `main`. If the answer on phones is "no", the dash
   button's position is a config change (`dash_button_offset_px`); moving dash to the left
   side would be a control-scheme change for Rahul.
+
+### D-5 (dev, `78f7e99`): turn netfox diff states off in the project settings
+
+- Change: one line in `project.godot` setting `netfox/rollback/enable_diff_states=false`.
+- Verified: yes. It applies the decision already recorded after experiment E1
+  (`docs/DECISIONS.md`), and the Opus reviewer of the netfox hardening confirmed the diff
+  merge defect with a deterministic probe.
+- Outcome: accepted. The same setting is in task A's branch and reaches `main` when task A
+  is merged; not cherry-picked separately, to avoid a conflict with that merge.
+- Open problem this exposes: task A measured that with diff states off the idle pool of
+  world objects costs about 232 KB/s per player. Fixing the diff merge in netfox, so diff
+  states can be turned back on, is now the preferred route.
 
 ## geminiceo audit (`e66eee1`)
 
