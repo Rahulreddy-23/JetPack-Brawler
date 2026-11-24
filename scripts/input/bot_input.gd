@@ -78,13 +78,19 @@ func _on_after_tick(_delta: float, tick: int) -> void:
 			# Presses made before this bot existed (while connecting) are not played back.
 			_started = true
 			InputActions.clear_edges()
+			InputActions.pending_touch_fire_aim = Vector2.ZERO
 		_gather_device()
 
 func _gather_device() -> void:
 	var stick_move: Vector2 = Input.get_vector(InputActions.MOVE_LEFT, InputActions.MOVE_RIGHT, InputActions.MOVE_UP, InputActions.MOVE_DOWN)
 	move = stick_move
 	var stick_aim: Vector2 = Input.get_vector(InputActions.AIM_LEFT, InputActions.AIM_RIGHT, InputActions.AIM_UP, InputActions.AIM_DOWN)
-	if stick_aim.length() > _cfg.stick_deadzone:
+	var fire_held: bool = Input.is_action_pressed(InputActions.FIRE)
+	var pending_aim: Vector2 = InputActions.pending_touch_fire_aim
+	InputActions.pending_touch_fire_aim = Vector2.ZERO
+	if not fire_held and pending_aim != Vector2.ZERO:
+		aim = pending_aim
+	elif stick_aim.length() > _cfg.stick_deadzone:
 		aim = stick_aim
 	elif DisplayServer.is_touchscreen_available():
 		aim = Vector2.ZERO
@@ -94,7 +100,7 @@ func _gather_device() -> void:
 	dash = _dash_latch
 	_jet_latch = false
 	_dash_latch = false
-	fire = Input.is_action_pressed(InputActions.FIRE)
+	fire = fire_held or pending_aim != Vector2.ZERO
 	melee = _next_edge(InputActions.MELEE)
 	gadget = _next_edge(InputActions.GADGET)
 	swap = _next_edge(InputActions.SWAP)

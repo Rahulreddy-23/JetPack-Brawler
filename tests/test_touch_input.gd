@@ -162,11 +162,24 @@ func _test_fire_ring() -> void:
 	_check(not Input.is_action_pressed(InputActions.FIRE), "dragging back inside the ring stops fire")
 	_drag(0, start + Vector2(0.0, radius))
 	_check(Input.is_action_pressed(InputActions.FIRE), "fire works in any direction (down)")
+	_frame(30)
 	_touch(0, start, false)
 	_check(not Input.is_action_pressed(InputActions.FIRE), "releasing clears fire")
 	_check(Input.get_action_strength(InputActions.AIM_DOWN) == 0.0, "releasing clears aim")
 	_frame(30)
 	_check(_input.fire == false, "BotInput clears fire after release")
+
+	for reports_drag: bool in [true, false]:
+		_fresh()
+		var end: Vector2 = _aim_start() + Vector2(radius, 0.0)
+		_touch(0, _aim_start(), true)
+		if reports_drag:
+			_drag(0, end)
+		_touch(0, end, false)
+		_frame(30)
+		_check(_input.fire == true and (_input.aim as Vector2).x > 0.5, "a flick between ticks carries fire and aim (drag event %s)" % reports_drag)
+		_frames(30, 0.5)
+		_check(_true_ticks("fire").size() == 1 and _true_ticks("melee").is_empty(), "a flick gives one fire tick and no melee (drag event %s)" % reports_drag)
 
 func _test_tap_and_melee_button() -> void:
 	for fps: int in FRAME_RATES:
@@ -203,6 +216,12 @@ func _test_tap_and_melee_button() -> void:
 	_touch(0, _aim_start(), false)
 	_frames(30, 0.5)
 	_check(_true_ticks("melee").is_empty() and _true_ticks("fire").is_empty(), "a touch that moved past the tap distance gives no melee, even if it came back")
+
+	_fresh()
+	_touch(0, _aim_start(), true)
+	_touch(0, _aim_start() + Vector2(_cfg.tap_distance_px + 4.0, 0.0), false)
+	_frames(30, 0.5)
+	_check(_true_ticks("melee").is_empty() and _true_ticks("fire").is_empty(), "release outside the tap zone and inside the fire ring does neither")
 
 	# A drag that fired and was released quickly is not a tap.
 	_fresh()
@@ -310,6 +329,15 @@ func _test_cancel() -> void:
 	_check(not Input.is_action_pressed(InputActions.FIRE) and Input.get_action_strength(InputActions.AIM_RIGHT) == 0.0, "a cancelled touch releases fire and aim")
 	_frames(60, 0.5)
 	_check(_true_ticks("melee").is_empty() and _true_ticks("fire").is_empty(), "and neither melee nor fire reaches the bot")
+	_fresh()
+	var end: Vector2 = _aim_start() + Vector2(_cfg.stick_radius_px, 0.0)
+	_touch(0, _aim_start(), true)
+	_drag(0, end)
+	_touch(0, end, false)
+	_touch(1, _aim_start(), true)
+	_cancel(1, _aim_start())
+	_frames(60, 0.5)
+	_check(_true_ticks("fire").size() == 1, "canceling a separate tap does not remove a completed flick")
 	# A cancelled move touch releases the stick.
 	_fresh()
 	_touch(0, Vector2(100.0, 300.0), true)

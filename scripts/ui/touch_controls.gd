@@ -169,6 +169,10 @@ func _touch(index: int, pos: Vector2, pressed: bool, canceled: bool = false) -> 
 			_move.finger = -1
 			_publish()
 		if index == _aim.finger:
+			if not canceled:
+				_update_aim(pos)
+			elif _aim_max_px >= _cfg.stick_radius_px * _cfg.fire_ring_fraction:
+				InputActions.pending_touch_fire_aim = Vector2.ZERO
 			var is_tap: bool = not canceled and float(_now_msec() - _aim_down_msec) / 1000.0 <= _cfg.tap_time and _aim_max_px <= _cfg.tap_distance_px
 			_aim.finger = -1
 			_publish()
@@ -180,12 +184,19 @@ func _drag(index: int, pos: Vector2) -> void:
 	if index == _move.finger:
 		_move.position = pos
 	elif index == _aim.finger:
-		_aim.position = pos
-		_aim_max_px = maxf(_aim_max_px, pos.distance_to(_aim.origin))
+		_update_aim(pos)
 	else:
 		return
 	_publish()
 	queue_redraw()
+
+func _update_aim(pos: Vector2) -> void:
+	var was_firing: bool = _is_fire_held()
+	_aim.position = pos
+	_aim_max_px = maxf(_aim_max_px, pos.distance_to(_aim.origin))
+	if not was_firing and _is_fire_held():
+		# Keep the crossing if the finger lifts before the next network tick.
+		InputActions.pending_touch_fire_aim = _aim.value(_cfg.stick_radius_px)
 
 func _press(button: TouchButton, index: int) -> void:
 	button.finger = index
@@ -230,4 +241,5 @@ func _release_all() -> void:
 		_release(button)
 	_publish()
 	InputActions.clear_edges()
+	InputActions.pending_touch_fire_aim = Vector2.ZERO
 	queue_redraw()

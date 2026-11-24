@@ -3,10 +3,9 @@ extends RefCounted
 ## Registers the game's input actions in code, so touch and keyboard share one
 ## set of names. Touch controls press these actions; the bot reads them.
 ##
-## Fire is a level: the action stays pressed while the player holds it. Melee, gadget and
-## swap are edges: a press is counted here with queue_edge and BotInput hands out one
-## network tick per counted press (take_edge). They are counted from events, not polled
-## from the action state, because a press and release inside one frame would be lost.
+## Fire stays pressed while held. An aim-ring crossing also keeps its aim until BotInput
+## samples it. Melee, gadget and swap presses are counted here with queue_edge. BotInput
+## delivers one network tick per press (take_edge), even if it began and ended in one frame.
 
 const MOVE_LEFT: StringName = &"move_left"
 const MOVE_RIGHT: StringName = &"move_right"
@@ -33,6 +32,8 @@ const MOUSE_BINDINGS: Dictionary[StringName, MouseButton] = {
 
 static var _mouse_bound: bool = true
 static var _pending: Dictionary[StringName, int] = {}
+## Aim at a touch fire-ring crossing that BotInput has yet to sample.
+static var pending_touch_fire_aim: Vector2 = Vector2.ZERO
 
 ## Add every action once. Safe to call repeatedly.
 static func ensure_registered() -> void:
