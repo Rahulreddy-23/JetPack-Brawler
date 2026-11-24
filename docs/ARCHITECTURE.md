@@ -197,6 +197,29 @@ parallel, each in its own files against A's stubs.
    and for arming.
 9. The modules stay at `res://combat`, `res://hazard` and `res://effects`.
 
+## Contract rulings after the review of task A (24 Nov 2026)
+
+- netfox simulates every inputless node on every peer. A world-object slot changes state
+  only where it is the multiplayer authority, and an inactive slot is left unchanged
+  everywhere.
+- Launching a rocket is task C's. Everything a world object then does is task D's: motion,
+  contact, arming, the fuse, the blast and its hits, for rockets as well as bombs and
+  plates. Task C never writes slot state directly; it calls methods on `WorldObjects` that
+  task D fills: a query for the objects a bullet or melee arc can reach, `deflect` (the
+  deflector becomes the owner for credit and arming) and `destroy` (a bullet on a plate).
+- `Gadgets` has one more state property than the table lists: `last_gadget_id`, because the
+  gadget is consumed on the tick it is used.
+- The dummy has peer id 0 (never -1, which is `NO_PEER`) and a dedicated bot slot equal to
+  `max_players`, with no world-object range. It is not counted against `max_players`.
+- `Arsenal` and `Gadgets` ticks do nothing while the bot is knocked out.
+- Knockout credit requires `0 <= tick - last_attack_tick <= credit window`.
+- The push window uses one control factor for braking and steering, on the ground and in
+  the air. Jetpack thrust is not reduced.
+- Pushes in the config are the GDD's numbers; `push_speed_scale` converts every push,
+  recoil included, into speed.
+- Pool and pickup synchronizers re-register on server start, so a phone that was a client
+  and then hosts sends their state.
+
 ## Experiments before tasks B to F start
 
 - E0. The vendored simulator runs headless with the dev flags and the client's measured
