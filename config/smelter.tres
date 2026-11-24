@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="ArenaLayout" format=3]
+
+[ext_resource type="Script" path="res://scripts/game/arena_layout.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+bounds = Rect2(0, 0, 40, 16)
+wall_thickness = 1.0
+solids = Array[Rect2]([Rect2(1, 11.5, 6, 1), Rect2(33, 11.5, 6, 1), Rect2(16, 8.5, 8, 1), Rect2(1, 5, 6, 1), Rect2(33, 5, 6, 1), Rect2(11, 9, 1, 7), Rect2(28, 9, 1, 7)])
+thins = Array[Rect2]([Rect2(13, 12.5, 5, 0.25), Rect2(22, 12.5, 5, 0.25), Rect2(8, 8, 3, 0.25), Rect2(29, 8, 3, 0.25), Rect2(17, 4.5, 6, 0.25)])
+spawns = Array[Vector2]([Vector2(4, 15.45), Vector2(36, 15.45), Vector2(4, 10.95), Vector2(36, 10.95)])
