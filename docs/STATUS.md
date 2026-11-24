@@ -27,7 +27,8 @@ Current stage: Prototype, phase 1. Gate not passed.
 - [ ] E Presentation: effects wired to state counters. Reviewed and fixed; waits on the
       netfox branch for its client-side first-sight check.
 - [x] F Input and HUD for fire, melee, gadget, swap. Reviewed, merged (`5f92739`).
-- [ ] Full test suite on `main` with B, C and F together: not yet re-run since C merged.
+- [x] Full test suite on `main` with B, C and F together: 32 of 32 pass at `edf3b26`
+      (Mac, headless; nothing on a phone).
 - [ ] Device checkpoint 2 (Rahul): the knockback sandbox, 10 minutes of play.
 - [ ] 1.6 Dabba fight, built last.
 - [ ] Phase review and `docs/reviews/phase-1-handoff.md`.
