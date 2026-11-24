@@ -19,14 +19,21 @@ class Stick extends RefCounted:
 	var position: Vector2 = Vector2.ZERO
 
 	func value(radius: float) -> Vector2:
-		return ((position - origin) / radius).limit_length(1.0) if finger != -1 else Vector2.ZERO
+		if finger == -1 or radius <= 0.0:
+			return Vector2.ZERO
+		return ((position - origin) / radius).limit_length(1.0)
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	visibility_changed.connect(_on_visibility_changed)
+	resized.connect(queue_redraw)
 
-func _input(event: InputEvent) -> void:
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED or what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
+		_reset_touches()
+
+func _unhandled_input(event: InputEvent) -> void:
 	if not is_visible_in_tree():
 		return
 	if event is InputEventScreenTouch:
@@ -41,9 +48,6 @@ func _input(event: InputEvent) -> void:
 			_touch(0, button.position, button.pressed)
 	elif use_mouse and event is InputEventMouseMotion:
 		_drag(0, (event as InputEventMouseMotion).position)
-
-func _process(_delta: float) -> void:
-	queue_redraw()
 
 func _draw() -> void:
 	var fill: Color = Color(Color.WHITE, _cfg.overlay_alpha / 2.0)
@@ -67,36 +71,49 @@ func _dash_center() -> Vector2:
 	return size - _cfg.dash_button_offset_px
 
 func _touch(index: int, pos: Vector2, pressed: bool) -> void:
+	var changed: bool = false
 	if pressed:
 		if pos.distance_to(_dash_center()) <= _cfg.dash_button_radius_px:
-			_dash_finger = index
-			Input.action_press(InputActions.DASH)
+			if _dash_finger == -1:
+				_dash_finger = index
+				Input.action_press(InputActions.DASH)
+				changed = true
 		elif pos.x < size.x * _cfg.move_zone_fraction:
 			if _move.finger == -1:
 				_move.finger = index
 				_move.origin = pos
 				_move.position = pos
+				changed = true
 		elif _aim.finger == -1:
 			_aim.finger = index
 			_aim.origin = pos
 			_aim.position = pos
+			changed = true
 	else:
 		if index == _dash_finger:
 			_dash_finger = -1
 			Input.action_release(InputActions.DASH)
+			changed = true
 		if index == _move.finger:
 			_move.finger = -1
 			_publish()
+			changed = true
 		if index == _aim.finger:
 			_aim.finger = -1
 			_publish()
+			changed = true
+	if changed:
+		queue_redraw()
 
 func _drag(index: int, pos: Vector2) -> void:
 	if index == _move.finger:
 		_move.position = pos
 	elif index == _aim.finger:
 		_aim.position = pos
+	else:
+		return
 	_publish()
+	queue_redraw()
 
 func _publish() -> void:
 	_set_axis(InputActions.MOVE_LEFT, InputActions.MOVE_RIGHT, InputActions.MOVE_UP, InputActions.MOVE_DOWN, _move.value(_cfg.stick_radius_px))
@@ -114,10 +131,16 @@ func _set_action(action: StringName, strength: float) -> void:
 	else:
 		Input.action_release(action)
 
-func _on_visibility_changed() -> void:
-	if not is_visible_in_tree():
-		_move.finger = -1
-		_aim.finger = -1
-		_dash_finger = -1
+func _reset_touches() -> void:
+	var had_any: bool = _move.finger != -1 or _aim.finger != -1 or _dash_finger != -1
+	_move.finger = -1
+	_aim.finger = -1
+	_dash_finger = -1
+	if had_any:
 		_publish()
 		Input.action_release(InputActions.DASH)
+		queue_redraw()
+
+func _on_visibility_changed() -> void:
+	if not is_visible_in_tree():
+		_reset_touches()

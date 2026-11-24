@@ -20,7 +20,10 @@ func get_id_for(peer: int) -> int:
 	return _ids.get(peer, -1)
 
 func set_id_for(peer: int, id: int) -> void:
-	assert(not _ids.has(peer) or _ids[peer] == id, "ID for peer #%d is already set!" % [peer])
+	# PATCH (see addons/NETFOX_PATCHES.md): ignore conflicting re-registrations
+	# from remote peers instead of crashing debug builds via assert().
+	if _ids.has(peer) and _ids[peer] != id:
+		return
 	_ids[peer] = id
 	on_id.emit(peer, id)
 

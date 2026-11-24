@@ -94,7 +94,9 @@ func _exit_tree() -> void:
 func _get_peer_id_tag() -> String:
 	return "#%d" % multiplayer.get_unique_id()
 
-func _process(_delta: float) -> void:
+## Synchronize server start/stop state immediately (called by _process and when
+## closing a peer synchronously before a rapid restart).
+func sync_state() -> void:
 	if multiplayer != _multiplayer:
 		_disconnect_handlers(_multiplayer)
 		_connect_handlers(multiplayer)
@@ -109,6 +111,9 @@ func _process(_delta: float) -> void:
 	if _is_server and not is_server():
 		_is_server = false
 		on_server_stop.emit()
+
+func _process(_delta: float) -> void:
+	sync_state()
 
 func _connect_handlers(mp: MultiplayerAPI) -> void:
 	if mp == null:

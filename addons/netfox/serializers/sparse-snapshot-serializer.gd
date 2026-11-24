@@ -83,6 +83,12 @@ func read_from(peer: int, properties: _PropertyPool, buffer: StreamPeerBuffer, i
 		# Read changed properties
 		var node_props := properties.get_properties_of(node)
 		for idx in changed_bits.get_set_indices():
+			# PATCH (see addons/NETFOX_PATCHES.md): ignore out-of-range bit indices
+			# from crafted diff packets instead of crashing with an array index error.
+			if idx < 0 or idx >= node_props.size():
+				continue
+			if node_buffer.get_available_bytes() == 0:
+				break
 			var property := node_props[idx]
 			var value := _read_property(node, property, node_buffer)
 			snapshot.set_property(node, property, value)

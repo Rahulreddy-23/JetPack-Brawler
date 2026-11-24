@@ -6,13 +6,24 @@ extends Control
 var bot: Bot = null
 
 var _cfg: TuningConfig = TuningConfig.get_default()
+var _last_has_bot: bool = false
+var _last_fuel: float = -1.0
+var _last_dash_ready: bool = false
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	resized.connect(queue_redraw)
 
 func _process(_delta: float) -> void:
-	queue_redraw()
+	var has_bot: bool = bot != null and is_instance_valid(bot)
+	var fuel_now: float = bot.fuel_fraction() if has_bot else -1.0
+	var dash_now: bool = bot.is_dash_ready() if has_bot else false
+	if has_bot != _last_has_bot or not is_equal_approx(fuel_now, _last_fuel) or dash_now != _last_dash_ready:
+		_last_has_bot = has_bot
+		_last_fuel = fuel_now
+		_last_dash_ready = dash_now
+		queue_redraw()
 
 func _draw() -> void:
 	if bot == null or not is_instance_valid(bot):

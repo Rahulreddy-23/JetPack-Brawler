@@ -391,7 +391,14 @@ func _ready() -> void:
 	elif is_instance_valid(multiplayer):
 		multiplayer.peer_disconnected.connect(erase_peer)
 
+func _is_packet_oversized(data: PackedByteArray) -> bool:
+	# PATCH (see addons/NETFOX_PATCHES.md): bound incoming sync packet size so a
+	# peer cannot force megabyte deserialization loops in a single RPC.
+	return data.is_empty() or data.size() > maxi(_max_packet_size * 4, 4096)
+
 func _handle_input(sender: int, data: PackedByteArray) -> void:
+	if _is_packet_oversized(data):
+		return
 	var buffer := StreamPeerBuffer.new()
 	buffer.data_array = data
 
@@ -399,12 +406,16 @@ func _handle_input(sender: int, data: PackedByteArray) -> void:
 
 	for snapshot in snapshots:
 		snapshot.sanitize(sender)
+		if snapshot.is_empty():
+			continue
 
 		_logger.trace("Ingesting input: %s", [snapshot])
 		if NetworkHistoryServer._merge_rollback_input(snapshot):
 			_on_input.emit(snapshot)
 
 func _handle_full_state(sender: int, data: PackedByteArray) -> void:
+	if _is_packet_oversized(data):
+		return
 	var buffer := StreamPeerBuffer.new()
 	buffer.data_array = data
 
@@ -413,6 +424,8 @@ func _handle_full_state(sender: int, data: PackedByteArray) -> void:
 	_ingest_state(sender, snapshot)
 
 func _handle_diff_state(sender: int, data: PackedByteArray) -> void:
+	if _is_packet_oversized(data):
+		return
 	var buffer := StreamPeerBuffer.new()
 	buffer.data_array = data
 
@@ -422,27 +435,37 @@ func _handle_diff_state(sender: int, data: PackedByteArray) -> void:
 	_ingest_state(sender, diff)
 
 func _handle_full_sync(sender: int, data: PackedByteArray) -> void:
+	if _is_packet_oversized(data):
+		return
 	var buffer := StreamPeerBuffer.new()
 	buffer.data_array = data
 
 	var snapshot := _dense_serializer.read_from(sender, _sync_state_properties, buffer, true)
 	snapshot.sanitize(sender)
+	if snapshot.is_empty():
+		return
 
 	NetworkHistoryServer._merge_synchronizer_state(snapshot)
 	_logger.trace("Ingested sync state: %s", [snapshot])
 
 func _handle_diff_sync(sender: int, data: PackedByteArray) -> void:
+	if _is_packet_oversized(data):
+		return
 	var buffer := StreamPeerBuffer.new()
 	buffer.data_array = data
 
 	var snapshot := _sparse_serializer.read_from(sender, _sync_state_properties, buffer)
 	snapshot.sanitize(sender)
+	if snapshot.is_empty():
+		return
 
 	NetworkHistoryServer._merge_synchronizer_state(snapshot)
 	_logger.trace("Ingested sync diff: %s", [snapshot])
 
 func _ingest_state(sender: int, snapshot: _Snapshot) -> void:
 	snapshot.sanitize(sender)
+	if snapshot.is_empty():
+		return
 
 	if NetworkHistoryServer._merge_rollback_state(snapshot):
 		_on_state.emit(snapshot)

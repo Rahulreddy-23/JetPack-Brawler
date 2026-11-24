@@ -7,6 +7,9 @@ signal host_pressed
 signal join_pressed(address: String)
 signal leave_pressed
 
+const MAX_ADDRESS_LENGTH: int = 45
+const MAX_STRIP_LABEL_WIDTH_PX: float = 420.0
+
 var _form: VBoxContainer
 var _message: Label
 var _address_field: LineEdit
@@ -51,6 +54,7 @@ func _build_form() -> void:
 
 	_address_field = LineEdit.new()
 	_address_field.placeholder_text = "Host IP address"
+	_address_field.max_length = MAX_ADDRESS_LENGTH
 	_address_field.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_URL
 	_address_field.gui_input.connect(_on_address_input)
 	_form.add_child(_address_field)
@@ -77,6 +81,9 @@ func _build_strip() -> void:
 	add_child(_strip)
 
 	_strip_label = Label.new()
+	_strip_label.clip_text = true
+	_strip_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_strip_label.custom_minimum_size = Vector2(MAX_STRIP_LABEL_WIDTH_PX, 0.0)
 	_strip.add_child(_strip_label)
 
 	var leave_button: Button = Button.new()
