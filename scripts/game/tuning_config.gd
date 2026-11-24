@@ -259,6 +259,16 @@ static var _cached: TuningConfig = null
 ## Seconds of the white hit flash.
 @export var hit_flash_seconds: float = 0.0
 
+# --- task D ---
+## Seconds after a rocket is launched or deflected before its own owner can set it off
+## (first guess, long enough to leave the muzzle).
+@export var rocket_arm_time: float = 0.0
+## A bomb whose speed after a floor bounce is below this, in bh/s, comes to rest (first guess).
+@export var bomb_rest_speed: float = 0.0
+## An idle object slot is sent to peers once per this many seconds instead of every tick, and
+## a slot is still sent every tick for this long after its object ends (first guess).
+@export var object_idle_send_interval: float = 0.0
+
 # --- task F ---
 @export_group("Touch fire, melee and buttons")
 ## Aim stick deflection, as a fraction of stick_radius_px, at or past which the fire input is

@@ -27,11 +27,11 @@ Current stage: Prototype, phase 1. Gate not passed.
       Build and script are ready (`docs/reviews/device-checkpoint-1.md`); not yet run.
 - [x] B Combat core, hazard wiring, dummy, push window. Reviewed, merged (`a170e4b`).
 - [x] C Weapons, melee, pickups. Reviewed, merged (`2ad983e`).
-- [ ] D World objects and gadgets. Reviewed, no blocking findings; fix round in progress.
+- [ ] D World objects and gadgets. Merged; the fix round still needs its independent review.
 - [ ] E Presentation: effects wired to state counters. Reviewed and fixed; waits on the
       netfox branch for its client-side first-sight check.
 - [x] F Input and HUD for fire, melee, gadget, swap. Reviewed, merged (`5f92739`).
-- [x] Full test suite on `main` with B, C and F together: 40 of 40 pass with the netfox and throttle changes
+- [x] Full test suite on `main` with B, C and F together: 48 of 48 pass with the netfox, throttle and task D changes
       (Mac, headless; nothing on a phone).
 - [ ] Device checkpoint 2 (Rahul): the knockback sandbox, 10 minutes of play.
 - [ ] 1.6 Dabba fight, built last.
@@ -43,17 +43,15 @@ Read this first when resuming. `main` on GitHub is at the commit that carries th
 
 On `main`, reviewed and pushed: movement, foundation, combat core (B), weapons (C), input and
 HUD (F), netfox hardening (patches 1 to 13), the ENet throttle fix, reviewer findings D-1 to
-D-9, and the geminiceo follow-up (G-13, G-14). Last full suite on `main`: 40 of 40 at
-`242e7b4`.
+D-9, and the geminiceo follow-up (G-13, G-14). Last full suite on `main`: 48 of 48 with task D merged.
 
 Not on `main` yet, in the order to finish them:
 
-1. Task D (world objects, gadgets), branch `worktree-agent-aaec92fe475a64453` at `a3ffc82`.
-   Squash-merged into the working tree of the main checkout and staged, not committed, with
-   one lead edit in `tests/test_combat_rules.gd` (respawn now expects one Cooker Bomb). A
-   full suite on that tree was running when this was written; commit only when it passes.
-   The independent review of the fix round (`0889988..a3ffc82`) was stopped before it
-   reported, at Rahul's request before the pause: start it again from the beginning.
+1. Task D (world objects, gadgets) is on `main`: suite 48 of 48 with it merged. Its first
+   review found nothing blocking, but the fix round (`0889988..a3ffc82` on branch
+   `worktree-agent-aaec92fe475a64453`) has had no independent review: that review was
+   stopped before it reported, at Rahul's request before the pause. Run it again from the
+   beginning and act on what it finds.
 2. Netfox follow-ups, branch `worktree-agent-abdc8cb18a9ad9d79` at `1632338`: mutation table
    rows, four negative checks, and `has_authoritative_state` now takes a `Variant` and
    returns false for a freed node. Read by the lead, looks right; merge after D.

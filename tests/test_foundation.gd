@@ -361,7 +361,7 @@ func _test_bot_paths() -> void:
 	_near(bot.vitals.health, _cfg.max_health, EPS, "a new bot starts at full health")
 	_check(not bot.vitals.knocked_out and bot.vitals.is_out() == false, "a new bot is not knocked out")
 	_check(bot.arsenal.active_weapon() == ItemIds.RIVET_GUN and not bot.arsenal.fired_at(0) and not bot.arsenal.meleed_at(0), "a new bot holds the rivet gun and has not fired")
-	_check(not bot.gadgets.used_at(0) and bot.gadgets.used_id() == ItemIds.NONE and bot.gadgets.give(ItemIds.COOKER_BOMB) == false, "stub gadgets are neutral")
+	_check(not bot.gadgets.used_at(0) and bot.gadgets.used_id() == ItemIds.NONE, "a new bot has not used a gadget")
 	_check(Bot.NO_PEER == -1, "NO_PEER is -1")
 	await _clear()
 
@@ -501,7 +501,7 @@ func _test_pool_and_pickups() -> void:
 			bad.append(path)
 	_check(bad.is_empty() and sync.state_properties.size() == OBJECT_STATE.size() and sync.input_properties.is_empty(), "a slot synchronizer has the object state and no input (bad: %s)" % ", ".join(bad))
 	_check(slot.get_node_or_null("TickInterpolator") != null, "a slot has a TickInterpolator")
-	_check(host_pool.launch(ItemIds.OBJECT_BOMB, 0, 1, Vector2.ZERO, Vector2.ZERO, 0, _cfg) == null, "the stub launch returns null")
+	_check(host_pool.launch(ItemIds.OBJECT_BOMB, 0, 1, Vector2.ZERO, Vector2.ZERO, 0, _cfg) == host_pool.slots()[_cfg.rocket_slots_per_owner], "launch returns the first bomb slot of the owner")
 
 	var pickups: Pickups = Pickups.new()
 	pickups.layout = LAYOUT

@@ -57,6 +57,14 @@ run net_fire   env PORT="$((BASE + 40))" "$ROOT/tests/net_fire.sh"
 run net_fire_lag env PORT="$((BASE + 50))" SIM_LATENCY_MS=75 "$ROOT/tests/net_fire.sh"
 run net_fire_loss env PORT="$((BASE + 60))" SIM_LATENCY_MS=75 SIM_LOSS=5 "$ROOT/tests/net_fire.sh"
 run hazard     "$GODOT" --headless --path "$ROOT" --script res://tests/test_hazard.gd
+run world_objects "$GODOT" --headless --path "$ROOT" res://tests/test_world_objects.tscn
+run net_objects env PORT="$((BASE + 70))" SIM_LATENCY_MS=75 "$ROOT/tests/net_world_objects.sh"
+run net_objects_loss env PORT="$((BASE + 72))" SIM_LATENCY_MS=75 SIM_LOSS=5 "$ROOT/tests/net_world_objects.sh"
+run net_objects_join env PORT="$((BASE + 74))" SIM_LATENCY_MS=75 "$ROOT/tests/net_world_objects_join.sh"
+run net_blast_bomb env PORT="$((BASE + 76))" WEAPON=bomb SIM_LATENCY_MS=75 "$ROOT/tests/net_combat_objects.sh"
+run net_blast_bomb_loss env PORT="$((BASE + 78))" WEAPON=bomb SIM_LATENCY_MS=75 SIM_LOSS=5 "$ROOT/tests/net_combat_objects.sh"
+run net_blast_rocket env PORT="$((BASE + 80))" WEAPON=rocket SIM_LATENCY_MS=75 "$ROOT/tests/net_combat_objects.sh"
+run net_blast_rocket_loss env PORT="$((BASE + 82))" WEAPON=rocket SIM_LATENCY_MS=75 SIM_LOSS=5 "$ROOT/tests/net_combat_objects.sh"
 run effects    "$GODOT" --headless --path "$ROOT" --script res://tests/test_effects.gd
 run geometry   "$GODOT" --headless --path "$ROOT" --script res://tests/test_combat_geometry.gd
 run foundation "$GODOT" --headless --path "$ROOT" res://tests/test_foundation.tscn

@@ -610,7 +610,7 @@ func _test_respawn() -> void:
 	bot.wall_nx = 1
 	bot.arsenal.picked_weapon = ItemIds.BOLT_THROWER
 	bot.arsenal.active_slot = 1
-	bot.gadgets.gadget_a = ItemIds.COOKER_BOMB
+	bot.gadgets.gadget_a = ItemIds.SPRING_PLATE
 	bot.vitals.health = 0.0
 	bot.vitals.knocked_out = true
 	bot.vitals.ko_serial = 3
@@ -624,7 +624,8 @@ func _test_respawn() -> void:
 	_check(bot.global_position == spawn and bot.velocity == Vector2.ZERO, "respawn at the spawn point at rest")
 	_near(bot.fuel, _cfg.fuel_capacity, "respawn refills the fuel")
 	_check(bot.dash_left == 0.0 and bot.dash_cooldown_left == 0.0 and bot.wall_nx == 0, "respawn clears the movement state")
-	_check(bot.arsenal.picked_weapon == ItemIds.NONE and bot.gadgets.gadget_a == ItemIds.NONE, "respawn calls reset_for_spawn on the arsenal and the gadgets")
+	# Phase 1 ruling: a bot gets one Cooker Bomb on every spawn and respawn.
+	_check(bot.arsenal.picked_weapon == ItemIds.NONE and bot.gadgets.gadget_a == ItemIds.COOKER_BOMB and bot.gadgets.gadget_b == ItemIds.NONE, "respawn calls reset_for_spawn on the arsenal and the gadgets")
 	_check(bot.vitals.ko_serial == 3 and bot.vitals.knockouts == 2 and bot.vitals.hits_taken == 6, "respawn keeps the counters")
 	# A late tick (the exact one was not simulated) still respawns the bot.
 	bot.vitals.knocked_out = true
