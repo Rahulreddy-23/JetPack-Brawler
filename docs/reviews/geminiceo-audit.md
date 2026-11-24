@@ -146,3 +146,39 @@ Until Tasks 1.2–1.5 (knockback, 4 weapons, melee deflect, Cooker Bomb + Spring
 2. **Verify touch controls on real phones before adding 4 more buttons in Task F.** Right now `TouchControls` has 2 sticks + Dash. Task F adds Fire (aim outer ring), Melee tap + dedicated Melee button, Gadget button, and Weapon Swap button. On a 6-inch phone screen, thumb ergonomics can kill a twin-stick shooter faster than netcode. Test the 2-stick + Dash feel on hardware *this week* while the layout is still simple.
 3. **Security hygiene paid off early.** Because `docs/ARCHITECTURE.md` builds all combat, gadgets, and hazards on top of `netfox` rollback history and `NetworkTimeSynchronizer`, fixing the 4 critical netfox vulnerabilities now (host clock hijack, `+64` history wipe bypass, out-of-bounds sparse diff crash, malformed pong crash) protects the entire Phase 2 online-room roadmap before those systems multiply the attack surface.
 4. **Keep `dev` and `main` reconciled.** Right now the Godot prototype lives on `dev` while `origin/main` has only docs. Merging Task 1.1 cleanly to `main` (with the verified `dev` and `geminiceo` fixes) will eliminate drift across parallel agents and ensure every future audit tests the exact canonical build.
+
+---
+
+## Follow-up Check (24 Nov 2026 18:38, after `origin/main` `e75514d`)
+
+Synced `geminiceo` with `origin/main` (`e75514d`) and aligned `_can_merge_tick`'s future-tick ceiling with the lead's tighter `NetworkRollback.input_delay + NetworkTime.max_ticks_per_frame` bound. Audited newly added worktree code (`scripts/game/combat_geometry.gd`, `scripts/game/cast_result.gd` at `d531f23`) and the lead's local task 1.1 fix round (read-only).
+
+### New Findings on Unmerged / In-Progress Code
+
+#### 13. Delayed `disconnect_peer` (`reject_notice_seconds`) widens slot blocking and RPC window, and lacks post-await session/tree guard
+- **Severity:** high
+- **Category:** Crashes and logic bugs / Denial of service
+- **Location:** `scripts/net/session.gd:73-81` (lead's local task 1.1 fix round)
+- **What happens and how to trigger it:** When a 5th peer joins a full match, `_on_peer_join` sends `_match_full.rpc_id(id)` and awaits `get_tree().create_timer(_cfg.reject_notice_seconds).timeout` (`0.5 s`) before calling `disconnect_peer(id)`.
+  1. Because capacity still checks `multiplayer.get_peers().size() + 1 > _cfg.max_players` rather than accepted peers, a rejected 5th peer is guaranteed to hold a slot in `get_peers()` for at least `0.5 s`, rejecting any legitimate replacement player if someone leaves during that window.
+  2. During that `0.5 s` window, the rejected peer remains a connected ENet peer and can send `@rpc("any_peer")` commands (`_cmd_input`, `_cmd_diff_state`, `_cmd_ids`, `_cmd_ping`, etc.).
+  3. If the host leaves and restarts during the `0.5 s` timer, `multiplayer.get_peers().has(id)` runs after the await without checking `is_inside_tree()` or that the same session is still active.
+- **Suggested fix:** Track `_accepted_peers: Dictionary[int, bool]` for the capacity check, guard `is_inside_tree()` and a session generation counter after the `await`, and combine with the netfox packet/command hardening patches (findings #1-#6) so a rejected peer cannot harm the host during the notice grace period.
+
+#### 14. Residual gaps in lead's local `network-time-synchronizer.gd` patch
+- **Severity:** medium
+- **Category:** Network trust / Performance bugs
+- **Location:** `addons/netfox/network-time-synchronizer.gd:253-313` (lead's local task 1.1 fix round)
+- **What happens and how to trigger it:** The lead's local patch adds `sender != SERVER_PEER_ID` checks to `_handle_pong` and `_handle_set_timestamp`, which blocks the host clock hijack from non-server peers. Four gaps remain compared to `geminiceo`:
+  1. `_handle_ping` does not check `multiplayer.is_server()` or validate `bytes_to_var(data)` before casting `as int` (empty `PackedByteArray()` triggers an engine deserialization error and null-to-int cast error).
+  2. `_handle_request_timestamp` does not check `multiplayer.is_server()`.
+  3. `_handle_set_timestamp` does not check `is_finite(timestamp)` or prevent duplicate `_loop()` coroutines on clients.
+  4. `_awaiting_samples` still leaks entries whenever unreliable ping/pong UDP packets are dropped.
+- **Suggested fix:** Port the full validation, `_loop_running` guard, and stale-sample pruning from `geminiceo`'s `addons/netfox/network-time-synchronizer.gd`.
+
+### Clean Audits (No Findings)
+- **`scripts/game/combat_geometry.gd` and `scripts/game/cast_result.gd` (`worktree-agent-a4bc7d39dec0511d8`, `d531f23`):** None found. Checked `NaN`/`INF` inputs, `INF + (-INF)` rect sum, zero-length segments, edge/corner entry normals, subnormal division in 64-bit double, and circle-rect overflow; all handled cleanly.
+
+### CEO Note (Iteration 1)
+- All three product recommendations from the first audit (push window so ground braking does not cancel knockback, Dabba deferred until after the 10-minute phone sandbox test, and early phone test of touch controls after Task 1.1) are now recorded in `docs/DECISIONS.md`.
+- Keep the focus strictly on merging Task 1.1 to `main` and getting the Android Debug APK onto two phones for Rahul's touch-stick and hotspot check before Task F adds four more buttons.

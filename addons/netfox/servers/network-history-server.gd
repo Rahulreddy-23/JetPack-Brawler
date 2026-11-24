@@ -300,7 +300,7 @@ func _can_merge_tick(tick: int, history: _PerObjectHistory) -> bool:
 	# time. Allowing +history_limit still triggers _HistoryBuffer.set_at's full
 	# wipe (at >= head + capacity), evicting the host's own active history and
 	# dropping subsequent host inputs. Keep a tight lead window well below capacity.
-	var max_future_lead: int = NetworkRollback.input_delay + mini(NetworkRollback.history_limit / 4, 16)
+	var max_future_lead: int = NetworkRollback.input_delay + NetworkTime.max_ticks_per_frame
 	if tick > NetworkTime.tick + max_future_lead:
 		_logger.trace("Dropping snapshot @%d from too far in the future", [tick])
 		return false

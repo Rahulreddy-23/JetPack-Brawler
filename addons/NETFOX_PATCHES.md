@@ -13,7 +13,7 @@ Re-apply every patch below after updating the addon, then run
   `tick + 64`, which hits `_HistoryBuffer.set_at`'s `at >= head + _capacity`
   branch and wipes the entire 64-tick history buffer to `null`, causing the host
   to drop its own subsequent inputs. Limiting future lead to
-  `input_delay + min(history_limit / 4, 16)` (16 ticks = ~533 ms at 30 tps)
+  `input_delay + NetworkTime.max_ticks_per_frame` (8 ticks = ~267 ms at 30 tps)
   tolerates normal clock skew while guaranteeing the ring buffer cannot be
   wiped or active host history evicted.
 
