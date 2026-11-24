@@ -6,3 +6,5 @@
 *.aab
 .DS_Store
 .claude/worktrees/
+*.idsig
+/builds/
