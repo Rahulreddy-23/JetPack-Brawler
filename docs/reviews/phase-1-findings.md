@@ -16,7 +16,7 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `62fa06a` | 24 Nov 2026 21:33 | One reviewer commit, `62fa06a` (finding D-6, accepted). `b558152` only merges `main` into `dev`. |
+| `dev` | `b7078a2` | 24 Nov 2026 22:03 | One reviewer commit, `b7078a2` (finding D-7, accepted). `eaac767` only merges `main` into `dev`. |
 | `geminiceo` | `e66eee1` | 24 Nov 2026 21:01 | No commits since the audit, which is decided finding by finding below. |
 
 ## Findings
@@ -91,6 +91,21 @@ these.
   not have held.
 - Outcome: accepted and cherry-picked. Rule added to the contract rulings: a non-bullet push
   on a dashing bot ends the dash. Sent to the task B implementer with the required test.
+
+### D-7 (dev, `b7078a2`): the "match full" close could hit the wrong session or show the wrong message
+
+- Change: in `scripts/net/session.gd` the rejected connection is remembered when the notice
+  arrives, the deferred close acts only on that connection, and a host that drops the
+  rejected player first still produces "Match full" instead of "The host went away"; three
+  new checks in `tests/test_session_guard.gd`.
+- Verified: yes. With the lead's previous version of `session.gd` the new test fails on two
+  checks ("host disconnect after rejection keeps the match-full message" and "a deferred
+  rejection leaves the new host active"); with the change it passes, and `net_full`,
+  `net_reject` and `test_session_full` still pass. The defect was in the fix merged an hour
+  earlier: the connection was captured when the deferred call ran, not when the notice
+  arrived, so a player who was turned away and at once hosted could have had the new
+  session closed.
+- Outcome: accepted and cherry-picked onto `main`.
 
 ## geminiceo audit (`e66eee1`)
 
