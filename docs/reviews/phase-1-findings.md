@@ -16,7 +16,7 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `b7078a2` | 24 Nov 2026 22:03 | One reviewer commit, `b7078a2` (finding D-7, accepted). `eaac767` only merges `main` into `dev`. |
+| `dev` | `dfa59fc` | 24 Nov 2026 22:40 | One reviewer commit, `dfa59fc` (finding D-8, accepted). `f17ad68` and `efe4a91` only merge `main` into `dev`. |
 | `geminiceo` | `e66eee1` | 24 Nov 2026 21:01 | No commits since the audit, which is decided finding by finding below. |
 
 ## Findings
@@ -106,6 +106,21 @@ these.
   arrived, so a player who was turned away and at once hosted could have had the new
   session closed.
 - Outcome: accepted and cherry-picked onto `main`.
+
+### D-8 (dev, `dfa59fc`): a quick flick on the aim stick did not fire
+
+- Change: in the touch layer and `scripts/input/bot_input.gd`, crossing the fire ring records
+  the aim at that moment, and the input gathered for the next network tick carries fire and
+  that aim even if the finger has already lifted; the release position now updates the aim;
+  a release outside the tap zone but inside the fire ring does neither melee nor fire. Six
+  new checks in `tests/test_touch_input.gd`.
+- Verified: yes. Fire was a level read once per network tick, so a drag past the ring and
+  back off the screen between two ticks (under 33 ms, or longer at low frame rates) was
+  never seen. With the lead's scripts from before the change and the reviewer's tests, the
+  test fails on 6 checks, 5 of them the new ones; with the change all 293 pass, and the
+  touch network, focus and HUD tests still pass.
+- Outcome: accepted and cherry-picked onto `main`. Worth trying on a phone: a flick now
+  fires exactly one shot.
 
 ## geminiceo audit (`e66eee1`)
 
