@@ -220,6 +220,15 @@ parallel, each in its own files against A's stubs.
   dash time to zero when they apply a non-bullet push, so the push moves the bot on the next
   tick. Without this the dash code overwrites the velocity every dash tick and again on
   exit, and the push would be lost (dev finding D-6).
+- Positions when an effect fires: a bot is not moved on the tick it is knocked out (respawn
+  moves it later), and an exploded object stays where it exploded on its blast tick, so
+  effects can read the position on the frame a counter rises.
+- Effect marks are cleared when a session starts and stops, and a node counts as first seen
+  only once its counters come from real state (on a client, state received from the host).
+- Tracers are drawn only for single-line weapons (rivet gun, bolt thrower). The scrap
+  blaster and the rocket tube show a muzzle flash only.
+- The hazard's floor and top in pixels come from one helper on the arena layout, used by the
+  combat rules and by the picture.
 - The push window uses one control factor for braking and steering, on the ground and in
   the air. Jetpack thrust is not reduced.
 - Pushes in the config are the GDD's numbers; `push_speed_scale` converts every push,
