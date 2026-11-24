@@ -18,6 +18,8 @@ Current stage: Prototype, phase 1. Gate not passed.
 - [ ] Fifth-player test fails about 1 run in 9; fix in progress.
 - [x] A Foundation and contracts. Reviewed, merged (`afc2eee`). No gameplay rule yet; the
       game still plays as movement only.
+- [ ] Device checkpoint 1 (Rahul): sticks, jetpack and dash on two phones over a hotspot.
+      Build and script are ready (`docs/reviews/device-checkpoint-1.md`); not yet run.
 - [ ] B Combat core, hazard wiring, dummy, push window (in progress).
 - [ ] C Weapons, melee, pickups (in progress).
 - [ ] D World objects and gadgets (in progress).
