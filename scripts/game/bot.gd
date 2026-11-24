@@ -211,7 +211,9 @@ func _tick_free_movement(delta: float, move: Vector2, on_floor: bool, wall: int,
 	if thrusting:
 		var climb_cap: float = -_cfg.climb_speed * px
 		if velocity.y > climb_cap:
-			velocity.y = maxf(velocity.y - _cfg.thrust_accel * thrust_level * px * delta, climb_cap)
+			# Ramp the lift beyond gravity so even one tick of thrust gives a small hop.
+			var thrust: float = lerpf(_cfg.gravity, _cfg.thrust_accel, thrust_level)
+			velocity.y = maxf(velocity.y - thrust * px * delta, climb_cap)
 	velocity.y = minf(velocity.y, _cfg.fall_speed_limit * px)
 
 	# Wall-slide: touching a wall in the air while pushing into it slows the fall.

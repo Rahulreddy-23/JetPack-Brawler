@@ -52,6 +52,7 @@ func _build_form() -> void:
 	_address_field = LineEdit.new()
 	_address_field.placeholder_text = "Host IP address"
 	_address_field.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_URL
+	_address_field.gui_input.connect(_on_address_input)
 	_form.add_child(_address_field)
 
 	var join_button: Button = Button.new()
@@ -63,6 +64,11 @@ func _build_form() -> void:
 	_message.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_form.add_child(_message)
+
+func _on_address_input(event: InputEvent) -> void:
+	# The gameplay sticks use raw touch. Bring the IP field into edit mode on a tap.
+	if event is InputEventScreenTouch and event.is_pressed():
+		_address_field.edit()
 
 func _build_strip() -> void:
 	_strip = HBoxContainer.new()
