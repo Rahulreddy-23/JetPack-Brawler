@@ -16,7 +16,7 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `3ac46a8` | 24 Nov 2026 21:01 | No reviewer changes since `78f7e99` (finding D-5); `3ac46a8` only merges `main` into `dev`. |
+| `dev` | `62fa06a` | 24 Nov 2026 21:33 | One reviewer commit, `62fa06a` (finding D-6, accepted). `b558152` only merges `main` into `dev`. |
 | `geminiceo` | `e66eee1` | 24 Nov 2026 21:01 | No commits since the audit, which is decided finding by finding below. |
 
 ## Findings
@@ -79,6 +79,18 @@ these.
 - Open problem this exposes: task A measured that with diff states off the idle pool of
   world objects costs about 232 KB/s per player. Fixing the diff merge in netfox, so diff
   states can be turned back on, is now the preferred route.
+
+### D-6 (dev, `62fa06a`): a push on a dashing bot would be erased
+
+- Change: a note in task B's checks in `docs/ARCHITECTURE.md`: a non-bullet push applied
+  during a dash must change movement on the next tick and survive the dash's exit, because
+  `_tick_dash()` sets the velocity on every dash tick and again on exit.
+- Verified: yes, in `scripts/game/bot.gd`. The dash writes `velocity` each tick and at exit,
+  so a push written into `velocity` by the combat rules at the end of a tick is overwritten
+  on the next. The ruling that blasts, melee and plates still affect a dashing bot would
+  not have held.
+- Outcome: accepted and cherry-picked. Rule added to the contract rulings: a non-bullet push
+  on a dashing bot ends the dash. Sent to the task B implementer with the required test.
 
 ## geminiceo audit (`e66eee1`)
 

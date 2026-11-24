@@ -216,6 +216,10 @@ parallel, each in its own files against A's stubs.
   `max_players`, with no world-object range. It is not counted against `max_players`.
 - `Arsenal` and `Gadgets` ticks do nothing while the bot is knocked out.
 - Knockout credit requires `0 <= tick - last_attack_tick <= credit window`.
+- A push that lands on a dashing bot ends the dash: the combat rules set the bot's remaining
+  dash time to zero when they apply a non-bullet push, so the push moves the bot on the next
+  tick. Without this the dash code overwrites the velocity every dash tick and again on
+  exit, and the push would be lost (dev finding D-6).
 - The push window uses one control factor for braking and steering, on the ground and in
   the air. Jetpack thrust is not reduced.
 - Pushes in the config are the GDD's numbers; `push_speed_scale` converts every push,
