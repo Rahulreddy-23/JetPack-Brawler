@@ -17,7 +17,7 @@ these.
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
 | `dev` | `8e3f47d` | 24 Nov 2026 18:43 | No reviewer changes since `320df9b` (finding D-3); later commits only merge `main` into `dev`. |
-| `geminiceo` | `e66eee1` | 24 Nov 2026 19:00 | Audit verified against the current code and decided finding by finding; see "geminiceo audit" below. |
+| `geminiceo` | `e66eee1` | 24 Nov 2026 18:50 | Audit verified against the current code and decided finding by finding; see "geminiceo audit" below. |
 
 ## Findings
 
@@ -57,7 +57,7 @@ these.
 
 ## geminiceo audit (`e66eee1`)
 
-Status at 19:00: every finding was checked against the current code by an independent Opus
+Status at 18:50: every finding was checked against the current code by an independent Opus
 verifier (probes and, for the worst case, a real two-process run), then decided by the
 product owner. The audit's code changes are not merged as they are: they were made on an
 older copy of the code than `main`, and the verifier found that several of them are

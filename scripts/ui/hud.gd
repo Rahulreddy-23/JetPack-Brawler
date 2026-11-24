@@ -6,13 +6,24 @@ extends Control
 var bot: Bot = null
 
 var _cfg: TuningConfig = TuningConfig.get_default()
+var _drawn_has_bot: bool = false
+var _drawn_fuel: float = 0.0
+var _drawn_dash_ready: bool = false
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 func _process(_delta: float) -> void:
-	queue_redraw()
+	# Redraw only when something the HUD shows has changed.
+	var has_bot: bool = bot != null and is_instance_valid(bot)
+	var fuel: float = bot.fuel_fraction() if has_bot else 0.0
+	var dash_ready: bool = bot.is_dash_ready() if has_bot else false
+	if has_bot != _drawn_has_bot or fuel != _drawn_fuel or dash_ready != _drawn_dash_ready:
+		_drawn_has_bot = has_bot
+		_drawn_fuel = fuel
+		_drawn_dash_ready = dash_ready
+		queue_redraw()
 
 func _draw() -> void:
 	if bot == null or not is_instance_valid(bot):

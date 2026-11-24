@@ -22,9 +22,17 @@ class Stick extends RefCounted:
 		return ((position - origin) / radius).limit_length(1.0) if finger != -1 else Vector2.ZERO
 
 func _ready() -> void:
+	# The actions must exist before any touch, and no bot has registered them yet on the menu.
+	InputActions.ensure_registered()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	visibility_changed.connect(_on_visibility_changed)
+	resized.connect(queue_redraw)
+
+func _notification(what: int) -> void:
+	# A finger lifted while the app is in the background never sends its release.
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
+		_release_all()
 
 func _input(event: InputEvent) -> void:
 	if not is_visible_in_tree():
@@ -41,9 +49,6 @@ func _input(event: InputEvent) -> void:
 			_touch(0, button.position, button.pressed)
 	elif use_mouse and event is InputEventMouseMotion:
 		_drag(0, (event as InputEventMouseMotion).position)
-
-func _process(_delta: float) -> void:
-	queue_redraw()
 
 func _draw() -> void:
 	var fill: Color = Color(Color.WHITE, _cfg.overlay_alpha / 2.0)
@@ -90,13 +95,17 @@ func _touch(index: int, pos: Vector2, pressed: bool) -> void:
 		if index == _aim.finger:
 			_aim.finger = -1
 			_publish()
+	queue_redraw()
 
 func _drag(index: int, pos: Vector2) -> void:
 	if index == _move.finger:
 		_move.position = pos
 	elif index == _aim.finger:
 		_aim.position = pos
+	else:
+		return
 	_publish()
+	queue_redraw()
 
 func _publish() -> void:
 	_set_axis(InputActions.MOVE_LEFT, InputActions.MOVE_RIGHT, InputActions.MOVE_UP, InputActions.MOVE_DOWN, _move.value(_cfg.stick_radius_px))
@@ -116,8 +125,12 @@ func _set_action(action: StringName, strength: float) -> void:
 
 func _on_visibility_changed() -> void:
 	if not is_visible_in_tree():
-		_move.finger = -1
-		_aim.finger = -1
-		_dash_finger = -1
-		_publish()
-		Input.action_release(InputActions.DASH)
+		_release_all()
+
+func _release_all() -> void:
+	_move.finger = -1
+	_aim.finger = -1
+	_dash_finger = -1
+	_publish()
+	Input.action_release(InputActions.DASH)
+	queue_redraw()

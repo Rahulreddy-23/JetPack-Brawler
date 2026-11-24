@@ -35,6 +35,12 @@ run movement   "$GODOT" --headless --path "$ROOT" res://tests/test_movement.tscn
 run input_flood "$GODOT" --headless --path "$ROOT" res://tests/test_input_flood.tscn
 run clock_hijack "$GODOT" --headless --path "$ROOT" res://tests/test_clock_hijack.tscn
 run menu_touch "$GODOT" --headless --path "$ROOT" --script res://tests/test_menu_touch.gd
+run touch_focus "$GODOT" --headless --path "$ROOT" --script res://tests/test_touch_focus.gd
+run main_touch "$GODOT" --headless --path "$ROOT" res://tests/test_main_touch.tscn -- --touch-ui --port="$((BASE + 13))"
+run session_guard "$GODOT" --headless --path "$ROOT" res://tests/test_session_guard.tscn -- --port="$((BASE + 10))"
+run session_full "$GODOT" --headless --path "$ROOT" res://tests/test_session_full.tscn -- --port="$((BASE + 12))"
+run bot_spawner_exit "$GODOT" --headless --path "$ROOT" res://tests/test_bot_spawner_exit.tscn
+run net_relay  env PORT="$((BASE + 14))" "$ROOT/tests/net_relay.sh"
 run combat     "$GODOT" --headless --path "$ROOT" --script res://tests/test_combat.gd
 run hazard     "$GODOT" --headless --path "$ROOT" --script res://tests/test_hazard.gd
 run effects    "$GODOT" --headless --path "$ROOT" --script res://tests/test_effects.gd

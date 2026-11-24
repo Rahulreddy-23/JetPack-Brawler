@@ -85,9 +85,11 @@ func _spawn_bot(data: Variant) -> Node:
 	input.autopilot = autopilot and peer_id == multiplayer.get_unique_id()
 	input.autopilot_delay_ticks = _cfg.tick_rate
 	_bots[peer_id] = bot
-	bot.tree_exited.connect(_on_bot_exited.bind(peer_id))
+	bot.tree_exited.connect(_on_bot_exited.bind(bot, peer_id))
 	bot_spawned.emit(bot)
 	return bot
 
-func _on_bot_exited(peer_id: int) -> void:
-	_bots.erase(peer_id)
+# A replaced bot may exit after its replacement is registered; leave that one alone.
+func _on_bot_exited(bot: Bot, peer_id: int) -> void:
+	if _bots.get(peer_id) == bot:
+		_bots.erase(peer_id)

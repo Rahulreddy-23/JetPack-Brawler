@@ -7,6 +7,9 @@ signal host_pressed
 signal join_pressed(address: String)
 signal leave_pressed
 
+## Longest IP literal: a full IPv6 address is 39 characters, 45 with an embedded IPv4 tail.
+const ADDRESS_MAX_LENGTH: int = 45
+
 var _form: VBoxContainer
 var _message: Label
 var _address_field: LineEdit
@@ -51,6 +54,7 @@ func _build_form() -> void:
 
 	_address_field = LineEdit.new()
 	_address_field.placeholder_text = "Host IP address"
+	_address_field.max_length = ADDRESS_MAX_LENGTH
 	_address_field.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_URL
 	_address_field.gui_input.connect(_on_address_input)
 	_form.add_child(_address_field)

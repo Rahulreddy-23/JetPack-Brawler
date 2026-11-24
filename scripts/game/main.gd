@@ -10,6 +10,7 @@ var _local_bot: Bot = null
 var _probe: SmokeProbe = null
 var _role: String = "menu"
 var _joined_text: String = ""
+var _touch_capable: bool = false
 
 @onready var _session: Session = $Session as Session
 @onready var _spawner: BotSpawner = $BotSpawner as BotSpawner
@@ -25,7 +26,8 @@ func _ready() -> void:
 		push_error("netfox tickrate %d differs from config tick_rate %d" % [NetworkTime.tickrate, _cfg.tick_rate])
 
 	_touch.use_mouse = _args.touch_ui
-	_touch.visible = _args.touch_ui or DisplayServer.is_touchscreen_available()
+	_touch_capable = _args.touch_ui or DisplayServer.is_touchscreen_available()
+	_touch.visible = false
 	_spawner.autopilot = _args.autopilot
 	_spawner.bot_spawned.connect(_on_bot_spawned)
 	_session.ended.connect(_on_session_ended)
@@ -68,20 +70,24 @@ func _on_host() -> void:
 		_menu.show_menu("Could not host: %s" % error_string(err))
 		return
 	_role = "host"
+	_touch.visible = _touch_capable
 	var addresses: PackedStringArray = Session.local_ipv4_addresses()
 	var text: String = "Hosting on %s port %d" % [", ".join(addresses) if not addresses.is_empty() else "no network address found", _port()]
 	_menu.show_session(text)
 	print("LISTENING port=%d" % _port())
 
 func _on_join(address: String) -> void:
-	if address.is_empty():
-		_menu.show_menu("Type the host's IP address first.")
+	address = address.strip_edges()
+	# A name would make ENet look it up, which blocks the game while offline.
+	if not address.is_valid_ip_address():
+		_menu.show_menu("Type the host's IP address, for example 192.168.1.20.")
 		return
 	var err: Error = _session.join(address, _port())
 	if err != OK:
 		_menu.show_menu("Could not connect: %s" % error_string(err))
 		return
 	_role = "client"
+	_touch.visible = _touch_capable
 	_joined_text = "Joined %s port %d" % [address, _port()]
 	_menu.show_session("Connecting to %s port %d..." % [address, _port()])
 
@@ -99,6 +105,7 @@ func _return_to_menu(message: String) -> void:
 	_hud.bot = null
 	_joined_text = ""
 	_role = "menu"
+	_touch.visible = false
 	_menu.show_menu(message)
 
 func _on_bot_spawned(bot: Bot) -> void:
