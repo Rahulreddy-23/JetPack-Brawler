@@ -37,13 +37,8 @@ func read_from(peer: int, properties: _PropertyPool, buffer: StreamPeerBuffer, i
 	var varuint := NetworkSchemas.varuint()
 
 	var snapshots := [] as Array[_Snapshot]
-	var max_snapshots: int = maxi(NetworkRollback.input_redundancy * 2, 16)
-	while buffer.get_available_bytes() > 0 and snapshots.size() < max_snapshots:
-		var snapshot_size: int = varuint.decode(buffer) as int
-		# PATCH (see addons/NETFOX_PATCHES.md): reject empty or truncated frames so
-		# a crafted zero-filled packet cannot spin thousands of snapshot merges.
-		if snapshot_size <= 0 or snapshot_size > buffer.get_available_bytes():
-			break
+	while buffer.get_available_bytes() > 0:
+		var snapshot_size := varuint.decode(buffer)
 		var snapshot_buffer := StreamPeerBuffer.new()
 		snapshot_buffer.data_array = buffer.get_partial_data(snapshot_size)[1]
 

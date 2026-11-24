@@ -612,7 +612,7 @@ class _VariableBitsetSerializer extends NetworkSchemaSerializer:
 	func decode(b: StreamPeerBuffer) -> Variant:
 		var bools := []
 
-		while b.get_available_bytes() > 0 and bools.size() < 256:
+		while true:
 			var byte := b.get_u8()
 
 			bools.append(byte & 0x01)

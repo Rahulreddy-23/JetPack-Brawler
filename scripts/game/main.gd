@@ -8,9 +8,10 @@ var _cfg: TuningConfig = TuningConfig.get_default()
 var _args: LaunchArgs = LaunchArgs.new()
 var _local_bot: Bot = null
 var _probe: SmokeProbe = null
+var _sim: NetSim = null
 var _role: String = "menu"
 var _joined_text: String = ""
-var _touch_enabled: bool = false
+var _touch_capable: bool = false
 
 @onready var _session: Session = $Session as Session
 @onready var _spawner: BotSpawner = $BotSpawner as BotSpawner
@@ -25,8 +26,8 @@ func _ready() -> void:
 	if NetworkTime.tickrate != _cfg.tick_rate:
 		push_error("netfox tickrate %d differs from config tick_rate %d" % [NetworkTime.tickrate, _cfg.tick_rate])
 
-	_touch_enabled = _args.touch_ui or DisplayServer.is_touchscreen_available()
 	_touch.use_mouse = _args.touch_ui
+	_touch_capable = _args.touch_ui or DisplayServer.is_touchscreen_available()
 	_touch.visible = false
 	_spawner.autopilot = _args.autopilot
 	_spawner.bot_spawned.connect(_on_bot_spawned)
@@ -54,14 +55,15 @@ func _process(_delta: float) -> void:
 
 func _setup_camera() -> void:
 	var px: float = _cfg.bot_height_px
+	# The margin lets the camera look past the floor and side walls, not above the ceiling.
 	var margin: float = _cfg.camera_margin_px
 	_camera.limit_left = int(_layout.bounds.position.x * px - margin)
-	_camera.limit_top = int(_layout.bounds.position.y * px - margin)
+	_camera.limit_top = int(_layout.bounds.position.y * px)
 	_camera.limit_right = int(_layout.bounds.end.x * px + margin)
 	_camera.limit_bottom = int(_layout.bounds.end.y * px + margin)
 
 func _port() -> int:
-	return _args.port if (_args.port >= 1 and _args.port <= 65535) else _cfg.port
+	return _args.port if _args.port > 0 else _cfg.port
 
 func _on_host() -> void:
 	var err: Error = _session.host(_port(), _cfg.max_players)
@@ -69,25 +71,32 @@ func _on_host() -> void:
 		_menu.show_menu("Could not host: %s" % error_string(err))
 		return
 	_role = "host"
-	_touch.visible = _touch_enabled
+	if _args.simulates_network():
+		_sim = NetSim.new()
+		add_child(_sim)
+		_sim.start(_port(), _args.sim_latency_ms, _args.sim_loss)
+	# Phase 1 has no rounds: the hazard cycle counts from the moment the host starts.
+	MatchSettings.start_round(NetworkTime.tick)
+	_touch.visible = _touch_capable
 	var addresses: PackedStringArray = Session.local_ipv4_addresses()
 	var text: String = "Hosting on %s port %d" % [", ".join(addresses) if not addresses.is_empty() else "no network address found", _port()]
 	_menu.show_session(text)
 	print("LISTENING port=%d" % _port())
 
 func _on_join(address: String) -> void:
-	if address.is_empty():
-		_menu.show_menu("Type the host's IP address first.")
-		return
+	address = address.strip_edges()
+	# A name would make ENet look it up, which blocks the game while offline.
 	if not address.is_valid_ip_address():
-		_menu.show_menu("Type a valid IP address (for example 192.168.43.1).")
+		_menu.show_menu("Type the host's IP address, for example 192.168.1.20.")
 		return
-	var err: Error = _session.join(address, _port())
+	# A client that simulates latency talks to the host's proxy, one port up.
+	var join_port: int = _port() + 1 if _args.simulates_network() else _port()
+	var err: Error = _session.join(address, join_port)
 	if err != OK:
 		_menu.show_menu("Could not connect: %s" % error_string(err))
 		return
 	_role = "client"
-	_touch.visible = _touch_enabled
+	_touch.visible = _touch_capable
 	_joined_text = "Joined %s port %d" % [address, _port()]
 	_menu.show_session("Connecting to %s port %d..." % [address, _port()])
 
@@ -100,6 +109,9 @@ func _on_session_ended(message: String) -> void:
 	_return_to_menu(message)
 
 func _return_to_menu(message: String) -> void:
+	if _sim != null:
+		_sim.free()
+		_sim = null
 	_spawner.clear()
 	_local_bot = null
 	_hud.bot = null

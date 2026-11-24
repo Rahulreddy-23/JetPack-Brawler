@@ -1,16 +1,25 @@
 """Compare the client bot's recorded ticks between the host log and the client log.
 
-Usage: python3 -I compare_traces.py HOST_LOG CLIENT_LOG
+Usage: python3 -I compare_traces.py HOST_LOG CLIENT_LOG [--settled TICKS]
 Exit code: 0 pass, 1 fail, 2 inconclusive (not a pass).
 
 A tick is compared only when all of these hold:
-  - the client's row for it was a one-step re-simulation that started from a
-    state received from the server (auth=1) and was really simulated (sim=1);
-  - the host really simulated that tick with client input (sim=1);
-  - the input the host used equals the input the client sent.
+  - the client's value for it came from re-simulating from a state received
+    from the server: either one step (auth=1) or a short run of consecutive
+    ticks that started from such a state (root);
+  - the host really simulated every tick of that run (sim=1);
+  - the input the host used on every tick of the run equals the input the
+    client sent.
 Positions on those ticks must agree to within TOLERANCE pixels.
-A host stall, a client stall, or too few comparable ticks is inconclusive,
-because client prediction may then differ for reasons that are not a bug.
+A measured disagreement on comparable ticks is a failure, whatever else happened. Without
+one, a host stall, a client stall, or too few comparable ticks is inconclusive, because
+client prediction may then differ for reasons that are not a bug.
+
+With simulated latency the client rarely re-simulates a tick from a state it has just
+received, so the rule above finds nothing to compare. --settled TICKS then replaces it:
+every client tick that is at least TICKS older than the client's last one is compared,
+provided the host really simulated it and used the same input on that tick. By then the
+host's corrections have arrived, so the client's final value must equal the host's.
 """
 import re
 import sys
@@ -26,7 +35,8 @@ def read(path):
     for line in text.splitlines():
         if line.startswith("TRACE "):
             f = dict(FIELD.findall(line))
-            if f["peer"] != "1":
+            # Peer 1 is the host and peer 0 is the dummy; the client bot is any other peer.
+            if f["peer"] not in ("0", "1"):
                 rows[int(f["tick"])] = f
         elif line.startswith("STALL "):
             f = dict(FIELD.findall(line))
@@ -44,6 +54,7 @@ def neutral_dash(f):
 
 
 def main():
+    settled = int(sys.argv[sys.argv.index("--settled") + 1]) if "--settled" in sys.argv else None
     host, host_stall, host_logged = read(sys.argv[1])
     client, client_stall, client_logged = read(sys.argv[2])
     if not host or not client:
@@ -56,19 +67,40 @@ def main():
         print("FAIL: the client sent no scripted input")
         return 1
     candidates = [t for t in range(min(active), max(active) + 1) if t in client and client[t]["sim"] == "1"]
-    qualified, host_lacked, mismatched, worst, neutral = [], 0, 0, 0.0, 0
+    if settled is not None:
+        candidates = [t for t in candidates if t <= max(client) - settled]
+    qualified, strict, host_lacked, mismatched, worst, neutral = [], 0, 0, 0, 0.0, 0
+
+    def same_inputs(first, last):
+        # The host really simulated every tick of the run and used what the client sent.
+        for u in range(first, last + 1):
+            h, c = host.get(u), client.get(u)
+            if h is None or c is None or h["sim"] != "1" or inputs(c) != inputs(h):
+                return False
+        return True
+
     for t in candidates:
         c = client[t]
         h = host.get(t)
         if h is None or h["sim"] != "1":
             host_lacked += 1
             continue
-        if c["auth"] != "1":
-            continue
-        if inputs(c) != inputs(h):
-            mismatched += 1
-            continue
+        if settled is not None:
+            # Settled mode: the client's final value for this tick, same input on this tick.
+            if not same_inputs(t, t):
+                mismatched += 1
+                continue
+        else:
+            root = int(c["root"])
+            if root < 0:
+                continue
+            # One-step: the tick started from a received server state. Run: it started
+            # from one a few ticks earlier and every input in between was identical.
+            if not same_inputs(root + 1, t):
+                mismatched += 1
+                continue
         qualified.append(t)
+        strict += c["auth"] == "1"
         err = ((float(c["x"]) - float(h["x"])) ** 2 + (float(c["y"]) - float(h["y"])) ** 2) ** 0.5
         worst = max(worst, err)
         neutral += neutral_dash(c)
@@ -77,8 +109,8 @@ def main():
     first = xs[0]
     travelled = max(((x - first[0]) ** 2 + (y - first[1]) ** 2) ** 0.5 for x, y in xs)
     share = len(qualified) / max(len(candidates), 1)
-    print("candidate ticks %d, compared %d (%.0f%%), host lacked input for %d, host/client input differed on %d"
-          % (len(candidates), len(qualified), share * 100, host_lacked, mismatched))
+    print("candidate ticks %d, compared %d (%.0f%%; %d of them one step from a received state), host lacked input for %d, host/client input differed on %d"
+          % (len(candidates), len(qualified), share * 100, strict, host_lacked, mismatched))
     print("worst position difference on compared ticks %.4f px, client bot travelled %.1f px, neutral-stick dash ticks compared %d"
           % (worst, travelled, neutral))
     print("stall evidence: host stalled-frames+floor-jumps=%s logged=%s, client stalled-frames+floor-jumps=%s logged=%s"

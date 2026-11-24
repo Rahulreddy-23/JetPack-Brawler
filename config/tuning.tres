@@ -1,6 +1,48 @@
 [gd_resource type="Resource" script_class="TuningConfig" format=3]
 
 [ext_resource type="Script" path="res://scripts/game/tuning_config.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/game/weapon_stats.gd" id="2"]
+
+[sub_resource type="Resource" id="Weapon_rivet"]
+script = ExtResource("2")
+damage = 8.0
+push = 0.15
+fire_interval = 0.4
+infinite_ammo = true
+range_bh = 14.0
+pellets = 1
+
+[sub_resource type="Resource" id="Weapon_bolt"]
+script = ExtResource("2")
+damage = 10.0
+push = 0.1
+fire_interval = 0.1
+ammo = 30
+range_bh = 14.0
+pellets = 1
+
+[sub_resource type="Resource" id="Weapon_scrap"]
+script = ExtResource("2")
+damage = 6.0
+push = 0.25
+fire_interval = 0.8
+ammo = 6
+range_bh = 8.0
+pellets = 6
+spread_degrees = 24.0
+recoil = 1.0
+
+[sub_resource type="Resource" id="Weapon_rocket"]
+script = ExtResource("2")
+fire_interval = 1.5
+ammo = 3
+range_bh = 30.0
+pellets = 1
+projectile_speed = 12.0
+projectile_radius = 0.25
+blast_radius = 3.0
+blast_push = 5.0
+blast_damage = 40.0
 
 [resource]
 script = ExtResource("1")
@@ -45,4 +87,72 @@ camera_margin_px = 300.0
 tick_rate = 30
 max_players = 4
 spare_connection_slots = 1
+reject_notice_seconds = 0.5
 port = 24680
+max_health = 100.0
+low_health_threshold = 25.0
+low_health_push_multiplier = 2.0
+push_speed_scale = 2.0
+credit_window = 3.0
+knockout_repair = 20.0
+respawn_time = 2.0
+self_damage_scale = 0.5
+push_window_time = 0.4
+push_window_control = 0.25
+weapons = Array[ExtResource("2")]([SubResource("Weapon_rivet"), SubResource("Weapon_bolt"), SubResource("Weapon_scrap"), SubResource("Weapon_rocket")])
+weapon_slot_count = 2
+gadget_slot_count = 2
+melee_damage = 12.0
+melee_push = 2.5
+melee_range = 1.4
+melee_arc_degrees = 120.0
+melee_cooldown = 0.5
+melee_deflect_speed = 14.0
+gadget_cooldown = 0.5
+object_gravity = 20.0
+bomb_fuse_time = 3.0
+bomb_blast_radius = 3.0
+bomb_blast_push = 5.0
+bomb_blast_damage = 50.0
+bomb_throw_speed = 10.0
+bomb_radius = 0.25
+bomb_bounce = 0.4
+plate_size = Vector2(1.5, 0.3)
+plate_launch_speed = 14.0
+plate_throw_speed = 8.0
+plate_arm_time = 0.5
+rocket_slots_per_owner = 2
+bomb_slots_per_owner = 2
+plate_slots_per_owner = 2
+pickup_respawn_time = 15.0
+pickup_radius = 0.6
+hazard_start_time = 30.0
+hazard_cap_time = 45.0
+hazard_cycle_time = 45.0
+debris_piece_count = 14
+debris_lifetime = 2.5
+debris_fade_time = 0.5
+debris_impulse_px = 650.0
+debris_impulse_variation = 0.5
+debris_spread_degrees = 120.0
+debris_spin = 12.0
+debris_size_min_px = 8.0
+debris_size_max_px = 22.0
+debris_bounce = 0.5
+debris_max = 60
+shake_strength_hit_px = 6.0
+shake_strength_knockout_px = 18.0
+shake_decay_per_second = 60.0
+hit_freeze_frames = 3
+hit_flash_seconds = 0.08
+; --- task F --- (first guesses, all of them)
+fire_ring_fraction = 0.75
+tap_time = 0.2
+tap_distance_px = 24.0
+touch_button_radius_px = 56.0
+melee_button_offset_px = Vector2(330.0, 150.0)
+gadget_button_offset_px = Vector2(300.0, 300.0)
+swap_button_offset_px = Vector2(510.0, 150.0)
+touch_ring_width_px = 3.0
+hud_text_size_px = 24
+max_pending_presses = 2

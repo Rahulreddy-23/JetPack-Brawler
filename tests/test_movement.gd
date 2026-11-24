@@ -178,14 +178,21 @@ func _test_climb_and_tap() -> void:
 	_check(hop > 1.0 and hop < _px, "3-tick tap gives a small hop (%.2f px, under one bot height)" % hop)
 	await _clear()
 
+	# Even one tick of thrust lifts the bot off the floor.
 	_add_floor()
 	var quick_tapper: Bot = await _spawn_on_floor(0.0)
 	_step(quick_tapper, 5)
 	var start_y: float = quick_tapper.position.y
+	var quick_peak: float = start_y
 	quick_tapper.input.jet = true
 	_step(quick_tapper)
 	quick_tapper.input.jet = false
 	_check(quick_tapper.position.y < start_y - EPS, "1-tick jetpack tap lifts off the floor")
+	for i: int in 60:
+		_step(quick_tapper)
+		quick_peak = minf(quick_peak, quick_tapper.position.y)
+	var quick_hop: float = start_y - quick_peak
+	_check(quick_hop > EPS and quick_hop < hop, "1-tick tap hop %.2f px is smaller than the 3-tick hop %.2f px" % [quick_hop, hop])
 	await _clear()
 
 func _test_fall_cap() -> void:

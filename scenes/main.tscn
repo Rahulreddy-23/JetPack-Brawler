@@ -9,6 +9,13 @@
 [ext_resource type="Script" path="res://scripts/ui/hud.gd" id="7"]
 [ext_resource type="Script" path="res://scripts/ui/touch_controls.gd" id="8"]
 [ext_resource type="Script" path="res://scripts/ui/menu.gd" id="9"]
+[ext_resource type="PackedScene" path="res://hazard/hazard_visual.tscn" id="10"]
+[ext_resource type="Script" path="res://scripts/game/pickups.gd" id="11"]
+[ext_resource type="Script" path="res://scripts/game/world_objects.gd" id="12"]
+[ext_resource type="Script" path="res://scripts/game/combat_resolver.gd" id="13"]
+[ext_resource type="Script" path="res://scripts/fx/effects_director.gd" id="14"]
+[ext_resource type="Script" path="res://effects/parts_burst.gd" id="15"]
+[ext_resource type="Script" path="res://effects/screen_shake.gd" id="16"]
 
 [node name="Main" type="Node"]
 script = ExtResource("1")
@@ -17,7 +24,17 @@ script = ExtResource("1")
 script = ExtResource("2")
 layout = ExtResource("3")
 
+[node name="Pickups" type="Node2D" parent="."]
+script = ExtResource("11")
+layout = ExtResource("3")
+
+[node name="Objects" type="Node2D" parent="."]
+script = ExtResource("12")
+
 [node name="Bots" type="Node2D" parent="."]
+
+[node name="HazardVisual" parent="." instance=ExtResource("10")]
+visible = false
 
 [node name="BotSpawner" type="MultiplayerSpawner" parent="."]
 spawn_path = NodePath("../Bots")
@@ -25,10 +42,30 @@ script = ExtResource("4")
 bot_scene = ExtResource("5")
 layout = ExtResource("3")
 
+[node name="Resolver" type="Node" parent="." node_paths=PackedStringArray("objects", "pickups")]
+script = ExtResource("13")
+objects = NodePath("../Objects")
+pickups = NodePath("../Pickups")
+layout = ExtResource("3")
+
+[node name="PartsBurst" type="Node2D" parent="."]
+script = ExtResource("15")
+
 [node name="Session" type="Node" parent="."]
 script = ExtResource("6")
 
 [node name="Camera" type="Camera2D" parent="."]
+
+[node name="ScreenShake" type="Node" parent="Camera"]
+script = ExtResource("16")
+
+[node name="Effects" type="Node" parent="." node_paths=PackedStringArray("burst", "shake", "hazard_visual", "objects")]
+script = ExtResource("14")
+burst = NodePath("../PartsBurst")
+shake = NodePath("../Camera/ScreenShake")
+hazard_visual = NodePath("../HazardVisual")
+objects = NodePath("../Objects")
+layout = ExtResource("3")
 
 [node name="HudLayer" type="CanvasLayer" parent="."]
 

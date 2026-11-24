@@ -81,6 +81,10 @@ this file wins.
   without it bots would leave the map.
 - netfox carries one small local patch, recorded in `addons/NETFOX_PATCHES.md` once it
   lands, that bounds the tick accepted on incoming packets.
+- netfox diff states are turned off for the prototype. Experiment E1 showed that with them
+  on, a phone can keep a wrong value (for example another bot's health) indefinitely; with
+  them off every trace matched. The cost is about seven times the data (roughly 78 KB/s per
+  player with 4 bots), which is fine on a hotspot and must be revisited before online rooms.
 - Renderer: Compatibility (OpenGL), as the Godot 4.7 documentation recommends for low-end
   phones and 2D.
 - The host alone decides hits, damage and knockouts, as the GDD's Tech approach says. Each

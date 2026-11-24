@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Checks that the server refuses a fifth player: one host plus three clients
 # fill the match (4 bots); a fourth client must not get a bot and must be sent
-# back to the menu. Exit code 0 = pass. Never leaves processes running.
+# back to the menu at once with a "Match full" message. Exit code 0 = pass. Never leaves processes running.
 set -u
 
 GODOT="${GODOT:-/Applications/Godot.app/Contents/MacOS/Godot}"
@@ -32,19 +32,20 @@ wait_all() {
 	done
 }
 
-run host 55 --host --trace
+run host 25 --host --trace
 for _ in $(seq 1 200); do grep -q "^LISTENING" "$TMP/host.log" 2>/dev/null && break; sleep 0.1; done
-for n in 1 2 3; do run "c$n" 52 --join=127.0.0.1; sleep 0.5; done
+for n in 1 2 3; do run "c$n" 22 --join=127.0.0.1; sleep 0.5; done
 sleep 2
-run c4 45 --join=127.0.0.1
+run c4 8 --join=127.0.0.1
 
-wait_all 100 || { echo "FAIL: processes did not exit in time"; exit 1; }
+wait_all 60 || { echo "FAIL: processes did not exit in time"; exit 1; }
 
-BOTS=$(grep -c "^FINAL" "$TMP/host.log")
+# The dummy (peer 0) is not a player and does not count against the match limit.
+BOTS=$(grep "^FINAL" "$TMP/host.log" | grep -vc " peer=0 ")
 echo "host saw $BOTS bots"
 grep -h "SESSION_ENDED" "$TMP/c4.log" "$TMP/c1.log" "$TMP/c2.log" "$TMP/c3.log" | sed 's/^/client message: /'
-if grep -q "SCRIPT ERROR" "$TMP"/*.log; then echo "FAIL: script errors"; grep -h "SCRIPT ERROR" "$TMP"/*.log | head; exit 1; fi
+if grep -q "SCRIPT ERROR\|^ERROR" "$TMP"/*.log; then echo "FAIL: script errors"; grep -H -B3 "SCRIPT ERROR\|^ERROR" "$TMP"/*.log | head -20; exit 1; fi
 [ "$BOTS" -eq 4 ] || { echo "FAIL: expected exactly 4 bots"; exit 1; }
-grep -q "SESSION_ENDED" "$TMP/c4.log" || { echo "FAIL: fifth player was not turned away"; exit 1; }
+grep -q "SESSION_ENDED Match full" "$TMP/c4.log" || { echo "FAIL: fifth player was not told the match is full within 8 s"; exit 1; }
 for n in 1 2 3; do grep -q "SESSION_ENDED" "$TMP/c$n.log" && { echo "FAIL: client $n was dropped"; exit 1; }; done
 echo "PASS"

@@ -105,7 +105,6 @@ var _adjust_steps: int =ProjectSettings.get_setting(&"netfox/time/sync_adjust_st
 var _panic_threshold: float = ProjectSettings.get_setting(&"netfox/time/recalibrate_threshold", 2.)
 
 var _active: bool = false
-var _loop_running: bool = false
 static var _logger: NetfoxLogger = NetfoxLogger._for_netfox("NetworkTimeSynchronizer")
 
 # Samples are stored in a ring buffer
@@ -117,6 +116,8 @@ var _clock: NetworkClocks.SystemClock = NetworkClocks.SystemClock.new()
 var _offset: float = 0.
 var _rtt: float = 0.
 var _rtt_jitter: float = 0.
+
+const SERVER_PEER_ID: int = 1
 
 @onready var _cmd_ping := NetworkCommandServer.register_command(_handle_ping, MultiplayerPeer.TRANSFER_MODE_UNRELIABLE)
 @onready var _cmd_pong := NetworkCommandServer.register_command(_handle_pong, MultiplayerPeer.TRANSFER_MODE_UNRELIABLE)
@@ -158,7 +159,6 @@ func start() -> void:
 ## Stop the time synchronization loop.
 func stop() -> void:
 	_active = false
-	_loop_running = false
 
 	# Don't carry measurements over to the next session
 	_awaiting_samples.clear()
@@ -173,9 +173,6 @@ func get_time() -> float:
 	return _clock.get_time()
 
 func _loop() -> void:
-	if _loop_running:
-		return
-	_loop_running = true
 	_logger.info("Time sync loop started! Initial timestamp: %ss", [_clock.get_time()])
 	on_initial_sync.emit()
 
@@ -183,25 +180,15 @@ func _loop() -> void:
 		if multiplayer.is_server():
 			return stop()
 
-		# PATCH (see addons/NETFOX_PATCHES.md): prune unanswered unreliable ping
-		# samples so packet loss does not leak memory over long sessions.
-		var now: float = _clock.get_time()
-		var stale_cutoff: float = now - maxf(NetworkTime.stall_threshold * 4.0, 10.0)
-		for key: Variant in _awaiting_samples.keys():
-			var pending: NetworkClockSample = _awaiting_samples[key] as NetworkClockSample
-			if pending == null or pending.ping_sent < stale_cutoff:
-				_awaiting_samples.erase(key)
-
 		var sample := NetworkClockSample.new()
 		_awaiting_samples[_sample_idx] = sample
 
-		sample.ping_sent = now
+		sample.ping_sent = _clock.get_time()
 		_cmd_ping.send(var_to_bytes(_sample_idx), 1)
 
 		_sample_idx += 1
 
 		await get_tree().create_timer(sync_interval).timeout
-	_loop_running = false
 
 func _discipline_clock() -> void:
 	var sorted_samples := _sample_buffer.get_data()
@@ -264,41 +251,21 @@ func _discipline_clock() -> void:
 		_offset = offset - nudge
 
 func _handle_ping(sender: int, data: PackedByteArray) -> void:
-	# PATCH (see addons/NETFOX_PATCHES.md): only the host answers pings, and
-	# malformed payloads are ignored.
-	if not multiplayer.is_server() or data.is_empty():
-		return
-	var raw_idx: Variant = bytes_to_var(data)
-	if typeof(raw_idx) != TYPE_INT:
-		return
-	var idx: int = raw_idx as int
+	var idx := bytes_to_var(data) as int
 	var ping_received := _clock.get_time()
 
 	_cmd_pong.send(var_to_bytes([idx, ping_received, _clock.get_time()]), sender)
 
 func _handle_pong(sender: int, data: PackedByteArray) -> void:
-	# PATCH (see addons/NETFOX_PATCHES.md): only clients accept pongs from the
-	# host (peer 1), and payload structure/finiteness must be validated.
-	if multiplayer.is_server() or sender != 1 or not _active or data.is_empty():
-		return
-	var raw_args: Variant = bytes_to_var(data)
-	if typeof(raw_args) != TYPE_ARRAY:
-		return
-	var args: Array = raw_args as Array
-	if args.size() != 3:
-		return
-	if typeof(args[0]) != TYPE_INT:
-		return
-	if typeof(args[1]) != TYPE_FLOAT and typeof(args[1]) != TYPE_INT:
-		return
-	if typeof(args[2]) != TYPE_FLOAT and typeof(args[2]) != TYPE_INT:
+	# PATCH (see addons/NETFOX_PATCHES.md): only the server answers pings.
+	if sender != SERVER_PEER_ID:
 		return
 
-	var idx: int = args[0] as int
-	var ping_received: float = float(args[1])
-	var pong_sent: float = float(args[2])
-	if not (is_finite(ping_received) and is_finite(pong_sent)):
-		return
+	var args := bytes_to_var(data)
+
+	var idx := args[0] as int
+	var ping_received := args[1] as float
+	var pong_sent := args[2] as float
 
 	var pong_received := _clock.get_time()
 
@@ -330,24 +297,17 @@ func _handle_pong(sender: int, data: PackedByteArray) -> void:
 func _is_sample_usable(sample: NetworkClockSample) -> bool:
 	return sample.get_rtt() <= NetworkTime.stall_threshold
 
-func _handle_request_timestamp(sender: int, _data: PackedByteArray) -> void:
-	# PATCH (see addons/NETFOX_PATCHES.md): only the host answers timestamp requests.
-	if not multiplayer.is_server():
-		return
+func _handle_request_timestamp(sender: int, data: PackedByteArray) -> void:
 	_logger.debug("Requested initial timestamp @ %.4fs raw time", [_clock.get_raw_time()])
 	_cmd_set_time.send(var_to_bytes(_clock.get_time()), sender)
 
 func _handle_set_timestamp(sender: int, data: PackedByteArray) -> void:
-	# PATCH (see addons/NETFOX_PATCHES.md): never allow a client to overwrite the
-	# host's reference clock or spawn duplicate sync loops.
-	if multiplayer.is_server() or sender != 1 or not _active or _loop_running or data.is_empty():
+	# PATCH (see addons/NETFOX_PATCHES.md): only the server may set our clock.
+	# Without this, any peer could set the host's reference clock.
+	if sender != SERVER_PEER_ID:
 		return
-	var raw_time: Variant = bytes_to_var(data)
-	if typeof(raw_time) != TYPE_FLOAT and typeof(raw_time) != TYPE_INT:
-		return
-	var timestamp: float = float(raw_time)
-	if not is_finite(timestamp):
-		return
+
+	var timestamp := bytes_to_var(data) as float
 
 	_logger.debug("Received initial timestamp @ %.4fs raw time", [_clock.get_raw_time()])
 	_clock.set_time(timestamp)

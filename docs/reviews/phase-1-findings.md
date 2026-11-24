@@ -16,8 +16,8 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `320df9b` | 24 Nov 2026 18:23 | No new commits since `320df9b` (finding D-3). |
-| `geminiceo` | `e66eee1` (verification in progress) | 24 Nov 2026 18:23 | First commit on this branch, on GitHub only: an audit report (`docs/reviews/geminiceo-audit.md`, twelve findings plus a product review) and fixes across 20 files, written against the `dev` snapshot `320df9b`, which is older than the lead's current code. Each finding is being checked against the current code before any outcome is recorded; see "geminiceo audit" below. |
+| `dev` | `beaf6cb` | 24 Nov 2026 22:52 | One reviewer commit, `beaf6cb` (finding D-9, accepted). `d04c17f` only merges `main` into `dev`. |
+| `geminiceo` | `e66eee1` | 24 Nov 2026 21:01 | No commits since the audit, which is decided finding by finding below. |
 
 ## Findings
 
@@ -55,14 +55,131 @@ these.
   suite's timeout and script-error check around it, since the test has no timeout of its
   own.
 
+### D-4 (dev, `d91d4d0`): the device script should test aim, dash, aim with two thumbs
+
+- Change: check 6 of `docs/reviews/device-checkpoint-1.md` now asks the tester to keep the
+  left stick held and, with the right thumb only, aim, tap dash, then aim again, without
+  releasing the left stick or using a third finger.
+- Verified: yes, by the layout. The dash button sits on the right, above the aim stick, so
+  the right thumb has to leave the aim stick to dash. Once firing exists (the aim stick held
+  past its ring), dashing will interrupt firing. Whether that is comfortable is exactly what
+  a phone test should answer before more buttons are added on that side.
+- Outcome: accepted and cherry-picked onto `main`. If the answer on phones is "no", the dash
+  button's position is a config change (`dash_button_offset_px`); moving dash to the left
+  side would be a control-scheme change for Rahul.
+
+### D-5 (dev, `78f7e99`): turn netfox diff states off in the project settings
+
+- Change: one line in `project.godot` setting `netfox/rollback/enable_diff_states=false`.
+- Verified: yes. It applies the decision already recorded after experiment E1
+  (`docs/DECISIONS.md`), and the Opus reviewer of the netfox hardening confirmed the diff
+  merge defect with a deterministic probe.
+- Outcome: accepted. The same setting is in task A's branch and reaches `main` when task A
+  is merged; not cherry-picked separately, to avoid a conflict with that merge.
+- Open problem this exposes: task A measured that with diff states off the idle pool of
+  world objects costs about 232 KB/s per player. Fixing the diff merge in netfox, so diff
+  states can be turned back on, is now the preferred route.
+
+### D-6 (dev, `62fa06a`): a push on a dashing bot would be erased
+
+- Change: a note in task B's checks in `docs/ARCHITECTURE.md`: a non-bullet push applied
+  during a dash must change movement on the next tick and survive the dash's exit, because
+  `_tick_dash()` sets the velocity on every dash tick and again on exit.
+- Verified: yes, in `scripts/game/bot.gd`. The dash writes `velocity` each tick and at exit,
+  so a push written into `velocity` by the combat rules at the end of a tick is overwritten
+  on the next. The ruling that blasts, melee and plates still affect a dashing bot would
+  not have held.
+- Outcome: accepted and cherry-picked. Rule added to the contract rulings: a non-bullet push
+  on a dashing bot ends the dash. Sent to the task B implementer with the required test.
+
+### D-7 (dev, `b7078a2`): the "match full" close could hit the wrong session or show the wrong message
+
+- Change: in `scripts/net/session.gd` the rejected connection is remembered when the notice
+  arrives, the deferred close acts only on that connection, and a host that drops the
+  rejected player first still produces "Match full" instead of "The host went away"; three
+  new checks in `tests/test_session_guard.gd`.
+- Verified: yes. With the lead's previous version of `session.gd` the new test fails on two
+  checks ("host disconnect after rejection keeps the match-full message" and "a deferred
+  rejection leaves the new host active"); with the change it passes, and `net_full`,
+  `net_reject` and `test_session_full` still pass. The defect was in the fix merged an hour
+  earlier: the connection was captured when the deferred call ran, not when the notice
+  arrived, so a player who was turned away and at once hosted could have had the new
+  session closed.
+- Outcome: accepted and cherry-picked onto `main`.
+
+### D-8 (dev, `dfa59fc`): a quick flick on the aim stick did not fire
+
+- Change: in the touch layer and `scripts/input/bot_input.gd`, crossing the fire ring records
+  the aim at that moment, and the input gathered for the next network tick carries fire and
+  that aim even if the finger has already lifted; the release position now updates the aim;
+  a release outside the tap zone but inside the fire ring does neither melee nor fire. Six
+  new checks in `tests/test_touch_input.gd`.
+- Verified: yes. Fire was a level read once per network tick, so a drag past the ring and
+  back off the screen between two ticks (under 33 ms, or longer at low frame rates) was
+  never seen. With the lead's scripts from before the change and the reviewer's tests, the
+  test fails on 6 checks, 5 of them the new ones; with the change all 293 pass, and the
+  touch network, focus and HUD tests still pass.
+- Outcome: accepted and cherry-picked onto `main`. Worth trying on a phone: a flick now
+  fires exactly one shot.
+
+### D-9 (dev, `beaf6cb`): scrap-blaster recoil was lost when firing during a dash
+
+- Change: a new `Bot.finish_dash` gives the dash-exit velocity and ends the dash; the
+  arsenal calls it before applying recoil when the shooter is dashing, and the combat rules'
+  push now uses the same function instead of its own copy. Three new checks in
+  `tests/test_weapons.gd`.
+- Verified: yes. The dash code sets the velocity on every dash tick and again on exit, so
+  recoil added mid-dash was overwritten: the GDD's "fire downward for an extra hop" did
+  nothing during a dash. With the reviewer's test and the scripts from before the change the
+  three new checks fail; with the change all 185 pass, and the movement (57) and combat
+  rules (150) tests still pass.
+- Outcome: accepted and cherry-picked onto `main`. It follows the existing ruling that a
+  push ends a dash and that recoil is a push on the shooter. Consequence to know: firing the
+  scrap blaster mid-dash cuts the dash short, so its bullet immunity ends on that tick.
+
 ## geminiceo audit (`e66eee1`)
 
-Status at 18:23: received, verification started. No finding is accepted or rejected yet.
+Status at 18:50: every finding was checked against the current code by an independent Opus
+verifier (probes and, for the worst case, a real two-process run), then decided by the
+product owner. The audit's code changes are not merged as they are: they were made on an
+older copy of the code than `main`, and the verifier found that several of them are
+redundant, break the network tests, or reject honest behaviour. Accepted fixes are being
+ported onto `main` with a test that fails without each one, in tasks 1.1b-N (netfox) and
+1.1b-G (game scripts).
 
-The audit's code changes cannot be merged as they are, because they were made on an older
-copy of the code than the lead's working tree (which has since had its own fix round,
-including two netfox patches that overlap findings 1, 2 and 4). Accepted fixes will be
-ported onto the current code with a test each.
+On "critical" and "crash": the verifier probed Godot 4.7.2 and found that a script error or
+failed `assert` inside a handler aborts that one function and the match continues; nothing
+exits. The real high-severity items are the two that let one packet freeze the host (G-3b
+and G-6).
+
+| Id | Finding | Verified | Outcome |
+|---|---|---|---|
+| G-1 | Any peer can set the host's clock | Real, and already fixed on `main` by the sender check | Rejected as a change: the extra direction, type and loop-guard checks add nothing once the sender must be the server |
+| G-2a | Future-tick bound of +64 still freezes the host | Real, already fixed on `main` with a tighter bound | Reviewer's bound rejected; ours kept and reworked in 1.1b-N so that it no longer drops honest inputs after a host hitch, with `input_delay` added |
+| G-2b | `sanitize()` leaves `_auth_subjects` set | Real, harmless today | Accepted (1.1b-N) |
+| G-2c | Empty snapshots are merged after sanitising | Real, low | Accepted (1.1b-N) |
+| G-3a | Out-of-range property index in the sparse serializer | Reproduced: script error, handler aborts | Accepted (1.1b-N) |
+| G-3b | Unbounded bitset decode | Reproduced end to end: one 300 KB packet froze the host for 2.26 s | Accepted, high priority (1.1b-N) |
+| G-4 | Malformed ping or pong payload | Pong already covered; ping reproduced as an error with no state change | Accepted in part: a type check in the ping handler only (1.1b-N) |
+| G-5 | Conflicting node ids trip an `assert` | Reproduced: aborts the function, no effect in release | Accepted if it stays a two-line change (1.1b-N) |
+| G-6 | Zero-filled packet forces thousands of iterations; no packet size cap | Reproduced: 837 ms for 64 KB | Accepted, high priority, with a warning when a packet is dropped for size (1.1b-N) |
+| G-7.1 | One suspended coroutine per peer that connects and never syncs | By reading; low | Deferred to before online play |
+| G-7.2 | A stale bot's exit can erase its replacement | Real only for leave and re-host in one frame | Accepted in part: the identity check. `remove_child` rejected: it breaks the network tests with a script error in netfox's visibility filter |
+| G-7.3 | netfox's server-state check only runs in `_process` | Real, not reachable from the UI | Deferred; only needed with G-7.5 as written |
+| G-7.4 | A rejected fifth player can block a real one | By reading; low on a hotspot | Accepted, keeping our notice delay (1.1b-G) |
+| G-7.5 | `host()` or `join()` while already active | Not reachable from the UI | Reviewer's fix rejected (calling `leave()` inside leaves the clock stopped); a guard returning an error accepted (1.1b-G) |
+| G-8.1 | Touch controls on the menu take its touches | Not reproduced: buttons still receive touches | Accepted in part: hide the controls on the menu. Switching to `_unhandled_input` rejected as unnecessary |
+| G-8.2 | An untracked drag republishes input | By reading; desktop dev flag only | Accepted (1.1b-G) |
+| G-8.3 | Sticks stay pressed after the app loses focus | Reproduced: the next touch drove the wrong stick | Accepted, needed before the phone test (1.1b-G) |
+| G-9 | Join address is unchecked | By reading; a name lookup can freeze the joiner's own phone | Accepted in part: valid IP only, and a length limit. Label clipping rejected (it can hide the address the joiner must type); port clamp rejected (it hides a bad flag) |
+| G-10 | `_awaiting_samples` grows under packet loss | By reading: about 4,800 small entries in 20 minutes at total loss | Deferred |
+| G-11.1 | A NaN shake strength corrupts the camera offset | By reading | Accepted, smaller: a finite check, applied by the lead when merging `effects/`. The camera validity check rejected (the shake is the camera's child) |
+| G-11.2 | Knockout credit accepts a hit from a later tick | Real in `combat_ledger.gd`, which is being retired | Carried forward as a requirement on its replacement: credit only when 0 <= tick difference <= window |
+| G-12 | HUD and touch controls redraw every frame | Not measured; negligible | Accepted as low priority, last item of 1.1b-G |
+
+The reviewer's test file is not taken as it is: against `main` it exits 1, three of its nine
+checks assert nothing, and five findings have no check. Each accepted fix gets its own test
+that fails without the fix.
 
 Product advice in the audit's second part, decided by the product owner:
 

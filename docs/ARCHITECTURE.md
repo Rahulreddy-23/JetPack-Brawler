@@ -1,6 +1,7 @@
 # Architecture: combat, projectiles, gadgets, hazard and effects on netfox
 
-Status: design accepted by the lead on 24 Nov 2026, subject to experiment E1 below passing.
+Status: design accepted by the lead on 24 Nov 2026. Experiment E1 has been run; its results,
+and the one change they force, are in the section "E1 results" below.
 Nothing in this file is built yet except task 1.1 (networked movement) and the three modules
 under `combat/`, `hazard/` and `effects/`. Designed by the Opus architect from the netfox
 v1.49.12 source; netfox facts are summarised in
@@ -156,6 +157,9 @@ parallel, each in its own files against A's stubs.
   applying the same tick twice from restored state gives identical results; a hazard knockout
   lands on the tick `HazardMath` predicts; a two-process run at 75 ms where host and client
   agree on the knockout tick, `ko_serial` and respawn tick.
+  Also check a non-bullet push applied after a dash tick. It must change movement on the next
+  tick and survive dash exit. `_tick_dash()` currently sets velocity for each dash tick and
+  sets it again on exit, so a push applied only to `velocity` would be erased.
 - C. Weapons, melee, pickups. Owns `bot_arsenal.gd`, `weapon_rules.gd`, `pickups.gd`. Checks:
   exact fire cadence, ammo run-down and fall-back to the rivet gun, exact recoil, nearest
   target wins, walls block, deterministic pellets, no bullet hit on a dashing bot, melee arc
@@ -196,6 +200,76 @@ parallel, each in its own files against A's stubs.
    and for arming.
 9. The modules stay at `res://combat`, `res://hazard` and `res://effects`.
 
+## Contract rulings after the review of task A (24 Nov 2026)
+
+- netfox simulates every inputless node on every peer. A world-object slot changes state
+  only where it is the multiplayer authority, and an inactive slot is left unchanged
+  everywhere.
+- Launching a rocket is task C's. Everything a world object then does is task D's: motion,
+  contact, arming, the fuse, the blast and its hits, for rockets as well as bombs and
+  plates. Task C never writes slot state directly; it calls methods on `WorldObjects` that
+  task D fills: a query for the objects a bullet or melee arc can reach, `deflect` (the
+  deflector becomes the owner for credit and arming) and `destroy` (a bullet on a plate).
+- `Gadgets` has one more state property than the table lists: `last_gadget_id`, because the
+  gadget is consumed on the tick it is used.
+- The dummy has peer id 0 (never -1, which is `NO_PEER`) and a dedicated bot slot equal to
+  `max_players`, with no world-object range. It is not counted against `max_players`.
+- `Arsenal` and `Gadgets` ticks do nothing while the bot is knocked out.
+- Knockout credit requires `0 <= tick - last_attack_tick <= credit window`.
+- A push that lands on a dashing bot ends the dash: the combat rules set the bot's remaining
+  dash time to zero when they apply a non-bullet push, so the push moves the bot on the next
+  tick. Without this the dash code overwrites the velocity every dash tick and again on
+  exit, and the push would be lost (dev finding D-6).
+- Positions when an effect fires: a bot is not moved on the tick it is knocked out (respawn
+  moves it later), and an exploded object stays where it exploded on its blast tick, so
+  effects can read the position on the frame a counter rises.
+- Effect marks are cleared when a session starts and stops, and a node counts as first seen
+  only once its counters come from real state (on a client, state received from the host).
+- Tracers are drawn only for single-line weapons (rivet gun, bolt thrower). The scrap
+  blaster and the rocket tube show a muzzle flash only.
+- The hazard's floor and top in pixels come from one helper on the arena layout, used by the
+  combat rules and by the picture.
+- A Spring Plate launches: a hit flagged as a launch replaces the victim's vertical speed
+  with the plate's and adds the horizontal part, so a falling bot leaves at the plate's
+  speed and a running bot keeps its run.
+- A push that ends a dash first gives the bot its normal dash-exit speed, then adds the push.
+- A tick's hits on one victim are summed in a fixed sorted order, so the result does not
+  depend on the order they were collected.
+- In the phase 1 test cycle a bot knocked out once the metal has started rising waits for
+  the next cycle to respawn.
+- Bullets pass through a dashing bot and can hit a bot behind it.
+- Melee does not reach through solid walls.
+- Recoil is a push on the shooter and opens the shooter's push window.
+- An object launched overlapping a solid is an immediate contact. A rocket's range is
+  enforced by the world-object rules.
+- Swap and melee are one-tick pulses from the input layer. This is safe while no bot is
+  simulated on a repeated input; when AI bots write inputs directly (phase 2), add
+  previous-input state for both.
+- The push window uses one control factor for braking and steering, on the ground and in
+  the air. Jetpack thrust is not reduced.
+- Pushes in the config are the GDD's numbers; `push_speed_scale` converts every push,
+  recoil included, into speed.
+- Pool and pickup synchronizers re-register on server start, so a phone that was a client
+  and then hosts sends their state.
+
+## Contract rulings after the review of task D (24 Nov 2026)
+
+- In the phase 1 sandbox a bot gets one Cooker Bomb on every spawn and respawn. The GDD's
+  "starts each round with one" arrives with rounds in phase 2.
+- When a bot's bomb or rocket range is full, the oldest object is replaced without a blast.
+  The GDD's "third removes the oldest" is about traps.
+- A rocket is not a bullet: it explodes on a dashing bot. Its contact with bots is a swept
+  test over the tick's motion.
+- A slot already marked to explode this tick is skipped by the bullet and melee queries, so
+  a shot reaches the bot behind it.
+- Every rocket has a finite lifetime, a deflected one with no speed included.
+- The pool and its send bookkeeping reset when a session starts and stops, on host and
+  client.
+- A plate that cannot be pushed clear of solids is placed at the thrower's position; a used
+  gadget is never lost.
+- Traps are drawn in their owner's colour. Bombs and rockets stay neutral. Blink timing and
+  colours are presentation constants in the draw code, not tuning numbers.
+
 ## Experiments before tasks B to F start
 
 - E0. The vendored simulator runs headless with the dev flags and the client's measured
@@ -210,6 +284,54 @@ parallel, each in its own files against A's stubs.
   the host's, and the client never receives a hit that is absent from the host's final trace.
 - E2. On a budget phone (Rahul): the `netfox/Rollback loop duration (ms)` monitor with 5 bots
   and the full object pool.
+
+## E1 results (24 Nov 2026)
+
+Run as a throwaway spike (branch `worktree-agent-a0e740ce9169c5afb`, commit `f8fe07b`, not
+merged): host, two clients and a dummy, 6 runs per configuration at 0 ms and at 75 ms
+one-way simulated latency, some with 5 percent loss.
+
+Confirmed on the host:
+
+- A hit decided in `after_process_tick` is applied idempotently. In every run the host's
+  settled trace shows health falling by exactly 1 on the tick after each fire tick and
+  nowhere else, with and without `mutate()`. Fire ticks were processed up to 4 times each.
+- A hit decided from a stale position is removed when the victim's late input arrives
+  (scenario 4, 6 of 6 at both latencies), and the removed hit never reached a client.
+- Children run in tree order after the root. Resolving inside the shooter's own tick gives
+  results that depend on tree order, which supports decision D3.
+
+Not confirmed on clients:
+
+- With netfox's diff states on (the default), clients kept wrong values for a property that
+  changes rarely. The dummy's health trace matched the host's on a client in 0 of 6 runs at
+  75 ms, and in one run a client showed the wrong health until the process ended. Cause,
+  from the source and from logs of what the host sent: a diff carries only what changed
+  relative to the host's own sent history and is merged on top of the client's local guess
+  for that tick, which is then marked authoritative; and periodic full states rarely include
+  client-input bots.
+- With `netfox/rollback/enable_diff_states=false`, health and position traces matched on
+  every client in 18 of 18 runs at 75 ms. Cost: about 78 KB/s received per client with 4
+  bots, against about 11.5 KB/s with diffs on; about 157 KB/s sent by the host.
+- Claim 3 above is only true for a bot whose own input is missing. A host-owned subject that
+  depends on another peer's late input (the dummy, and later rockets, bombs and pickups) is
+  sent with its first-pass value and corrected afterwards. With diffs off the correction
+  arrives within about 2 ticks.
+
+Decision (lead): the prototype runs with diff states off. Correct replication matters more
+than bandwidth on a hotspot. Before online rooms, either fix the diff merge in the addon or
+measure and accept the data cost; this is on the "before online play" list.
+
+Consequence for effects (D7): a client can briefly show an effect for a value that the host
+corrects a tick or two later. Counters and the high-water mark keep it to one false
+trigger; it is cosmetic.
+
+Measured at 75 ms with 4 bots: the host re-simulated about 3 ticks per loop on average
+(worst 7, or 20 with 5 percent loss). Not measured: 5 bots, 150 ms, a real phone.
+
+The spike's latency proxy (`scripts/dev/net_sim.gd`, flags `--sim-latency-ms=` and
+`--sim-loss=`) is the starting point for task A's simulator; netfox's stock simulator node
+cannot be used because it creates its own connection.
 
 ## Risks
 

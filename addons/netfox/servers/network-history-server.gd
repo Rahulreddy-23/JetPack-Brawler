@@ -296,12 +296,13 @@ func _merge_history(snapshot: _Snapshot, history: _PerObjectHistory, reverse: bo
 	return has_updated
 
 func _can_merge_tick(tick: int, history: _PerObjectHistory) -> bool:
-	# PATCH (see addons/NETFOX_PATCHES.md): refuse ticks too far ahead of local
-	# time. Allowing +history_limit still triggers _HistoryBuffer.set_at's full
-	# wipe (at >= head + capacity), evicting the host's own active history and
-	# dropping subsequent host inputs. Keep a tight lead window well below capacity.
-	var max_future_lead: int = NetworkRollback.input_delay + NetworkTime.max_ticks_per_frame
-	if tick > NetworkTime.tick + max_future_lead:
+	# PATCH (see addons/NETFOX_PATCHES.md): refuse ticks more than one tick-loop
+	# burst ahead of the current tick. The history buffers hold only
+	# history_limit ticks, so a snapshot stamped further ahead pushes the
+	# buffer's old edge past the current tick and discards what this peer just
+	# recorded. A lead of up to max_ticks_per_frame is accepted, so under attack
+	# the rollback window shrinks by at most that many ticks.
+	if tick > NetworkTime.tick + NetworkTime.max_ticks_per_frame:
 		_logger.trace("Dropping snapshot @%d from too far in the future", [tick])
 		return false
 
