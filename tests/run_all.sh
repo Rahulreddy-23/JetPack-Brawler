@@ -45,6 +45,10 @@ run session_full "$GODOT" --headless --path "$ROOT" res://tests/test_session_ful
 run bot_spawner_exit "$GODOT" --headless --path "$ROOT" res://tests/test_bot_spawner_exit.tscn
 run net_relay  env PORT="$((BASE + 14))" "$ROOT/tests/net_relay.sh"
 run combat     "$GODOT" --headless --path "$ROOT" --script res://tests/test_combat.gd
+run weapons    "$GODOT" --headless --path "$ROOT" res://tests/test_weapons.tscn
+run net_fire   env PORT="$((BASE + 40))" "$ROOT/tests/net_fire.sh"
+run net_fire_lag env PORT="$((BASE + 50))" SIM_LATENCY_MS=75 "$ROOT/tests/net_fire.sh"
+run net_fire_loss env PORT="$((BASE + 60))" SIM_LATENCY_MS=75 SIM_LOSS=5 "$ROOT/tests/net_fire.sh"
 run hazard     "$GODOT" --headless --path "$ROOT" --script res://tests/test_hazard.gd
 run effects    "$GODOT" --headless --path "$ROOT" --script res://tests/test_effects.gd
 run geometry   "$GODOT" --headless --path "$ROOT" --script res://tests/test_combat_geometry.gd

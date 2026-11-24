@@ -4,8 +4,7 @@ extends Node2D
 ## in _ready identically on every peer from the layout, never freed. Three weapons and the
 ## Spring Plate in phase 1 (no crates).
 ##
-## Owner: task C (weapons, melee, pickups). Task A creates the spots and declares the
-## interface; resolve() does nothing yet, so nothing is ever picked up.
+## Owner: task C (weapons, melee, pickups).
 
 const SPOT_SCENE: PackedScene = preload("res://scenes/pickup_spot.tscn")
 
@@ -35,8 +34,37 @@ func spots() -> Array[PickupSpot]:
 	return _spots
 
 ## Host only, called by the resolver once per tick after bots and objects have moved:
-## give each spot's item to a bot standing on it and set the spot's ready_tick. Task C.
-## bots are sorted by peer id. Writes state only.
-@warning_ignore("unused_parameter")
+## offer each ready spot's item to the live bots standing on it in peer id order, until one
+## takes it, and set the spot's ready_tick. bots are not assumed to be sorted. Writes state
+## only. The dummy never picks anything up.
 func resolve(tick: int, bots: Array[Bot], cfg: TuningConfig) -> void:
-	pass
+	# Phase 1 test scaffolding: when the hazard cycle restarts, every spot is on offer again.
+	if MatchSettings.hazard_ticks(tick) == 0 and tick > MatchSettings.round_start_tick:
+		for spot: PickupSpot in _spots:
+			spot.ready_tick = mini(spot.ready_tick, tick)
+	var radius: float = cfg.pickup_radius * cfg.bot_height_px
+	for spot: PickupSpot in _spots:
+		if tick < spot.ready_tick:
+			continue
+		var standing: Array[Bot] = []
+		for bot: Bot in bots:
+			if not bot.vitals.knocked_out and bot.peer_id != Bot.DUMMY_PEER and CombatGeometry.circle_rect(spot.global_position, radius, bot.body_rect()):
+				standing.append(bot)
+		standing.sort_custom(_lower_peer)
+		# A bot that cannot take the item (full gadget slots) does not block the others.
+		for bot: Bot in standing:
+			if _give(bot, spot.item, cfg):
+				spot.ready_tick = tick + WeaponRules.seconds_to_ticks(cfg.pickup_respawn_time, cfg)
+				break
+
+func _lower_peer(a: Bot, b: Bot) -> bool:
+	return a.peer_id < b.peer_id
+
+# True when the bot took the item: a weapon always, a gadget only if it has room.
+func _give(bot: Bot, item: int, cfg: TuningConfig) -> bool:
+	if ItemIds.is_gadget(item):
+		return bot.gadgets.give(item)
+	if ItemIds.is_weapon(item) and item != ItemIds.RIVET_GUN:
+		bot.arsenal.give_weapon(item, cfg)
+		return true
+	return false
