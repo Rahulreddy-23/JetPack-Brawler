@@ -6,6 +6,9 @@ var max_packet_size := 1440
 var _identity_server: _NetworkIdentityServer
 var _schemas: _NetworkSchema
 
+# PATCH (see addons/NETFOX_PATCHES.md): peer to the time (msec) of its last warning
+var _last_warning_msec := {}
+
 static var _default_filter := func(subject: Object): return true
 static var _logger := NetfoxLogger._for_netfox("DenseSnapshotSerializer")
 
@@ -37,3 +40,15 @@ func _get_identity_server() -> _NetworkIdentityServer:
 	if not _identity_server:
 		_identity_server = NetworkIdentityServer
 	return _identity_server
+
+# PATCH (see addons/NETFOX_PATCHES.md): a warning about something a peer sent is
+# logged at most once per second per peer, so a peer cannot fill the log, and
+# spend the host's time on printing, by sending the same bad packet over and over
+func _warn_peer(peer: int, text: String, values: Array = []) -> void:
+	var now := Time.get_ticks_msec()
+	if now - (_last_warning_msec.get(peer, -_WARNING_INTERVAL_MSEC) as int) < _WARNING_INTERVAL_MSEC:
+		return
+	_last_warning_msec[peer] = now
+	_logger.warning(text, values)
+
+const _WARNING_INTERVAL_MSEC := 1000

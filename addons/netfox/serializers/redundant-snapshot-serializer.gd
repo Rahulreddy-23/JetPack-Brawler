@@ -3,6 +3,9 @@ class_name _RedundantSnapshotSerializer
 
 var _dense_serializer: _DenseSnapshotSerializer
 
+# PATCH (see addons/NETFOX_PATCHES.md): the most snapshots an honest packet carries.
+var max_snapshots := NetworkRollback.input_redundancy
+
 static func _static_init() -> void:
 	_logger = NetfoxLogger._for_netfox("RedundantSnapshotSerializer")
 
@@ -37,9 +40,11 @@ func read_from(peer: int, properties: _PropertyPool, buffer: StreamPeerBuffer, i
 	var varuint := NetworkSchemas.varuint()
 
 	var snapshots := [] as Array[_Snapshot]
-	var max_snapshots: int = maxi(NetworkRollback.input_redundancy * 2, 16)
-	while buffer.get_available_bytes() > 0 and snapshots.size() < max_snapshots:
-		var snapshot_size: int = varuint.decode(buffer) as int
+	while buffer.get_available_bytes() > 0:
+		# PATCH (see addons/NETFOX_PATCHES.md): bound the work one packet can cause
+		if snapshots.size() >= max_snapshots:
+			break
+		var snapshot_size := varuint.decode(buffer)
 		if snapshot_size <= 0 or snapshot_size > buffer.get_available_bytes():
 			break
 		var snapshot_buffer := StreamPeerBuffer.new()

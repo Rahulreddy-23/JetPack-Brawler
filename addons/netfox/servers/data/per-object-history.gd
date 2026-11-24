@@ -54,6 +54,22 @@ func ensure_snapshot(tick: int, subject: Object, carry_forward: bool) -> _Object
 	# NOTE: May return null if tick too old
 	return history.get_at(tick) as _ObjectSnapshot
 
+# PATCH (see addons/NETFOX_PATCHES.md): the latest authoritative snapshot of
+# `subject` strictly before `tick`, skipping local predictions
+func get_latest_auth_snapshot_before(tick: int, subject: Object) -> _ObjectSnapshot:
+	if not _data.has(subject):
+		return null
+
+	var history := _data[subject] as _HistoryBuffer
+	var at := tick - 1
+	while history.has_latest_at(at):
+		var index := history.get_latest_index_at(at)
+		var snapshot := history.get_at(index) as _ObjectSnapshot
+		if snapshot != null and snapshot.is_auth():
+			return snapshot
+		at = index - 1
+	return null
+
 func restore_latest(tick: int) -> bool:
 	var any_applied := false
 	for subject in _subjects:

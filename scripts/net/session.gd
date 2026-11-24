@@ -19,6 +19,7 @@ var _cfg: TuningConfig = TuningConfig.get_default()
 func _ready() -> void:
 	multiplayer.connection_failed.connect(_on_connection_failed)
 	multiplayer.server_disconnected.connect(_on_server_disconnected)
+	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(func(id: int) -> void: _accepted.erase(id))
 	NetworkEvents.on_peer_join.connect(_on_peer_join)
 
@@ -72,6 +73,13 @@ static func local_ipv4_addresses() -> PackedStringArray:
 		if address.count(".") == 3 and not address.begins_with("127.") and not address.begins_with("169.254."):
 			result.append(address)
 	return result
+
+# Both sides, for every peer that connects: stop ENet's throttle from dropping unreliable packets.
+func _on_peer_connected(id: int) -> void:
+	var enet: ENetMultiplayerPeer = multiplayer.multiplayer_peer as ENetMultiplayerPeer
+	var packet_peer: ENetPacketPeer = enet.get_peer(id) if enet != null else null
+	if packet_peer != null:
+		packet_peer.throttle_configure(_cfg.throttle_interval_ms, _cfg.throttle_acceleration, _cfg.throttle_deceleration)
 
 # Server only. Every accepted peer counts, including ones still syncing their
 # clock, plus the host's own bot and the newcomer. Peers being turned away do not.

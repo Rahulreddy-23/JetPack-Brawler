@@ -121,6 +121,15 @@ static var _cached: TuningConfig = null
 @export var reject_notice_seconds: float = 0.0
 ## ENet port for host and join.
 @export var port: int = 0
+## ENet packet throttle (first guesses). ENet lowers a connection's throttle, and with it the
+## share of unreliable packets it sends at all, whenever a round trip is slower than the
+## recent best, which Wi-Fi jitter does constantly. Input and state travel as unreliable
+## packets, so a lowered throttle loses them. Interval is how often (ms) ENet re-measures the
+## best round trip, acceleration is how fast the throttle climbs back, and deceleration is how
+## fast it falls: 0 keeps it at the maximum so the throttle never drops a packet.
+@export var throttle_interval_ms: int = 0
+@export var throttle_acceleration: int = 0
+@export var throttle_deceleration: int = 0
 
 @export_group("Health and push")
 ## GDD: health 100, no regeneration.
@@ -249,6 +258,16 @@ static var _cached: TuningConfig = null
 @export var hit_freeze_frames: int = 0
 ## Seconds of the white hit flash.
 @export var hit_flash_seconds: float = 0.0
+
+# --- task D ---
+## Seconds after a rocket is launched or deflected before its own owner can set it off
+## (first guess, long enough to leave the muzzle).
+@export var rocket_arm_time: float = 0.0
+## A bomb whose speed after a floor bounce is below this, in bh/s, comes to rest (first guess).
+@export var bomb_rest_speed: float = 0.0
+## An idle object slot is sent to peers once per this many seconds instead of every tick, and
+## a slot is still sent every tick for this long after its object ends (first guess).
+@export var object_idle_send_interval: float = 0.0
 
 # --- task F ---
 @export_group("Touch fire, melee and buttons")

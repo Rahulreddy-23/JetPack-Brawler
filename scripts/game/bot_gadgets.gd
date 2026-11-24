@@ -3,8 +3,8 @@ extends Node
 ## Gadget inventory of one bot (child "Gadgets"). Rollback state, written by the bot's
 ## own tick on the client and on the host, like BotArsenal.
 ##
-## Owner: task D (world objects and gadgets). Task A only declares the state and the
-## interface. _rollback_tick does nothing yet, so no gadget is ever used.
+## Owner: task D (world objects and gadgets). The thrown object itself is made by
+## GadgetRules (used_at) on the host.
 
 ## ItemIds gadget id in the first slot, or ItemIds.NONE. This is the one thrown next.
 var gadget_a: int = ItemIds.NONE
@@ -23,13 +23,25 @@ var gadget_dir: Vector2 = Vector2.ZERO
 var gadget_serial: int = 0
 
 # Runs on the network tick after the bot's own movement. The bot's early return while knocked
-# out does NOT stop this tick: it must do nothing while the bot's vitals.knocked_out is true
-# (no use, no state change). Task D: the bot is
-# get_parent() as Bot; read its input.gadget (clean it with Bot.clean_bool), write only
-# the state above, read the config from MatchSettings.tuning_at(tick).
-@warning_ignore("unused_parameter")
-func _rollback_tick(delta: float, tick: int, is_fresh: bool) -> void:
-	pass
+# out does NOT stop this tick, so it checks itself: while the bot's vitals.knocked_out is true
+# there is no use and no state change. The gadget input is a one-tick pulse (task F latches
+# it), and gadget_ready_tick keeps a pulse that netfox repeats for a late input from
+# throwing twice.
+func _rollback_tick(_delta: float, tick: int, _is_fresh: bool) -> void:
+	var bot: Bot = get_parent() as Bot
+	if bot.vitals.knocked_out or not Bot.clean_bool(bot.input.gadget):
+		return
+	if gadget_a == ItemIds.NONE or tick < gadget_ready_tick:
+		return
+	var cfg: TuningConfig = MatchSettings.tuning_at(tick)
+	var aim: Vector2 = Bot.clean_vector(bot.input.aim)
+	last_gadget_id = gadget_a
+	last_gadget_tick = tick
+	gadget_dir = aim.normalized() if aim.length() > cfg.stick_deadzone else Vector2(bot.facing, 0.0)
+	gadget_serial += 1
+	gadget_ready_tick = tick + WorldObjects.seconds_to_ticks(cfg.gadget_cooldown, cfg)
+	gadget_a = gadget_b
+	gadget_b = ItemIds.NONE
 
 ## True if a gadget was used at this tick.
 func used_at(tick: int) -> bool:
@@ -39,12 +51,20 @@ func used_at(tick: int) -> bool:
 func used_id() -> int:
 	return last_gadget_id
 
-## Put a gadget into the first free slot. False when both slots are full. Task D.
-@warning_ignore("unused_parameter")
+## Put a gadget into the first free slot. False when both slots are full or id is not a gadget.
 func give(id: int) -> bool:
-	return false
+	if not ItemIds.is_gadget(id):
+		return false
+	if gadget_a == ItemIds.NONE:
+		gadget_a = id
+	elif gadget_b == ItemIds.NONE:
+		gadget_b = id
+	else:
+		return false
+	return true
 
-## Empty hands. Task D gives the starting Cooker Bomb here.
+## Start of a life: one Cooker Bomb, ready to throw.
 func reset_for_spawn(_cfg: TuningConfig) -> void:
-	gadget_a = ItemIds.NONE
+	gadget_a = ItemIds.COOKER_BOMB
 	gadget_b = ItemIds.NONE
+	gadget_ready_tick = 0

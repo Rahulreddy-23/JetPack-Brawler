@@ -89,6 +89,9 @@ max_players = 4
 spare_connection_slots = 1
 reject_notice_seconds = 0.5
 port = 24680
+throttle_interval_ms = 5000
+throttle_acceleration = 2
+throttle_deceleration = 0
 max_health = 100.0
 low_health_threshold = 25.0
 low_health_push_multiplier = 2.0
@@ -145,6 +148,10 @@ shake_strength_knockout_px = 18.0
 shake_decay_per_second = 60.0
 hit_freeze_frames = 3
 hit_flash_seconds = 0.08
+; --- task D ---
+rocket_arm_time = 0.2
+bomb_rest_speed = 1.5
+object_idle_send_interval = 1.0
 ; --- task F --- (first guesses, all of them)
 fire_ring_fraction = 0.75
 tap_time = 0.2

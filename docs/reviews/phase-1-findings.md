@@ -17,7 +17,7 @@ these.
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
 | `dev` | `beaf6cb` | 24 Nov 2026 22:52 | One reviewer commit, `beaf6cb` (finding D-9, accepted). `d04c17f` only merges `main` into `dev`. |
-| `geminiceo` | `e66eee1` | 24 Nov 2026 21:01 | No commits since the audit, which is decided finding by finding below. |
+| `geminiceo` | `60fabd3` | 24 Nov 2026 23:26 | One reviewer commit, `60fabd3` (follow-up check: findings G-13 and G-14, decided below; its one code change only brings the branch's future-tick bound in line with `main`). `290ac58` only merges `main`. |
 
 ## Findings
 
@@ -176,6 +176,24 @@ and G-6).
 | G-11.1 | A NaN shake strength corrupts the camera offset | By reading | Accepted, smaller: a finite check, applied by the lead when merging `effects/`. The camera validity check rejected (the shake is the camera's child) |
 | G-11.2 | Knockout credit accepts a hit from a later tick | Real in `combat_ledger.gd`, which is being retired | Carried forward as a requirement on its replacement: credit only when 0 <= tick difference <= window |
 | G-12 | HUD and touch controls redraw every frame | Not measured; negligible | Accepted as low priority, last item of 1.1b-G |
+
+### geminiceo follow-up check (`60fabd3`)
+
+Written against the lead's task 1.1 fix round as it stood at 18:38, before the fifth-player
+fix and the netfox hardening merged. Each part was checked against `main` at `242e7b4`.
+
+| Id | Finding | Verified against `main` | Outcome |
+|---|---|---|---|
+| G-13.1 | The capacity check counts every connected peer, so a rejected fifth peer blocks a real one for the notice window | No longer true: `Session._on_peer_join` counts `_accepted`, and a peer being turned away is not in it | Already fixed (G-7.4); no change |
+| G-13.2 | During the 0.5 s notice window the rejected peer is still connected and can send commands | True by design: the window exists so the client can show "Match full" | No change. A connected peer that is not accepted can do no more than any hostile device on the hotspot, and the bounds on what one packet can cost (netfox patches 1 to 8 and 12) are now on `main` |
+| G-13.3 | After the wait, the drop runs without checking the tree or that the same session is active | By reading: after a leave `get_peers()` is empty, so nothing is dropped. A wrong drop needs a re-host inside 0.5 s and a new peer drawing the same random 31-bit id | Rejected: not reachable in practice, and a session counter is more state than the case deserves |
+| G-14.1 | The ping handler has no server check and casts an unchecked payload | The payload type check is on `main` (patch 7). The server check is not, and is not needed: relay is off, so a client only ever receives packets from the host | Already fixed in part (G-4); server check rejected |
+| G-14.2 | The timestamp request handler has no server check | True. A client would answer the host with its own clock value, which changes nothing | Rejected, same reason as G-14.1 |
+| G-14.3 | The set-timestamp handler does not check for a finite value or a second clock loop | True. Only the host can send it (sender check on `main`), and the host is trusted with the whole match. The second loop on a quick leave and rejoin before the first sync is real and already on the deferred list | Finite check rejected; the loop guard stays deferred to before online rooms |
+| G-14.4 | `_awaiting_samples` leaks when pings are lost | Same as G-10 | Deferred (G-10) |
+
+The reviewer's clean audit of `scripts/game/combat_geometry.gd` and `cast_result.gd` (NaN and
+infinite inputs, zero-length segments, corner normals) is noted; no change follows from it.
 
 The reviewer's test file is not taken as it is: against `main` it exits 1, three of its nine
 checks assert nothing, and five findings have no check. Each accepted fix gets its own test

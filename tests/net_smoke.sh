@@ -5,10 +5,11 @@
 # ticks where both sides used the same input and the client's value came from
 # a re-simulation of one step from a state received from the host.
 # Usage: tests/net_smoke.sh       (set GODOT=/path/to/Godot to override)
-# SIM_LATENCY_MS=75 and SIM_LOSS=5 run it through the latency and loss simulator on both
+# SIM_LATENCY_MS=75, SIM_JITTER_MS=40 and SIM_LOSS=5 run it through the latency and loss simulator on both
 # sides (the proxy listens on PORT + 1, so keep that port free too).
-# Exit code 0 = pass, 1 = fail, 2 = inconclusive (a stall was seen or too few
-# ticks were comparable; this is NOT a pass). Never leaves processes running.
+# Exit code 0 = pass, 1 = fail (including a lowered ENet throttle or a host that lacked the
+# client's input), 2 = inconclusive (a stall was seen or too few ticks were comparable;
+# this is NOT a pass). Never leaves processes running.
 set -u
 
 GODOT="${GODOT:-/Applications/Godot.app/Contents/MacOS/Godot}"
@@ -19,6 +20,7 @@ PIDS=()
 SIM_ARGS=()
 [ -n "${SIM_LATENCY_MS:-}" ] && SIM_ARGS+=("--sim-latency-ms=$SIM_LATENCY_MS")
 [ -n "${SIM_LOSS:-}" ] && SIM_ARGS+=("--sim-loss=$SIM_LOSS")
+[ -n "${SIM_JITTER_MS:-}" ] && SIM_ARGS+=("--sim-jitter-ms=$SIM_JITTER_MS")
 
 cleanup() {
 	for pid in "${PIDS[@]:-}"; do
@@ -66,6 +68,7 @@ echo "--- host final ---";   grep "^FINAL" "$TMP/host.log"
 
 echo "--- how far ahead of its own tick each side received snapshots ---"; grep -h "^LEAD" "$TMP/host.log" "$TMP/client.log"
 echo "--- measured clock sync ---"; grep -h "^CLOCK" "$TMP/host.log" "$TMP/client.log"
+echo "--- ENet packet throttle per connection (32 is the maximum; loss is ENet's own measure) ---"; grep -h "^THROTTLE" "$TMP/host.log" "$TMP/client.log"
 echo "--- bandwidth while two bots exist (ENet statistics) ---"; grep -h "^BANDWIDTH" "$TMP/host.log" "$TMP/client.log"
 
 # The object pool and pickup spots must be created identically on both sides.
@@ -81,13 +84,29 @@ if grep -q "SCRIPT ERROR\|^ERROR" "$TMP/host.log" "$TMP/client.log"; then
 	echo "FAIL: errors in logs"; grep -h "SCRIPT ERROR\|^ERROR" "$TMP/host.log" "$TMP/client.log" | head; exit 1
 fi
 
+# An honest session never sends a packet over netfox's size limit, so a size
+# warning means the limit is too tight for an honest packet.
+if grep -q "Dropping .* byte packet" "$TMP/host.log" "$TMP/client.log"; then
+	echo "FAIL: a packet was dropped for size"; grep -h "Dropping .* byte packet" "$TMP/host.log" "$TMP/client.log" | head -3; exit 1
+fi
+
+# ENet's packet throttle must never leave its maximum on either side: below it ENet drops
+# unreliable packets (the player's input) before sending them. See Session.
+THROTTLE_LINES="$(grep -h "^THROTTLE" "$TMP/host.log" "$TMP/client.log")"
+if [ "$(echo "$THROTTLE_LINES" | grep -c .)" -lt 2 ]; then echo "FAIL: no ENet throttle statistics from one of the sides"; exit 1; fi
+if echo "$THROTTLE_LINES" | awk '{ split($4, m, "="); split($6, l, "="); if (m[2] + 0 < l[2] + 0) bad = 1 } END { exit bad }'; then :; else
+	echo "FAIL: ENet's packet throttle fell below its maximum, so unreliable packets were dropped before sending"; exit 1
+fi
+
 # Compare the client bot (every peer id except the host's 1) tick by tick, only
 # on ticks where the comparison is meaningful. See compare_traces.py.
 # With simulated latency the strict one-step rule finds nothing, so compare the ticks that have
 # had time to settle: twice the one-way latency, in ticks, plus six.
 SETTLED_ARGS=()
 TICK_RATE="$(sed -n 's|^time/tickrate=||p' "$ROOT/project.godot")"
-[ -n "${SIM_LATENCY_MS:-}" ] && SETTLED_ARGS=(--settled "$(( (SIM_LATENCY_MS * 2 * TICK_RATE + 999) / 1000 + 6 ))")
+if [ -n "${SIM_LATENCY_MS:-}" ] || [ -n "${SIM_JITTER_MS:-}" ]; then
+	SETTLED_ARGS=(--settled "$(( ((${SIM_LATENCY_MS:-0} + ${SIM_JITTER_MS:-0}) * 2 * TICK_RATE + 999) / 1000 + 6 ))")
+fi
 python3 -I "$ROOT/tests/compare_traces.py" "$TMP/host.log" "$TMP/client.log" ${SETTLED_ARGS[@]+"${SETTLED_ARGS[@]}"}
 STATUS=$?
 if [ "$STATUS" -ne 0 ]; then echo "logs kept in $TMP"; trap - EXIT; cleanup; fi
