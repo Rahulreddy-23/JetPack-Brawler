@@ -15,13 +15,13 @@ var aim: Variant = Vector2.ZERO
 var jet: Variant = false
 ## True if the dash button was pressed at any frame since the last tick.
 var dash: Variant = false
-## True while the fire button (or the aim stick past its outer ring) is held. Gathered by task F.
+## True while the fire button (or the aim stick past its outer ring) is held.
 var fire: Variant = false
-## True for the one tick after a melee request (quick tap on the aim stick or the melee button).
+## True for exactly one tick per melee request (quick tap on the aim stick or the melee button).
 var melee: Variant = false
-## True for the one tick after the gadget button was pressed.
+## True for exactly one tick per gadget button press.
 var gadget: Variant = false
-## True for the one tick after the weapon swap icon was pressed.
+## True for exactly one tick per weapon swap icon press.
 var swap: Variant = false
 
 ## True for the dummy bot: nobody plays it, so it gathers nothing and its input stays neutral.
@@ -34,6 +34,8 @@ var autopilot_delay_ticks: int = 0
 var _cfg: TuningConfig = TuningConfig.get_default()
 var _jet_latch: bool = false
 var _dash_latch: bool = false
+var _edge_sent: Dictionary[StringName, bool] = {}
+var _started: bool = false
 var _autopilot_start_tick: int = -1
 
 @onready var _bot: Node2D = get_parent() as Node2D
@@ -49,6 +51,15 @@ func _enter_tree() -> void:
 	if not NetworkTime.after_tick.is_connected(_on_after_tick):
 		NetworkTime.after_tick.connect(_on_after_tick)
 
+# Presses of the edge actions are counted from events, so a press and release inside one
+# frame is not lost. Touch counts its own presses in TouchControls.
+func _input(event: InputEvent) -> void:
+	if dummy or autopilot or not is_multiplayer_authority():
+		return
+	for action: StringName in InputActions.EDGE_ACTIONS:
+		if event.is_action_pressed(action):
+			InputActions.queue_edge(action)
+
 func _process(_delta: float) -> void:
 	if dummy or not is_multiplayer_authority():
 		return
@@ -63,6 +74,10 @@ func _on_after_tick(_delta: float, tick: int) -> void:
 	if autopilot:
 		_gather_autopilot(tick)
 	else:
+		if not _started:
+			# Presses made before this bot existed (while connecting) are not played back.
+			_started = true
+			InputActions.clear_edges()
 		_gather_device()
 
 func _gather_device() -> void:
@@ -79,6 +94,21 @@ func _gather_device() -> void:
 	dash = _dash_latch
 	_jet_latch = false
 	_dash_latch = false
+	fire = Input.is_action_pressed(InputActions.FIRE)
+	melee = _next_edge(InputActions.MELEE)
+	gadget = _next_edge(InputActions.GADGET)
+	swap = _next_edge(InputActions.SWAP)
+
+# This runs once per network tick, right before netfox records the input for it, so each
+# counted press becomes true in exactly one recorded tick: the tick after a delivery never
+# delivers, and a press that arrives while no tick runs stays counted until one does. Two
+# presses before one tick are spread over two ticks with a false tick between them, so the
+# consumer always sees two separate edges. The last delivery is remembered here, not read
+# back from the input property, because netfox rewrites input properties when it rolls back.
+func _next_edge(action: StringName) -> bool:
+	var deliver: bool = not _edge_sent.get(action, false) and InputActions.take_edge(action)
+	_edge_sent[action] = deliver
+	return deliver
 
 func _gather_autopilot(tick: int) -> void:
 	if _autopilot_start_tick < 0:

@@ -250,6 +250,32 @@ static var _cached: TuningConfig = null
 ## Seconds of the white hit flash.
 @export var hit_flash_seconds: float = 0.0
 
+# --- task F ---
+@export_group("Touch fire, melee and buttons")
+## Aim stick deflection, as a fraction of stick_radius_px, at or past which the fire input is
+## set; the ring is drawn at this radius (first guess).
+@export_range(0.0, 1.0) var fire_ring_fraction: float = 0.0
+## A touch in the aim zone released within this many seconds, and never moved more than
+## tap_distance_px, is a melee tap (first guess).
+@export var tap_time: float = 0.0
+## Most a tap may move from where it began, in pixels. Keep it below fire_ring_fraction
+## times stick_radius_px so a tap can never fire (first guess).
+@export var tap_distance_px: float = 0.0
+## Radius of the melee, gadget and swap buttons in pixels, about 10 mm on a phone (first guess).
+@export var touch_button_radius_px: float = 0.0
+## Button centres as offsets from the bottom-right corner, like dash_button_offset_px (first guess).
+@export var melee_button_offset_px: Vector2 = Vector2.ZERO
+@export var gadget_button_offset_px: Vector2 = Vector2.ZERO
+@export var swap_button_offset_px: Vector2 = Vector2.ZERO
+## Line width of the touch rings and button outlines in pixels (first guess).
+@export var touch_ring_width_px: float = 0.0
+## Text size of button labels and of the weapon and gadget lines of the HUD, in pixels (first guess).
+@export var hud_text_size_px: int = 0
+
+## Most presses of one edge action (melee, gadget, swap) kept waiting for a network tick;
+## more are dropped, so taps made while no tick runs do not play back later (first guess).
+@export var max_pending_presses: int = 0
+
 ## Load the shared config once and reuse it.
 static func get_default() -> TuningConfig:
 	if _cached == null:

@@ -37,6 +37,9 @@ run clock_hijack "$GODOT" --headless --path "$ROOT" res://tests/test_clock_hijac
 run menu_touch "$GODOT" --headless --path "$ROOT" --script res://tests/test_menu_touch.gd
 run touch_focus "$GODOT" --headless --path "$ROOT" --script res://tests/test_touch_focus.gd
 run main_touch "$GODOT" --headless --path "$ROOT" res://tests/test_main_touch.tscn -- --touch-ui --port="$((BASE + 13))"
+run touch_input "$GODOT" --headless --path "$ROOT" res://tests/test_touch_input.tscn
+run touch_net "$GODOT" --headless --path "$ROOT" res://tests/test_touch_net.tscn -- --touch-ui --port="$((BASE + 16))"
+run hud "$GODOT" --headless --path "$ROOT" res://tests/test_hud.tscn
 run session_guard "$GODOT" --headless --path "$ROOT" res://tests/test_session_guard.tscn -- --port="$((BASE + 10))"
 run session_full "$GODOT" --headless --path "$ROOT" res://tests/test_session_full.tscn -- --port="$((BASE + 12))"
 run bot_spawner_exit "$GODOT" --headless --path "$ROOT" res://tests/test_bot_spawner_exit.tscn

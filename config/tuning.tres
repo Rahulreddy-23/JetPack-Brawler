@@ -145,3 +145,14 @@ shake_strength_knockout_px = 18.0
 shake_decay_per_second = 60.0
 hit_freeze_frames = 3
 hit_flash_seconds = 0.08
+; --- task F --- (first guesses, all of them)
+fire_ring_fraction = 0.75
+tap_time = 0.2
+tap_distance_px = 24.0
+touch_button_radius_px = 56.0
+melee_button_offset_px = Vector2(330.0, 150.0)
+gadget_button_offset_px = Vector2(300.0, 300.0)
+swap_button_offset_px = Vector2(510.0, 150.0)
+touch_ring_width_px = 3.0
+hud_text_size_px = 24
+max_pending_presses = 2
