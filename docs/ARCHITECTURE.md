@@ -229,6 +229,22 @@ parallel, each in its own files against A's stubs.
   blaster and the rocket tube show a muzzle flash only.
 - The hazard's floor and top in pixels come from one helper on the arena layout, used by the
   combat rules and by the picture.
+- A Spring Plate launches: a hit flagged as a launch replaces the victim's vertical speed
+  with the plate's and adds the horizontal part, so a falling bot leaves at the plate's
+  speed and a running bot keeps its run.
+- A push that ends a dash first gives the bot its normal dash-exit speed, then adds the push.
+- A tick's hits on one victim are summed in a fixed sorted order, so the result does not
+  depend on the order they were collected.
+- In the phase 1 test cycle a bot knocked out once the metal has started rising waits for
+  the next cycle to respawn.
+- Bullets pass through a dashing bot and can hit a bot behind it.
+- Melee does not reach through solid walls.
+- Recoil is a push on the shooter and opens the shooter's push window.
+- An object launched overlapping a solid is an immediate contact. A rocket's range is
+  enforced by the world-object rules.
+- Swap and melee are one-tick pulses from the input layer. This is safe while no bot is
+  simulated on a repeated input; when AI bots write inputs directly (phase 2), add
+  previous-input state for both.
 - The push window uses one control factor for braking and steering, on the ground and in
   the air. Jetpack thrust is not reduced.
 - Pushes in the config are the GDD's numbers; `push_speed_scale` converts every push,
