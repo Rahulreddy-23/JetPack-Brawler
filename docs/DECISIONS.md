@@ -45,6 +45,14 @@ this file wins.
 - Champions in multiplayer: a beaten champion joins the bot pool as a normal bot that wears
   the champion's look and follows player rules. Champion tricks stay in the solo fights.
 
+- Push window: a bot that has just been pushed keeps that push for a short window set in
+  the config, during which ground braking and steering are reduced. Without it a grounded
+  bot stops almost at once and knockback, the core of the design, would not read. Raised by
+  the movement research and by the geminiceo audit.
+- Order inside phase 1: Dabba (task 1.6) is built last, after Rahul has played the
+  movement, knockback and hazard sandbox on phones. Touch controls get a phone test as soon
+  as task 1.1 is merged, before more buttons are added.
+
 ## Lead's calls (not Rahul's decisions; correct them if wrong)
 
 - Phase 1 uses grey-box shapes only. No art is bought or imported.
