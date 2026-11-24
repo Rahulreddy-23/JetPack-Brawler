@@ -16,7 +16,7 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `8e3f47d` | 24 Nov 2026 18:43 | No reviewer changes since `320df9b` (finding D-3); later commits only merge `main` into `dev`. |
+| `dev` | `d91d4d0` | 24 Nov 2026 19:33 | One reviewer commit, `d91d4d0` (finding D-4, accepted). `2231a14` only merges `main` into `dev`. |
 | `geminiceo` | `e66eee1` | 24 Nov 2026 18:50 | Audit verified against the current code and decided finding by finding; see "geminiceo audit" below. |
 
 ## Findings
@@ -54,6 +54,19 @@ these.
 - Outcome: accepted. To be added to the test suite at the merge of task 1.1, with the
   suite's timeout and script-error check around it, since the test has no timeout of its
   own.
+
+### D-4 (dev, `d91d4d0`): the device script should test aim, dash, aim with two thumbs
+
+- Change: check 6 of `docs/reviews/device-checkpoint-1.md` now asks the tester to keep the
+  left stick held and, with the right thumb only, aim, tap dash, then aim again, without
+  releasing the left stick or using a third finger.
+- Verified: yes, by the layout. The dash button sits on the right, above the aim stick, so
+  the right thumb has to leave the aim stick to dash. Once firing exists (the aim stick held
+  past its ring), dashing will interrupt firing. Whether that is comfortable is exactly what
+  a phone test should answer before more buttons are added on that side.
+- Outcome: accepted and cherry-picked onto `main`. If the answer on phones is "no", the dash
+  button's position is a config change (`dash_button_offset_px`); moving dash to the left
+  side would be a control-scheme change for Rahul.
 
 ## geminiceo audit (`e66eee1`)
 
