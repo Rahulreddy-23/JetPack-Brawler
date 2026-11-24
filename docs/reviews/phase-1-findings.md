@@ -16,7 +16,7 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `beaf6cb` | 24 Nov 2026 22:55 | One reviewer commit, `beaf6cb` (finding D-9, accepted). `d04c17f` only merges `main` into `dev`. |
+| `dev` | `beaf6cb` | 24 Nov 2026 22:52 | One reviewer commit, `beaf6cb` (finding D-9, accepted). `d04c17f` only merges `main` into `dev`. |
 | `geminiceo` | `e66eee1` | 24 Nov 2026 21:01 | No commits since the audit, which is decided finding by finding below. |
 
 ## Findings
