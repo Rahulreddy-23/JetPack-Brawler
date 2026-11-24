@@ -27,6 +27,24 @@ this file wins.
    an option for experienced players. Reason: the research found no game that uses
    tap-to-melee, and players coming from Brawl Stars expect a tap on that stick to shoot.
 
+6. Product owner: Rahul told the lead to act as product owner and take the decisions on what
+   the independent reviewers (branches `dev` and `geminiceo`) raise, and on open design
+   questions. Still Rahul's alone: the game's name, anything that costs money, publishing,
+   the number of bosses in the first release, and whether a gate is passed.
+
+## Product owner decisions (taken by the lead under decision 6; Rahul can overrule any)
+
+- Card pool: the prototype keeps 4 Chaos Cards. A picked card leaves the pool, and when fewer
+  than three cards remain the pool is refilled with the picked cards except the one active
+  now. The GDD's "leaves the pool for the rest of the match" cannot work with 4 cards and 4
+  picks.
+- Who picks the card: the player with the fewest points in the match so far, as Match flow
+  says. "Last-placed" in The twist means the same thing.
+- Last bots knocked out together by the hazard: the 45-second rule applies to them (most
+  health just before, then most damage dealt in the round).
+- Champions in multiplayer: a beaten champion joins the bot pool as a normal bot that wears
+  the champion's look and follows player rules. Champion tricks stay in the solo fights.
+
 ## Lead's calls (not Rahul's decisions; correct them if wrong)
 
 - Phase 1 uses grey-box shapes only. No art is bought or imported.
@@ -53,9 +71,8 @@ this file wins.
   resumes). Plain run speed would not give the dash-into-jetpack fling the GDD describes.
 - The Smelter has a ceiling. One tank of fuel climbs further than the arena is tall, so
   without it bots would leave the map.
-- netfox carries one small local patch (see `addons/NETFOX_PATCHES.md` once it lands): it
-  rejects input packets stamped with a far-future tick, which otherwise freeze every bot on
-  the host.
+- netfox carries one small local patch, recorded in `addons/NETFOX_PATCHES.md` once it
+  lands, that bounds the tick accepted on incoming packets.
 - Renderer: Compatibility (OpenGL), as the Godot 4.7 documentation recommends for low-end
   phones and 2D.
 - The host alone decides hits, damage and knockouts, as the GDD's Tech approach says. Each
