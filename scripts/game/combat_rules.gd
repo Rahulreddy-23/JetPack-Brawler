@@ -145,8 +145,7 @@ static func _apply_hits(tick: int, victim: Bot, hits: Array[Hit], cfg: TuningCon
 static func _push(victim: Bot, speed: Vector2, launch: Vector2, launched: bool, cfg: TuningConfig) -> void:
 	var px: float = cfg.bot_height_px
 	if victim.dash_left > 0.0:
-		victim.velocity = victim.dash_dir * cfg.dash_exit_speed * px
-		victim.dash_left = 0.0
+		victim.finish_dash(cfg)
 	if launched:
 		victim.velocity = Vector2(victim.velocity.x + launch.x * px, launch.y * px)
 	victim.velocity += speed * px

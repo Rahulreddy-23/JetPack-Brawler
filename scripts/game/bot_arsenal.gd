@@ -70,6 +70,8 @@ func _fire(bot: Bot, dir: Vector2, tick: int, cfg: TuningConfig) -> void:
 	# Recoil is the shooter's own predicted movement, like every other push, so it also opens
 	# the push window (otherwise ground braking removes it before the bot has moved).
 	if stats.recoil > 0.0:
+		if bot.dash_left > 0.0:
+			bot.finish_dash(cfg)
 		bot.velocity -= dir * stats.recoil * cfg.push_speed_scale * cfg.bot_height_px
 		bot.vitals.push_until_tick = maxi(bot.vitals.push_until_tick, tick + 1 + WeaponRules.seconds_to_ticks(cfg.push_window_time, cfg))
 

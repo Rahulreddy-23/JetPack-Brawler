@@ -16,7 +16,7 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `dfa59fc` | 24 Nov 2026 22:40 | One reviewer commit, `dfa59fc` (finding D-8, accepted). `f17ad68` and `efe4a91` only merge `main` into `dev`. |
+| `dev` | `beaf6cb` | 24 Nov 2026 22:55 | One reviewer commit, `beaf6cb` (finding D-9, accepted). `d04c17f` only merges `main` into `dev`. |
 | `geminiceo` | `e66eee1` | 24 Nov 2026 21:01 | No commits since the audit, which is decided finding by finding below. |
 
 ## Findings
@@ -121,6 +121,21 @@ these.
   touch network, focus and HUD tests still pass.
 - Outcome: accepted and cherry-picked onto `main`. Worth trying on a phone: a flick now
   fires exactly one shot.
+
+### D-9 (dev, `beaf6cb`): scrap-blaster recoil was lost when firing during a dash
+
+- Change: a new `Bot.finish_dash` gives the dash-exit velocity and ends the dash; the
+  arsenal calls it before applying recoil when the shooter is dashing, and the combat rules'
+  push now uses the same function instead of its own copy. Three new checks in
+  `tests/test_weapons.gd`.
+- Verified: yes. The dash code sets the velocity on every dash tick and again on exit, so
+  recoil added mid-dash was overwritten: the GDD's "fire downward for an extra hop" did
+  nothing during a dash. With the reviewer's test and the scripts from before the change the
+  three new checks fail; with the change all 185 pass, and the movement (57) and combat
+  rules (150) tests still pass.
+- Outcome: accepted and cherry-picked onto `main`. It follows the existing ruling that a
+  push ends a dash and that recoil is a push on the shooter. Consequence to know: firing the
+  scrap blaster mid-dash cuts the dash short, so its bullet immunity ends on that tick.
 
 ## geminiceo audit (`e66eee1`)
 

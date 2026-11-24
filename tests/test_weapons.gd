@@ -345,6 +345,23 @@ func _test_recoil() -> void:
 	down.input.fire = true
 	_step(down, 10)
 	_check(down.velocity.y < 0.0 and is_zero_approx(down.velocity.x), "firing downward gives a hop (velocity points up)")
+
+	var dasher: Bot = _bot()
+	dasher.arsenal.give_weapon(ItemIds.SCRAP_BLASTER, _cfg)
+	dasher.input.move = Vector2.RIGHT
+	dasher.input.dash = true
+	dasher.input.aim = Vector2.DOWN
+	dasher.input.fire = true
+	dasher._rollback_tick(_dt, 10, true)
+	var cooldown: float = dasher.dash_cooldown_left
+	_step(dasher, 10)
+	_check(dasher.dash_left == 0.0 and dasher.dash_cooldown_left == cooldown, "recoil ends an active dash and preserves its cooldown")
+	_near_v(dasher.velocity, Vector2(_cfg.dash_exit_speed * _px, -kick), 0.0001, "recoil adds to normal dash exit velocity")
+	dasher.input.dash = false
+	var start_y: float = dasher.position.y
+	dasher._rollback_tick(_dt, 11, true)
+	_check(dasher.position.y < start_y, "a downward shot made while dashing still gives a recoil hop on the next tick")
+
 	for id: int in [ItemIds.RIVET_GUN, ItemIds.BOLT_THROWER, ItemIds.ROCKET_TUBE]:
 		var other: Bot = _bot()
 		if id != ItemIds.RIVET_GUN:

@@ -206,8 +206,12 @@ func _tick_dash(cfg: TuningConfig, delta: float) -> void:
 	velocity = dash_dir * (cfg.dash_distance / cfg.dash_time) * px
 	_move(cfg, velocity * step)
 	if dash_left <= 0.0:
-		dash_left = 0.0
-		velocity = dash_dir * cfg.dash_exit_speed * px
+		finish_dash(cfg)
+
+## Apply the exit velocity when a dash completes or is interrupted by a push.
+func finish_dash(cfg: TuningConfig) -> void:
+	dash_left = 0.0
+	velocity = dash_dir * cfg.dash_exit_speed * cfg.bot_height_px
 
 # control scales the horizontal acceleration and braking (1 normally, less in the push window).
 func _tick_free_movement(cfg: TuningConfig, delta: float, move: Vector2, on_floor: bool, wall: int, thrusting: bool, control: float) -> void:

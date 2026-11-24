@@ -252,6 +252,24 @@ parallel, each in its own files against A's stubs.
 - Pool and pickup synchronizers re-register on server start, so a phone that was a client
   and then hosts sends their state.
 
+## Contract rulings after the review of task D (24 Nov 2026)
+
+- In the phase 1 sandbox a bot gets one Cooker Bomb on every spawn and respawn. The GDD's
+  "starts each round with one" arrives with rounds in phase 2.
+- When a bot's bomb or rocket range is full, the oldest object is replaced without a blast.
+  The GDD's "third removes the oldest" is about traps.
+- A rocket is not a bullet: it explodes on a dashing bot. Its contact with bots is a swept
+  test over the tick's motion.
+- A slot already marked to explode this tick is skipped by the bullet and melee queries, so
+  a shot reaches the bot behind it.
+- Every rocket has a finite lifetime, a deflected one with no speed included.
+- The pool and its send bookkeeping reset when a session starts and stops, on host and
+  client.
+- A plate that cannot be pushed clear of solids is placed at the thrower's position; a used
+  gadget is never lost.
+- Traps are drawn in their owner's colour. Bombs and rockets stay neutral. Blink timing and
+  colours are presentation constants in the draw code, not tuning numbers.
+
 ## Experiments before tasks B to F start
 
 - E0. The vendored simulator runs headless with the dev flags and the client's measured

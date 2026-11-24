@@ -15,16 +15,19 @@ Current stage: Prototype, phase 1. Gate not passed.
 - [ ] 1.1b-N netfox hardening. Built; second fix round in progress after review: netfox
       skips ticks on frames slower than one tick, diff states merge onto the client's guess,
       and one cheap host freeze remains.
-- [ ] Fifth-player test fails about 1 run in 9; fix in progress.
+- [x] Fifth-player test failed about 1 run in 9; fixed and merged.
+- [ ] Client input packets dropped by ENet's throttle under jitter; fix in progress.
 - [x] A Foundation and contracts. Reviewed, merged (`afc2eee`). No gameplay rule yet; the
       game still plays as movement only.
 - [ ] Device checkpoint 1 (Rahul): sticks, jetpack and dash on two phones over a hotspot.
       Build and script are ready (`docs/reviews/device-checkpoint-1.md`); not yet run.
-- [ ] B Combat core, hazard wiring, dummy, push window (in progress).
-- [ ] C Weapons, melee, pickups (in progress).
-- [ ] D World objects and gadgets (in progress).
-- [ ] E Presentation: effects wired to state counters (in progress).
-- [ ] F Input and HUD for fire, melee, gadget, swap (in progress).
+- [x] B Combat core, hazard wiring, dummy, push window. Reviewed, merged (`a170e4b`).
+- [x] C Weapons, melee, pickups. Reviewed, merged (`2ad983e`).
+- [ ] D World objects and gadgets. Reviewed, no blocking findings; fix round in progress.
+- [ ] E Presentation: effects wired to state counters. Reviewed and fixed; waits on the
+      netfox branch for its client-side first-sight check.
+- [x] F Input and HUD for fire, melee, gadget, swap. Reviewed, merged (`5f92739`).
+- [ ] Full test suite on `main` with B, C and F together: not yet re-run since C merged.
 - [ ] Device checkpoint 2 (Rahul): the knockback sandbox, 10 minutes of play.
 - [ ] 1.6 Dabba fight, built last.
 - [ ] Phase review and `docs/reviews/phase-1-handoff.md`.
