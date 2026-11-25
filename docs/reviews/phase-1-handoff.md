@@ -54,9 +54,36 @@ No emoji in project files (the vendored netfox README has three), no untyped dec
 no secrets or keystores in the tracked files, and one debug export preset with the internet
 permission only.
 
-### Authority, clean checkout and a headless run
+### Authority: can a client-sent value change state without the host's say?
 
-Audit in progress.
+An independent audit followed every path from a peer to the host: each remote call, each
+netfox command handler, every synchronised property and its owner, and every place the
+host reads a client's input.
+
+- No client owns any state. State a client sends for a node it does not own is discarded.
+- Every input the host reads is checked for type, for finite values and for length; a
+  crafted input gives no extra speed, fire rate, ammo, dash, gadget or range, and nothing
+  while knocked out. Several inputs for one tick: the first wins. Inputs stamped in the
+  future are bounded.
+- Not validated, being corrected: the host accepted input for ticks up to about 2 seconds
+  in the past and replayed the match from there. A modified client could withhold its
+  input, then send it with hindsight (hits land late, hits on it are undone), and by
+  staying behind could make the host replay 64 ticks every frame. The bound is being added
+  with netfox patch 15, using the same allowance as its gap rule.
+- Not validated, being corrected: three more log lines any connected device can trigger
+  without limit, one of them before it is accepted (identity packets: 10,000 lines from
+  one packet; unknown command index; tick rate mismatch). Netfox patch 16.
+- Noted for phase 2: leaving and rejoining gives a fresh bot at full health with no
+  respawn wait, which matters once there is scoring. A modified client can aim perfectly;
+  the host cannot tell.
+- Not checked: the engine's own handling of bad remote calls below netfox.
+
+### Does the game run from a clean checkout?
+
+Yes. A fresh copy made from git imports with no error or warning, a headless host starts
+and exits cleanly, and the full suite passes there: 51 of 51 (at `7c2da44`). Nothing the
+game needs is untracked, and nothing is tracked that should not be (no build outputs, no
+keystores). The debug APK lives in the ignored `builds/` folder on the Mac.
 
 ### What was not tested
 
