@@ -16,7 +16,7 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `af6d2c8` | 25 Nov 2026 16:14 | One reviewer commit, `af6d2c8` (finding D-13, accepted). `4a54e6a` only merges `main`. |
+| `dev` | `6bbcd11` | 25 Nov 2026 16:40 | One reviewer commit, `6bbcd11` (finding D-14, accepted). `d90012c` and `25a1d63` only merge `main`. |
 | `geminiceo` | `5dc5155` | 25 Nov 2026 10:03 | One reviewer commit, `5dc5155` (iteration 5: finding G-25, the same fault as D-10; the rest brings the branch in line with the decisions on G-18 and G-19). `2275445` only merges `main`. |
 
 ## Findings
@@ -216,6 +216,23 @@ these.
 - Outcome: accepted and cherry-picked onto `main`. Where actions go is unchanged; only the
   line now tells the truth. Whether actions should instead keep the last aimed direction is
   a feel question for the phone test.
+
+### D-14 (dev, `6bbcd11`): a shot's effect was drawn for the weapon held afterwards
+
+- Change: the arsenal records the weapon that fired (`last_shot_weapon`, a new rollback state
+  property on `Bot/Arsenal`), and the effects use it for the muzzle flash and the tracer
+  instead of asking what the bot holds when the frame is drawn. One new test in
+  `tests/test_fx_director.gd`; the state lists in three tests and in
+  `docs/ARCHITECTURE.md` are updated.
+- Verified: yes. A pickup is resolved after the arsenal's tick, so a bot that fires its last
+  rocket standing on the bolt thrower's spot holds the bolt thrower by the time the shot is
+  drawn, and the rocket got a tracer across the arena. The same happens whenever the frame
+  shows a tick after the one that spent the weapon. With the change the effects, weapons and
+  foundation tests pass (114, 197 and 122 checks); with the effects reading the held weapon
+  again the new check fails; the two-process fire, effects, smoke and combat tests pass with
+  the extra state property.
+- Outcome: accepted and cherry-picked onto `main`. It adds one integer per bot to the state
+  sent each tick. The debug APK of 16:14 does not have it.
 
 ## geminiceo audit (`e66eee1`)
 

@@ -15,7 +15,7 @@ const EPS: float = 0.001
 const ORIGIN: Vector2 = Vector2(2000.0, 2000.0)
 const ARSENAL_STATE: Array[String] = [
 	"active_slot", "picked_weapon", "picked_ammo", "fire_ready_tick", "last_shot_tick",
-	"shots_fired", "shot_dir", "melee_ready_tick", "last_melee_tick", "melee_serial",
+	"shots_fired", "last_shot_weapon", "shot_dir", "melee_ready_tick", "last_melee_tick", "melee_serial",
 ]
 
 ## Records every call the rules make on the world objects and answers with canned data.

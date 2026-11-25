@@ -19,6 +19,8 @@ var fire_ready_tick: int = 0
 var last_shot_tick: int = -1
 ## Counts shots. Never reset; effects compare it with the highest value seen.
 var shots_fired: int = 0
+## Weapon that fired the last shot, kept even if the active slot changes.
+var last_shot_weapon: int = ItemIds.NONE
 ## Aim direction of the last shot.
 var shot_dir: Vector2 = Vector2.ZERO
 ## Tick (absolute) at which the next melee swing is allowed.
@@ -57,11 +59,13 @@ func _rollback_tick(_delta: float, tick: int, _is_fresh: bool) -> void:
 		_fire(bot, dir, tick, cfg)
 
 func _fire(bot: Bot, dir: Vector2, tick: int, cfg: TuningConfig) -> void:
-	var stats: WeaponStats = cfg.weapon_stats(active_weapon())
+	var weapon: int = active_weapon()
+	var stats: WeaponStats = cfg.weapon_stats(weapon)
 	if stats == null or (not stats.infinite_ammo and picked_ammo <= 0):
 		return
 	last_shot_tick = tick
 	shots_fired += 1
+	last_shot_weapon = weapon
 	shot_dir = dir
 	fire_ready_tick = tick + WeaponRules.seconds_to_ticks(stats.fire_interval, cfg)
 	if not stats.infinite_ammo:

@@ -13,8 +13,7 @@ const WORLD_SIZE: float = 200000.0
 const EPS: float = 0.001
 const TIMEOUT_SECONDS: float = 60.0
 
-## Every state property the architecture's State table gives a bot, plus the two additions
-## (push_until_tick, last_gadget_id) described in the report.
+## Every bot state property registered for rollback.
 const BOT_STATE: Array[String] = [
 	":global_position", ":velocity", ":fuel", ":thrust_level", ":dash_left", ":dash_cooldown_left",
 	":dash_dir", ":jet_buffer", ":jet_held_prev", ":dash_buffer", ":wall_grace_left", ":wall_nx",
@@ -23,8 +22,8 @@ const BOT_STATE: Array[String] = [
 	"Vitals:last_hit_push", "Vitals:last_hit_damage", "Vitals:last_attacker", "Vitals:last_attack_tick",
 	"Vitals:knockouts", "Vitals:push_until_tick", "Vitals:cycle_index",
 	"Arsenal:active_slot", "Arsenal:picked_weapon", "Arsenal:picked_ammo", "Arsenal:fire_ready_tick",
-	"Arsenal:last_shot_tick", "Arsenal:shots_fired", "Arsenal:shot_dir", "Arsenal:melee_ready_tick",
-	"Arsenal:last_melee_tick", "Arsenal:melee_serial",
+	"Arsenal:last_shot_tick", "Arsenal:shots_fired", "Arsenal:last_shot_weapon", "Arsenal:shot_dir",
+	"Arsenal:melee_ready_tick", "Arsenal:last_melee_tick", "Arsenal:melee_serial",
 	"Gadgets:gadget_a", "Gadgets:gadget_b", "Gadgets:gadget_ready_tick", "Gadgets:last_gadget_tick",
 	"Gadgets:last_gadget_id", "Gadgets:gadget_dir", "Gadgets:gadget_serial",
 ]
