@@ -194,8 +194,8 @@ Tests named below (the `run_all.sh` name in brackets):
   factor 2 is the only number added (`_PACKET_SIZE_HEADROOM`). A `max_sync_packet_size`
   of zero or less means no limit, as in `PacketBuffer`, and then no cap applies. A
   dropped packet is logged as a warning ("Dropping N byte packet ...") so a future
-  large honest property is not lost silently; this warning is not rate limited, so a
-  flooding peer can fill the log with it.
+  large honest property is not lost silently. This warning is rate limited by patch
+  14.
 - Cost: none for an honest session; `net_smoke` fails if it sees the warning.
 - Test that fails without it: `netfox_host`: a zero-filled 64 KB redundant packet is
   read in under 50 ms into no snapshots; a snapshot size past the end of the packet,
@@ -361,8 +361,8 @@ Tests named below (the `run_all.sh` name in brackets):
   is dropped from there on; three zero-filled 1016 byte state packets and two 3048
   byte input packets are handled in under 50 ms and produce at most one
   unknown-identity warning (counted with an engine logger).
-- Not done: the warning of patch 6 about a packet over the size limit is not rate
-  limited.
+- Not done: nothing known. The warning of patch 6 about a packet over the size limit
+  is rate limited separately, by patch 14.
 
 ## 13. A public query for state received from the authority
 
@@ -391,6 +391,38 @@ Tests named below (the `run_all.sh` name in brackets):
   3 sets it, which shows sanitising happens before marking; the host owns neither
   subject, so the authority shortcut does not hide the result). The restart is a stop followed by a new state; the test
   client is never connected, so `NetworkTime.start()` is not run.
+
+## 14. The warning about a packet over the size limit is rate limited
+
+- File: `addons/netfox/servers/network-synchronization-server.gd` (`_is_acceptable`,
+  `erase_peer`, `reset`, new `_last_size_warning_msec`)
+- Why: patch 6 logs a warning for every packet it drops for size, and any ENet peer
+  can send one before it is accepted into the match. 1000 packets of 2048 bytes took
+  45 ms and printed 8003 log lines on a Mac debug build, and a phone host is several
+  times slower. The first oversized packet from a peer is still logged (an honest
+  drop is seen, and `net_smoke` fails on it); after that at most one warning per peer
+  per second. The packet is dropped either way.
+- Choice: a dictionary of its own in the synchronization server, not the `_warn_peer`
+  of patch 12. `_warn_peer` is a method of the snapshot serializers, which share one
+  per-peer timer between their warnings (an oversized packet would silence an
+  unknown-identity warning for the next second, and the other way round), it logs
+  under the serializer's name, and the size check runs before any serializer is
+  called. The mechanism is the same: the time of the peer's last warning, one second.
+- Bookkeeping: one integer per peer that sent an oversized packet, removed in
+  `erase_peer` (called when the peer leaves) and `reset` (called by
+  `NetworkTime.stop()`). A peer that is not accepted still gets a connection and
+  therefore a leave event, so the dictionary does not outlive the connections.
+  (The `_last_warning_msec` of the serializers, patch 12, is not cleared by these
+  two functions; at most one integer per peer id that sent a bad frame, not changed
+  here.)
+- Cost: none for an honest session.
+- Test that fails without it: `netfox_host`: 1000 oversized packets from one peer
+  inside a second produce exactly one warning (counted with an engine logger); a
+  second peer still gets its own first warning; an oversized packet that starts with a
+  valid state is still dropped while its warning is suppressed; after the interval the
+  next warning is logged again; after `erase_peer` and after `reset` the next packet
+  of that peer is logged at once; and the dictionary holds only the peers warned since
+  the reset.
 
 ## The diffs
 
@@ -883,21 +915,22 @@ diff --git a/addons/netfox/servers/network-history-server.gd b/addons/netfox/ser
  
 ```
 
-`addons/netfox/servers/network-synchronization-server.gd`, carries patches 3, 4, 6, 10 and 11:
+`addons/netfox/servers/network-synchronization-server.gd`, carries patches 3, 4, 6, 10, 11 and 14:
 
 ```diff
 diff --git a/addons/netfox/servers/network-synchronization-server.gd b/addons/netfox/servers/network-synchronization-server.gd
 --- a/addons/netfox/servers/network-synchronization-server.gd
 +++ b/addons/netfox/servers/network-synchronization-server.gd
-@@ -40,6 +40,7 @@
+@@ -40,6 +40,8 @@
  var _input_redundancy := NetworkRollback.input_redundancy
  
  var _rb_sent_state_history := {} # peer to _HistoryBuffer of _Snapshot
 +var _rb_last_full_tick := {} # PATCH: peer to (subject to tick of the last full state sent)
++var _last_size_warning_msec := {} # PATCH: peer to the time (msec) of its last oversized-packet warning
  
  var _last_sync_state_sent := _Snapshot.new(0)
  var _sync_enable_diffs := ProjectSettings.get_setting("netfox/state_synchronizer/enable_diff_states", true) as bool
-@@ -132,6 +133,9 @@
+@@ -132,6 +134,9 @@
  
  ## Deregister any and all settings associated with [param node]
  func deregister(node: Node) -> void:
@@ -907,23 +940,25 @@ diff --git a/addons/netfox/servers/network-synchronization-server.gd b/addons/ne
  	_rb_state_properties.erase_subject(node)
  	_rb_input_properties.erase_subject(node)
  	_rb_owned_state_properties.erase_subject(node)
-@@ -149,6 +153,7 @@
+@@ -149,6 +154,8 @@
  ## Called by default when a peer leaves
  func erase_peer(peer: int) -> void:
  	_rb_sent_state_history.erase(peer)
 +	_rb_last_full_tick.erase(peer)
++	_last_size_warning_msec.erase(peer)
  
  ## Forget what was sent to other peers, while keeping the registered properties
  ## [br][br]
-@@ -157,6 +162,7 @@
+@@ -157,6 +164,8 @@
  ## [method _NetworkTime.stop].
  func reset() -> void:
  	_rb_sent_state_history.clear()
 +	_rb_last_full_tick.clear()
++	_last_size_warning_msec.clear()
  	_last_sync_state_sent = _Snapshot.new(0)
  
  func _get_peer_rb_sent_history(peer: int) -> _HistoryBuffer:
-@@ -164,25 +170,42 @@
+@@ -164,25 +173,42 @@
  		_rb_sent_state_history[peer] = _HistoryBuffer.new(NetworkRollback.history_limit)
  	return _rb_sent_state_history[peer]
  
@@ -980,7 +1015,7 @@ diff --git a/addons/netfox/servers/network-synchronization-server.gd b/addons/ne
  # Prepare snapshot to be sent to `peer`
  # Only contains visible subjects' auth properties
  func _make_peer_snapshot(snapshot: _Snapshot, peer: int, properties: _PropertyPool) -> _Snapshot:
-@@ -269,43 +292,68 @@
+@@ -269,43 +295,68 @@
  		# Nothing to send
  		return
  
@@ -1021,33 +1056,32 @@ diff --git a/addons/netfox/servers/network-synchronization-server.gd b/addons/ne
  			NetworkPerformance.push_full_state_props(peer_snapshot.size())
  			NetworkPerformance.push_sent_state_props(peer_snapshot.size())
 -		else:
--			var diff := _Snapshot.make_patch(reference_snapshot, peer_snapshot)
++
++		var sent_subjects := full_subjects.duplicate()
++		if reference_snapshot != null:
+ 			var diff := _Snapshot.make_patch(reference_snapshot, peer_snapshot)
 -			if diff.is_empty():
 -				# Nothing changed, don't send anything
 -				continue
++			for subject in full_subjects:
++				diff.erase_subject(subject)
  
 -			var packets := _sparse_serializer.write_for(peer, diff, _rb_owned_state_properties)
 -			for packet in packets:
 -				_cmd_diff_state.send(packet, peer)
-+		var sent_subjects := full_subjects.duplicate()
-+		if reference_snapshot != null:
-+			var diff := _Snapshot.make_patch(reference_snapshot, peer_snapshot)
-+			for subject in full_subjects:
-+				diff.erase_subject(subject)
- 
--			_remember_sent_rollback_state(peer, diff)
--			NetworkPerformance.push_full_state_props(peer_snapshot.size())
--			NetworkPerformance.push_sent_state_props(diff.size())
 +			# Nothing changed, don't send anything
 +			if not diff.is_empty():
 +				var packets := _sparse_serializer.write_for(peer, diff, _rb_owned_state_properties)
 +				for packet in packets:
 +					_cmd_diff_state.send(packet, peer)
  
+-			_remember_sent_rollback_state(peer, diff)
+-			NetworkPerformance.push_full_state_props(peer_snapshot.size())
+-			NetworkPerformance.push_sent_state_props(diff.size())
 +				NetworkPerformance.push_full_state_props(peer_snapshot.size())
 +				NetworkPerformance.push_sent_state_props(diff.size())
 +				sent_subjects.append_array(diff.get_subjects())
-+
+ 
 +		if _rb_enable_diffs:
 +			_remember_sent_rollback_state(peer, peer_snapshot, sent_subjects)
 +
@@ -1072,7 +1106,7 @@ diff --git a/addons/netfox/servers/network-synchronization-server.gd b/addons/ne
  func _synchronize_sync_state(tick: int) -> void:
  	# We don't own sync state, nothing to synchronize
  	if _sync_owned_state_properties.is_empty():
-@@ -391,7 +439,29 @@
+@@ -391,7 +442,34 @@
  	elif is_instance_valid(multiplayer):
  		multiplayer.peer_disconnected.connect(erase_peer)
  
@@ -1082,6 +1116,7 @@ diff --git a/addons/netfox/servers/network-synchronization-server.gd b/addons/ne
 +# over the headroom below, per snapshot it may carry, is not honest.
 +const _SERVER_PEER_ID := 1
 +const _PACKET_SIZE_HEADROOM := 2
++const _SIZE_WARNING_INTERVAL_MSEC := 1000
 +
 +func _is_acceptable(sender: int, data: PackedByteArray, snapshots_per_packet: int) -> bool:
 +	if not multiplayer.is_server() and sender != _SERVER_PEER_ID:
@@ -1091,7 +1126,11 @@ diff --git a/addons/netfox/servers/network-synchronization-server.gd b/addons/ne
 +	# A size of zero or less means no limit, as in PacketBuffer
 +	var limit := _max_packet_size * _PACKET_SIZE_HEADROOM * snapshots_per_packet
 +	if _max_packet_size > 0 and data.size() > limit:
-+		_logger.warning("Dropping %d byte packet from #%d, over the limit of %d bytes (netfox/general/max_sync_packet_size)", [data.size(), sender, limit])
++		# At most one warning per peer per interval, so a peer cannot fill the log
++		var now := Time.get_ticks_msec()
++		if now - (_last_size_warning_msec.get(sender, -_SIZE_WARNING_INTERVAL_MSEC) as int) >= _SIZE_WARNING_INTERVAL_MSEC:
++			_last_size_warning_msec[sender] = now
++			_logger.warning("Dropping %d byte packet from #%d, over the limit of %d bytes (netfox/general/max_sync_packet_size)", [data.size(), sender, limit])
 +		return false
 +	return true
 +
@@ -1102,7 +1141,7 @@ diff --git a/addons/netfox/servers/network-synchronization-server.gd b/addons/ne
  	var buffer := StreamPeerBuffer.new()
  	buffer.data_array = data
  
-@@ -399,12 +469,17 @@
+@@ -399,12 +477,17 @@
  
  	for snapshot in snapshots:
  		snapshot.sanitize(sender)
@@ -1120,7 +1159,7 @@ diff --git a/addons/netfox/servers/network-synchronization-server.gd b/addons/ne
  	var buffer := StreamPeerBuffer.new()
  	buffer.data_array = data
  
-@@ -413,37 +488,52 @@
+@@ -413,37 +496,52 @@
  	_ingest_state(sender, snapshot)
  
  func _handle_diff_state(sender: int, data: PackedByteArray) -> void:
@@ -1230,4 +1269,6 @@ the patch restored. "FAIL" means the test exited 1 or printed a SCRIPT ERROR.
 | 13 | the `is_instance_valid` guard | not run | the check for a freed subject exists; the mutation was not run because of the risk that `is` on a freed object hangs |
 | 11 | filter skipped always (also when only some subjects are full) | full_state_coverage | FAIL, 14 full states for A (at most 7; a bound added for this) |
 | 11 | filter never skipped (the optimisation removed) | full_state_coverage | PASSES, by design: the result is the same, only the work differs, so no test can fail |
-
+| 14 | the rate limit (a warning for every packet) | netfox_host | FAIL, 1000 warnings for 1000 packets (exactly 1), and 5 more checks that count warnings |
+| 14 | the drop (warn, then accept the packet) | netfox_host | FAIL, the padded state packet is merged, and the padded input check of patch 6 |
+| 14 | the erase in `erase_peer` and the clear in `reset` | netfox_host | FAIL, 4 checks (no warning after the peer is erased or after a reset, 3 peers kept) |

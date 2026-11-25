@@ -32,6 +32,13 @@ this file wins.
    questions. Still Rahul's alone: the game's name, anything that costs money, publishing,
    the number of bosses in the first release, and whether a gate is passed.
 
+7. Health bars (25 Nov 2026): a bot's health bar appears above it only while its health is
+   changing, for every bot alike, and disappears again shortly after. The lead had proposed
+   a bar that is always shown, because the GDD does not say how a player reads another
+   bot's health and the low-health push cannot be judged without it; Rahul chose to show it
+   only on a change. The fill changes colour at 25 health, where the extra push starts. How
+   long it stays after a change is a first guess in the config (1.5 seconds).
+
 ## Product owner decisions (taken by the lead under decision 6; Rahul can overrule any)
 
 - Card pool: the prototype keeps 4 Chaos Cards. A picked card leaves the pool, and when fewer

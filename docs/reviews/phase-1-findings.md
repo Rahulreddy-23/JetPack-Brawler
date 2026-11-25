@@ -16,8 +16,8 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `782da7b` | 25 Nov 2026 09:19 | Two reviewer commits: `2ce67fc` (finding D-10, reproduced, open) and `782da7b` (finding D-11, accepted). `521903f` and later merge commits only merge `main`. |
-| `geminiceo` | `2afecfe` | 25 Nov 2026 09:31 | Two reviewer commits, `ba1904c` and `2afecfe` (findings G-15 to G-24, decided below). `6d966de` and `880200a` only merge `main`. Neither commit is taken whole: `ba1904c` carries netfox hunks `main` already has in another form and a session change already rejected, and the object hunks of `2afecfe` conflict with D-11. |
+| `dev` | `f5e09da` | 25 Nov 2026 10:03 | One reviewer commit, `f5e09da` (finding D-12, accepted in part). `0614ad1` only merges `main`. |
+| `geminiceo` | `5dc5155` | 25 Nov 2026 10:03 | One reviewer commit, `5dc5155` (iteration 5: finding G-25, the same fault as D-10; the rest brings the branch in line with the decisions on G-18 and G-19). `2275445` only merges `main`. |
 
 ## Findings
 
@@ -147,13 +147,29 @@ these.
   and it is right again from the next tick. So the client was sent, and applied, two states
   for its own bot that were one tick behind the host's final history. No input was lost,
   no stall was logged and the throttle stayed at its maximum.
-- Reading (not yet proven): the client's input for one tick reached the host late; the
-  host sent the bot's state for that tick without having simulated it, then repaired its
-  own history when the input arrived. If so, a late input packet on real Wi-Fi shows the
-  player a small snap of their own bot.
-- Outcome: accepted as a real fault, open. An investigation is assigned: the mechanism in
-  netfox, a reproduction on demand, and the options (an input delay, not sending a state
-  that was not simulated, or the client keeping its own prediction).
+- Cause, found by investigation and reproduced on demand (branch
+  `worktree-agent-abdc8cb18a9ad9d79`, `tests/net_late_input.sh`): it is plain upstream
+  netfox, the same with an unpatched addon. When a client's input for one tick is missing,
+  the host skips that bot for the tick and sends nothing, which is right. But it simulates
+  the next tick as soon as that tick's own input is there, starting from the carried-over
+  state, and sends the result as authoritative: one step behind. It does this for every
+  following tick until the missing input arrives, then re-simulates and sends corrected
+  states. Every player sees it: the owner's bot is pulled back, a third player sees a
+  one-tick step backwards. If jitter delivers the stale version of a tick after the
+  corrected one, the wrong value stays in the client's history, which is what the smoke
+  test caught.
+- How often: not on every late packet. Each packet carries the last 4 ticks of input, so a
+  gap needs four or five packets in a row delayed or reordered, about 133 ms of burst.
+  Measured with packets held on purpose: 4 to 8 stale states per gap and the bot shown up
+  to 28.6 px wrong (57 px in three runs) for about as many frames as the gap lasted.
+- Options measured: an input delay of 2 ticks made no difference. Letting the host predict
+  with the last known input removed it but would repeat one-tick button presses (melee,
+  swap, dash, gadget). Not building on a carried-over start state removed it in a prototype.
+- Outcome: accepted. Fix in progress as netfox patch 15: the host does not simulate a bot
+  from a carried-over start state while the gap is open, and fills a gap that can no longer
+  be filled (older than the redundancy window) with the last known input so the bot cannot
+  freeze. The smoke test's comparison rule is corrected in the same change: it compared a
+  tick whenever that tick's own input matched, which is not enough.
 
 ### D-11 (dev, `782da7b`): a deflected rocket was checked against a path it never flew
 
@@ -170,6 +186,19 @@ these.
   runs the contact rule, and the host rewrites the field on launch and on every step,
   re-simulated ones included, before the rule reads it.
 - Outcome: accepted and cherry-picked onto `main`.
+
+### D-12 (dev, `f5e09da`): the phone test script described the hit effects wrongly
+
+- Change: in `docs/reviews/device-checkpoint-2.md`, a rivet hit is described as a flash
+  only, and the hit freeze and screen shake are moved to the scrap blaster check.
+- Verified against the effects code (task E, `scripts/fx/effects_director.gd`): every hit
+  flashes the bot; the hit freeze needs a push of 1.5 or more, which the rivet gun (0.15)
+  never reaches and a close scrap blast (6 pellets of 0.25) does; the screen shakes only
+  when the player's own bot is hit, near a blast, and on a knockout. So the flash and the
+  freeze are right as the reviewer wrote them, and the shake is not: shooting the dummy
+  does not shake the shooter's screen.
+- Outcome: accepted in part. The lead's draft was wrong on checks 1 and 2 and is corrected;
+  the shake is asked about where it really happens (a knockout, a rocket at your own feet).
 
 ## geminiceo audit (`e66eee1`)
 
@@ -252,6 +281,18 @@ failures of 19 on `main`.
 The reviewer's `tests/test_security_audit.gd` is not taken as it is: several of its checks
 pass on `main` without the fix they name, and two error out instead of failing. Each
 accepted fix gets its own test that fails without it.
+
+### geminiceo iteration 5 (`5dc5155`)
+
+| Id | Finding | Verified | Outcome |
+|---|---|---|---|
+| G-25 | Root cause of D-10: the host marks a state authoritative although it was built on a carried-over start, and a reordered older version can overwrite the corrected one on the client | Agrees with our own investigation, which reproduced it on demand. Two details differ from what we measured: the redundancy is 4 ticks, not 3, and the snap is not one tick of about 10 px but 4 to 8 stale states and up to 28.6 px per gap | Accepted; it is D-10, and the fix in progress (netfox patch 15, bounded by the redundancy window) is the reviewer's first suggestion. The second, a per-peer send sequence so an older version of a tick cannot overwrite a newer one, is deferred to the work on diff states before online rooms |
+
+The same commit reverts the reviewer's own HUD change (G-18, rejected) and reworks its flick
+fix (G-19) so the aim is refreshed only while a crossing is still waiting for a tick. That
+is the same condition our independent review asked for in our version; no change follows
+for `main`. The reviewer advises not letting D-10 hold up the phone test: agreed, patch 15
+runs alongside the build and does not block it.
 
 A note for the architecture: `rocket_step_start` (D-11) is written during the rollback tick
 without being registered state. That is safe because only the host reads it and rewrites

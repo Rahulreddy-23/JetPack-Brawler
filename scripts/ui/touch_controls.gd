@@ -171,6 +171,10 @@ func _touch(index: int, pos: Vector2, pressed: bool, canceled: bool = false) -> 
 		if index == _aim.finger:
 			if not canceled:
 				_update_aim(pos)
+				# A crossing no tick has taken yet fires where the thumb lifted, so a flick that
+				# curves keeps its aim. After a tick took it, a lift must not fire again.
+				if _is_fire_held() and InputActions.pending_touch_fire_aim != Vector2.ZERO:
+					InputActions.pending_touch_fire_aim = _aim.value(_cfg.stick_radius_px)
 			elif _aim_max_px >= _cfg.stick_radius_px * _cfg.fire_ring_fraction:
 				InputActions.pending_touch_fire_aim = Vector2.ZERO
 			var is_tap: bool = not canceled and float(_now_msec() - _aim_down_msec) / 1000.0 <= _cfg.tap_time and _aim_max_px <= _cfg.tap_distance_px
@@ -194,8 +198,8 @@ func _update_aim(pos: Vector2) -> void:
 	var was_firing: bool = _is_fire_held()
 	_aim.position = pos
 	_aim_max_px = maxf(_aim_max_px, pos.distance_to(_aim.origin))
-	if _is_fire_held() and (not was_firing or InputActions.pending_touch_fire_aim != Vector2.ZERO):
-		# Arm on crossing, and keep updating the angle until BotInput samples it on the next tick.
+	if not was_firing and _is_fire_held():
+		# Keep the crossing if the finger lifts before the next network tick.
 		InputActions.pending_touch_fire_aim = _aim.value(_cfg.stick_radius_px)
 
 func _press(button: TouchButton, index: int) -> void:

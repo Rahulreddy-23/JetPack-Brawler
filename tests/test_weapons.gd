@@ -91,6 +91,7 @@ func _run() -> void:
 	_test_scrap_blaster()
 	_test_zero_strength_pellet()
 	_test_rocket_launch()
+	await _test_rocket_at_wall()
 	_test_melee_hits()
 	_test_melee_objects()
 	_test_melee_circle_edges()
@@ -817,6 +818,48 @@ func _test_rocket_launch() -> void:
 	_check(objects.calls.is_empty(), "the rivet gun launches nothing")
 	_clear()
 
+# A shooter flush against a wall fires into it with the real object pool and gadget rules: the
+# rocket must start at the wall face (not 16 px inside), explode there on the launch tick, and
+# hurt the shooter for the distance from its centre to the face.
+func _test_rocket_at_wall() -> void:
+	var stats: WeaponStats = _stats(ItemIds.ROCKET_TUBE)
+	var shooter: Bot = _shooter(ItemIds.ROCKET_TUBE, Vector2.RIGHT, 33)
+	var face: float = shooter.body_rect().end.x
+	var wall: Rect2 = Rect2(face, ORIGIN.y - 500.0, 400.0, 1000.0)
+	var solids: Array[Rect2] = [wall]
+	var pool: WorldObjects = WorldObjects.new()
+	pool.solids = solids
+	pool.bounds_px = Rect2(-100000.0, -100000.0, 200000.0, 200000.0)
+	add_child(pool)
+	_nodes.append(pool)
+	await get_tree().process_frame
+	var hits: Array[Hit] = []
+	WeaponRules.collect(33, _bots([shooter]), pool, solids, _cfg, hits)
+	GadgetRules.collect(33, _bots([shooter]), pool, solids, _cfg, hits)
+	var rocket: WorldObject = null
+	for slot: WorldObject in pool.slots():
+		if slot.kind == ItemIds.OBJECT_ROCKET and slot.launches > 0:
+			rocket = slot
+	_check(rocket != null and rocket.blasts == 1 and rocket.explode_tick == 33, "a rocket fired flush against a wall explodes on the launch tick")
+	if rocket == null:
+		return
+	_near(rocket.global_position.x, face, 0.01, "its blast centre is at the wall face, not inside the wall")
+	var want: float = stats.blast_damage * (1.0 - (shooter.body_rect().size.x / 2.0 / _px) / stats.blast_radius)
+	var own: Hit = null
+	for hit: Hit in hits:
+		if hit.victim == shooter:
+			own = hit
+	_check(own != null, "the shooter is in its own blast")
+	if own != null:
+		_near(own.damage, want, 0.001, "the blast damage is the one for the half body width from the centre")
+		shooter.vitals.health = _cfg.max_health
+		# The test shooter stands far below the Smelter's floor, so the metal would take it: use a
+		# taller arena for this step.
+		var tall: ArenaLayout = LAYOUT.duplicate() as ArenaLayout
+		tall.bounds = Rect2(0.0, 0.0, 1000.0, 1000.0)
+		CombatRules.apply(33, _bots([shooter]), hits, tall, _cfg)
+		_near(_cfg.max_health - shooter.vitals.health, want * _cfg.self_damage_scale, 0.001, "the shooter loses the blast damage times the self damage scale from its health")
+
 # ---- WeaponRules: melee ----
 
 func _swinger(dir: Vector2, tick: int) -> Bot:
@@ -1111,6 +1154,7 @@ func _test_pickups() -> void:
 	_clear()
 
 	_test_pickup_cycle_and_rerun()
+	_test_pickup_session_reset()
 
 func _test_pickup_cycle_and_rerun() -> void:
 	var pickups: Pickups = Pickups.new()
@@ -1143,6 +1187,20 @@ func _test_pickup_cycle_and_rerun() -> void:
 	for spot: PickupSpot in pickups.spots():
 		kept = kept and spot.ready_tick == 5
 	_check(kept, "a spot that was already ready is not pushed later by the reset")
+	# A stall skips the boundary tick: the first tick run in the next cycle resets a spot taken in
+	# the cycle before (the respawn time reaches past the boundary), not one taken in this cycle.
+	var respawn: int = _ticks(_cfg.pickup_respawn_time)
+	var late: PickupSpot = pickups.spots()[0]
+	var early: PickupSpot = pickups.spots()[1]
+	var next_start: int = start + 3 * cycle
+	late.ready_tick = next_start - 10 + respawn
+	early.ready_tick = next_start + 2 + respawn
+	pickups.resolve(next_start + 5, [], _cfg)
+	_check(late.ready_tick == next_start, "a spot taken late in a cycle is ready from the start of the next, even when its boundary tick was skipped")
+	_check(early.ready_tick == next_start + 2 + respawn, "a spot taken early in the new cycle keeps its cooldown")
+	late.ready_tick = next_start - 10 + respawn
+	pickups.resolve(next_start + 5, [], _cfg)
+	_check(late.ready_tick == next_start, "running the same tick again from the restored state gives the same reset")
 	MatchSettings.round_start_tick = -1
 
 	# A tick run twice from the same restored state ends the same.
@@ -1159,3 +1217,35 @@ func _test_pickup_cycle_and_rerun() -> void:
 	pickups.resolve(300, _bots([bot]), _cfg)
 	_check(after_spot != before_spot and spot.ready_tick == after_spot and _snapshot(bot) == after_bot, "running a pickup tick again from its restored state gives the same result")
 	_clear()
+
+# Calls the handlers the signal has on this node and no others: emitting the signal itself would
+# also start netfox's own session handling in this test process.
+func _deliver(event: Signal, target: Node, args: Array) -> void:
+	for connection: Dictionary in event.get_connections():
+		var handler: Callable = connection["callable"] as Callable
+		if handler.get_object() == target:
+			handler.callv(args)
+
+# A spot on cooldown when a session starts or stops is ready in the next session, on both roles:
+# the new session's tick count starts again, so the old cooldown would hold the spot for good.
+func _test_pickup_session_reset() -> void:
+	var events: Array[Signal] = [NetworkEvents.on_server_start, NetworkEvents.on_server_stop, NetworkEvents.on_client_stop]
+	var names: Array[String] = ["host start", "host stop", "client stop"]
+	for i: int in events.size() + 1:
+		var pickups: Pickups = Pickups.new()
+		pickups.layout = LAYOUT
+		add_child(pickups)
+		_nodes.append(pickups)
+		var spot: PickupSpot = _spot_node(pickups, 0)
+		var label: String = names[i] if i < events.size() else "client start"
+		var taker: Bot = _on_spot(spot)
+		pickups.resolve(100, _bots([taker]), _cfg)
+		spot.ready_tick = 5450
+		if i < events.size():
+			_deliver(events[i], pickups, [])
+		else:
+			_deliver(NetworkEvents.on_client_start, pickups, [7])
+		var next_taker: Bot = _on_spot(spot)
+		pickups.resolve(5, _bots([next_taker]), _cfg)
+		_check(spot.ready_tick != 5450 and next_taker.arsenal.picked_weapon == spot.item, "a spot on cooldown before a session event (%s) is ready after it" % label)
+		_clear()

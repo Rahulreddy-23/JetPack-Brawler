@@ -23,8 +23,13 @@ Current stage: Prototype, phase 1. Gate not passed.
       only; real Wi-Fi between phones is untested.
 - [x] A Foundation and contracts. Reviewed, merged (`afc2eee`). No gameplay rule yet; the
       game still plays as movement only.
-- [ ] Under simulated jitter the client's own bot is sometimes sent two states that are one
-      tick behind (dev finding D-10; 1 run in 14). Cause under investigation.
+- [ ] When a burst of a client's input packets is late, the host sends states for that bot
+      that are one step behind, for every player (dev finding D-10). It is upstream netfox
+      behaviour. Cause found and reproduced on demand; fix in progress as netfox patch 15.
+- [ ] `net_blast_bomb_loss` fails about 3 runs in 16 on `main`: on the client, the history row
+      for the tick after the blast shows its own bot at full health. Probably a row whose
+      state packet was lost and which the check should not read; not yet proven. With the
+      task D implementer.
 - [ ] Device checkpoint 1 (Rahul): sticks, jetpack and dash on two phones over a hotspot.
       Build and script are ready (`docs/reviews/device-checkpoint-1.md`); not yet run.
 - [x] B Combat core, hazard wiring, dummy, push window. Reviewed, merged (`a170e4b`).
@@ -39,39 +44,35 @@ Current stage: Prototype, phase 1. Gate not passed.
 - [ ] 1.6 Dabba fight, built last.
 - [ ] Phase review and `docs/reviews/phase-1-handoff.md`.
 
-## Where work stands (written 24 Nov 2026 23:30, before a usage-limit pause)
+## Where work stands (25 Nov 2026, morning)
 
-Read this first when resuming. `main` on GitHub is at the commit that carries this note.
+On `main`, reviewed and pushed: movement, foundation, combat core (B), weapons (C), world
+objects and gadgets (D), input and HUD (F), netfox hardening (patches 1 to 13 and their
+follow-ups), the ENet throttle fix, reviewer findings D-1 to D-9 and D-11. Last full suite
+on `main`: 48 of 48 at `f479130`; only the tests touched by each later change were run
+since.
 
-On `main`, reviewed and pushed: movement, foundation, combat core (B), weapons (C), input and
-HUD (F), netfox hardening (patches 1 to 13), the ENet throttle fix, reviewer findings D-1 to
-D-9, and the geminiceo follow-up (G-13, G-14). Last full suite on `main`: 48 of 48 with task D merged.
+In progress, each on its own branch, none on `main`:
 
-Not on `main` yet, in the order to finish them:
+1. Task D follow-ups (`worktree-agent-aaec92fe475a64453`): a bot in front of a wall is
+   tested before the wall, the gadget cycle reset moves before the tick's blasts, two tests
+   tightened. From the independent review of D's fix round and geminiceo G-21, G-22.
+2. Pickup session and cycle resets, rocket muzzle, curved flick (a new implementer branch):
+   geminiceo G-15, G-17, G-19, G-23.
+3. Done and on `main` (`a73b845`): rate limit on netfox's oversized-packet warning, patch
+   14 (geminiceo G-24).
+4. Task E (effects), branch `worktree-agent-a0ba5c0a664836773`: last step, plus a health bar
+   above every bot (product owner decision, see `docs/DECISIONS.md`).
+5. Dev finding D-10 (`worktree-agent-abdc8cb18a9ad9d79`): cause found, fix in progress as
+   netfox patch 15.
 
-1. Task D (world objects, gadgets) is on `main`: suite 48 of 48 with it merged. Its first
-   review found nothing blocking, but the fix round (`0889988..a3ffc82` on branch
-   `worktree-agent-aaec92fe475a64453`) has had no independent review: that review was
-   stopped before it reported, at Rahul's request before the pause. Run it again from the
-   beginning and act on what it finds.
-2. Netfox follow-ups, branch `worktree-agent-abdc8cb18a9ad9d79` at `1632338`: mutation table
-   rows, four negative checks, and `has_authoritative_state` now takes a `Variant` and
-   returns false for a freed node. Read by the lead, looks right; merge after D.
-3. Task E (effects), branch `worktree-agent-a0ba5c0a664836773` at `b435e4d`. Its last step
-   (merge `main`, wire `EffectsDirector.host_state_check` to `has_authoritative_state`,
-   remove the catch-up limit) was stopped part-way, at Rahul's request before the pause.
-   Its worktree holds an unfinished merge of `main` (conflict in `config/tuning.tres` not
-   resolved) and uncommitted edits in `scripts/fx/`; nothing from the last step is
-   committed. Resume the same implementer or redo the step; it had reached the mutation
-   checks. Then verify and merge.
-4. Full suite on `main` with everything merged, rebuild the debug APK into `builds/`, update
-   `docs/reviews/device-checkpoint-1.md` or write the checkpoint 2 script.
-5. Rahul: device checkpoints 1 and 2. Then task 1.6 (Dabba), the phase review and the
-   handoff.
+Then: an independent review of each fix round, merge, the full suite on everything, the
+debug APK into `builds/`, and the build line in `docs/reviews/device-checkpoint-2.md`
+(drafted). After that Rahul's device checkpoints, task 1.6 (Dabba), the phase review and
+the handoff.
 
-Reviewer branches last reviewed: `dev` at `beaf6cb` (later commits only merge `main`),
-`geminiceo` at `60fabd3`. The 10-minute check of those branches was a session-only schedule
-and was cancelled before the pause; set it up again when work resumes.
+Reviewer branches last reviewed: `dev` at `782da7b`, `geminiceo` at `2afecfe`. The
+10-minute check is a session-only schedule; set it up again in a new session.
 
 Open with Rahul: whether to report the netfox defects to its maintainers (a public action).
 

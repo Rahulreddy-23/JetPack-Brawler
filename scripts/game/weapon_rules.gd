@@ -47,7 +47,7 @@ static func _collect_shot(tick: int, shooter: Bot, bots: Array[Bot], objects: Wo
 		var half: Vector2 = shooter.body_rect().size / 2.0
 		var leave: float = minf(half.x / absf(dir.x) if dir.x != 0.0 else INF, half.y / absf(dir.y) if dir.y != 0.0 else INF)
 		var muzzle: Vector2 = origin + dir * (leave + stats.projectile_radius * px)
-		# Never spawn a rocket inside or on the far side of a solid wall.
+		# A wall closer than the muzzle: start at its face, so the blast it causes is centred there.
 		var wall: CastResult = CombatGeometry.cast(origin, muzzle, solids)
 		if wall.index >= 0 and wall.t < 1.0:
 			muzzle = origin.lerp(muzzle, wall.t)
