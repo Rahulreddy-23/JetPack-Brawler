@@ -22,3 +22,14 @@ Full reasoning and sources: `reports/Foundations from successful arena games.md`
 
 - A port setting in the menu.
 - A visible reason on the join screen when the match is full.
+
+## From the phase 1 audit (25 Nov 2026)
+
+- Aim assist. The GDD describes it as on by default for new players (Controls), but no
+  stage lists it and it is not built. Rahul to say which stage it belongs to.
+- A Spring Plate that launches along its angle. The GDD says "straight up or along its
+  angle"; plates only rest on upward faces today, so every launch is straight up.
+- A setting in the menu to reduce screen shake. The effect supports it; nothing sets it.
+- A config entry of its own for the dash's bullet immunity. It follows the dash time
+  today, which gives 4 ticks (0.133 s) against the GDD's 0.15 s.
+

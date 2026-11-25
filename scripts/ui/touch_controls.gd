@@ -195,8 +195,9 @@ func _update_aim(pos: Vector2) -> void:
 	_aim.position = pos
 	_aim_max_px = maxf(_aim_max_px, pos.distance_to(_aim.origin))
 	if _is_fire_held() and (not was_firing or InputActions.pending_touch_fire_aim != Vector2.ZERO):
-		# Arm on crossing and keep updating until BotInput samples it, even if the thumb
-		# curves and pulls back inside the ring before the next tick.
+		# Arm on crossing the ring and follow the thumb until a tick takes the shot, so a flick
+		# that curves fires along the curve even if it lifts or pulls back inside first. Once a
+		# tick has taken it the value is zero again and a later move or lift must not re-arm it.
 		InputActions.pending_touch_fire_aim = _aim.value(_cfg.stick_radius_px)
 
 func _press(button: TouchButton, index: int) -> void:

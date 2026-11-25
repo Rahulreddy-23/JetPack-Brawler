@@ -25,11 +25,20 @@ Current stage: Prototype, phase 1. Gate not passed.
       game still plays as movement only.
 - [ ] When a burst of a client's input packets is late, the host sends states for that bot
       that are one step behind, for every player (dev finding D-10). It is upstream netfox
-      behaviour. Cause found and reproduced on demand; fix in progress as netfox patch 15.
+      behaviour. Cause found and reproduced on demand. Netfox patch 15: the first version
+      was rejected in review (it replayed a paused player's last input); a second version
+      that never invents input is in progress.
 - [x] `net_blast_bomb_loss` failed about 3 runs in 16. Cause: the test read the one tick
       after the blast, and under loss the client can hold its own guess for that tick until
       the next state arrives. The game was right. The check now reads the first tick whose
       value came from the host and fails if that takes more than 4 ticks; 0 failures in 80.
+- [ ] Pushes travel about a fifth of the design's distance on the ground and far too much
+      extra at low health (the design's numbers are distances; the code read them as
+      speeds). Found by the phase audit; correction in progress. Builds up to 16:59 on
+      25 Nov have it.
+- [ ] From the authority audit: the host accepts input up to 2 seconds late and replays the
+      match from there (being bounded with netfox patch 15), and three more log lines can
+      be flooded by any connected device (netfox patch 16, in progress).
 - [ ] Device checkpoint 1 (Rahul): sticks, jetpack and dash on two phones over a hotspot.
       Script `docs/reviews/device-checkpoint-1.md`; build of 25 Nov at `b90d525`; not yet run.
 - [x] B Combat core, hazard wiring, dummy, push window. Reviewed, merged (`a170e4b`).
@@ -42,10 +51,11 @@ Current stage: Prototype, phase 1. Gate not passed.
 - [x] F Input and HUD for fire, melee, gadget, swap. Reviewed, merged (`5f92739`).
 - [x] Full test suite on `main` with A to F, netfox patches 1 to 14 and the reviewer fixes:
       51 of 51, last at the task D follow-ups (Mac, headless; nothing on a phone).
-- [ ] Device checkpoint 2 (Rahul): the knockback sandbox, 10 minutes of play. Script
-      `docs/reviews/device-checkpoint-2.md`; the same build; not yet run.
+- [ ] Device checkpoint 2 (Rahul): the knockback sandbox, 10 minutes of play on a build with
+      corrected push distances. Script `docs/reviews/device-checkpoint-2.md`; not yet run.
 - [ ] 1.6 Dabba fight, built last.
-- [ ] Phase review and `docs/reviews/phase-1-handoff.md`.
+- [ ] Phase review and `docs/reviews/phase-1-handoff.md` (started: both audits
+      are in; their fixes are in progress).
 
 ## Where work stands (25 Nov 2026, morning)
 

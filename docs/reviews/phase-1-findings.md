@@ -16,8 +16,8 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `6bbcd11` | 25 Nov 2026 16:40 | One reviewer commit, `6bbcd11` (finding D-14, accepted). `d90012c` and `25a1d63` only merge `main`. |
-| `geminiceo` | `5dc5155` | 25 Nov 2026 10:03 | One reviewer commit, `5dc5155` (iteration 5: finding G-25, the same fault as D-10; the rest brings the branch in line with the decisions on G-18 and G-19). `2275445` only merges `main`. |
+| `dev` | `6642a86` | 25 Nov 2026 18:07 | One reviewer commit, `6642a86` (finding D-15, accepted). `91ed3de` only merges `main`. |
+| `geminiceo` | `59afd33` | 25 Nov 2026 17:41 | One reviewer commit, `59afd33` (iteration 8: a clean audit of D-14 and task D's follow-ups, no findings). `b6b4bab` only merges `main`. |
 
 ## Findings
 
@@ -165,11 +165,22 @@ these.
 - Options measured: an input delay of 2 ticks made no difference. Letting the host predict
   with the last known input removed it but would repeat one-tick button presses (melee,
   swap, dash, gadget). Not building on a carried-over start state removed it in a prototype.
-- Outcome: accepted. Fix in progress as netfox patch 15: the host does not simulate a bot
-  from a carried-over start state while the gap is open, and fills a gap that can no longer
-  be filled (older than the redundancy window) with the last known input so the bot cannot
-  freeze. The smoke test's comparison rule is corrected in the same change: it compared a
-  tick whenever that tick's own input matched, which is not enough.
+- Outcome: accepted. Fix in progress as netfox patch 15. First version (25 Nov): the host
+  does not simulate a bot from a carried-over start state while the gap is open, and fills
+  a gap that can no longer be filled with the last known input. Measured: no wrong states
+  for inputs 1 to 6 ticks late, and the smoke test at 300 ms jitter went from 9 failures
+  in 10 to none.
+- That version was not merged. Its independent review found the fill wrong (the lead's
+  design): a player who stops sending input for a second, for example with the app in the
+  background, is treated like a lost packet, and on return the host replays the last input
+  for the whole pause; the bot was driven about 390 px and burned a second of fuel. A
+  one-tick press before a lost input was applied twice, a joining bot started 5 to 6 ticks
+  late, and the fill could fire before a late input arrived.
+- Second version, in progress: no input is ever invented. A gap the host has waited on for
+  twice the redundancy window (8 ticks) is accepted as a tick on which the bot did not
+  act, which is what netfox itself ends up with, and play continues from there. A tick
+  before a bot's first input is not a gap. The smoke test's comparison rule is corrected
+  in the same change.
 
 ### D-11 (dev, `782da7b`): a deflected rocket was checked against a path it never flew
 
@@ -233,6 +244,18 @@ these.
   the extra state property.
 - Outcome: accepted and cherry-picked onto `main`. It adds one integer per bot to the state
   sent each tick. The debug APK of 16:14 does not have it.
+
+### D-15 (dev, `6642a86`): the phone playtest should wait for the corrected knockback
+
+- Change: documents only. `docs/reviews/device-checkpoint-2.md` and `docs/STATUS.md` now
+  say that the current build is for the controls, sync and basic weapon and gadget checks,
+  that the knockback and recoil parts of checks 2 to 6 and 10 need the push-distance
+  correction, and that the 10-minute playtest behind the gate is to be run on a build that
+  has it. The script also asks for the build's commit with the answers.
+- Verified: it agrees with the phase audit's finding and with the lead's own warning in
+  the script, and it is more exact about which checks are affected (the rocket's push in
+  check 10 was missing from the warning).
+- Outcome: accepted and cherry-picked onto `main`.
 
 ## geminiceo audit (`e66eee1`)
 
@@ -327,6 +350,21 @@ fix (G-19) so the aim is refreshed only while a crossing is still waiting for a 
 is the same condition our independent review asked for in our version; no change follows
 for `main`. The reviewer advises not letting D-10 hold up the phone test: agreed, patch 15
 runs alongside the build and does not block it.
+
+### geminiceo iterations 6 and 7 (`4fa8884`, `8160914`)
+
+| Id | Finding | Verified | Outcome |
+|---|---|---|---|
+| G-26 | Cause of the intermittent `net_blast_bomb_loss` failure: under loss the test read the client's own guess for the tick after the blast | Agrees with our own tick-by-tick evidence. The reviewer adds why the thrower's row is the fragile one: its state is sent once, after the client's input arrives, where the dummy's and the slot's go out twice | Already fixed on `main` (`b90d525`, `7c2da44`) by the same idea: read the first row that came from the host, with a bound. The reviewer's version of the test is not taken |
+| G-27 | A flick that crosses the fire ring, curves while outside it and is pulled back inside before a tick fires at the crossing angle | Confirmed by run: the shot went to (1, 0) instead of up. Our fix refreshed the aim only at the lift, and only if the thumb was still outside the ring | Accepted, with the reviewer's rule: the aim follows the thumb from the crossing until a tick takes the shot. It replaces the lift-only refresh, and the earlier cases still hold (one shot for a flick, no extra shot after a pull-back or after a held shot, at four frame rates). One new check in `tests/test_touch_input.gd`, which fails without the change |
+
+Iteration 7 audited task E and D-13 and found nothing: no network calls added, no writes
+to simulation state, fixed-size effect pools, input still sanitised. Noted; no change.
+
+Iteration 8 (`59afd33`) audited D-14, task D's follow-ups and the clean-up ordering and
+found nothing. It lists G-27 as still open on its side; that fix has been on `main` since
+`588a572`. Noted; no change. The reviewer could not run the two-process network tests in
+its sandbox, so its audits are by reading plus the one-process tests.
 
 A note for the architecture: `rocket_step_start` (D-11) is written during the rollback tick
 without being registered state. That is safe because only the host reads it and rewrites

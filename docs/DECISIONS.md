@@ -71,6 +71,12 @@ this file wins.
   a straight line to 2 at 0 health.
 - The hazard's 30 seconds and the 45-second cap are counted from the end of the countdown,
   not from its start.
+- Push numbers are distances, as the GDD says: on flat ground with a neutral stick a push of
+  P moves the bot P bot heights, and in the air it carries further because air braking is
+  weaker. The low-health multiplier applies to the distance, so a bot at 0 health goes
+  twice as far. Until 25 Nov 2026 the code read the numbers as speeds, which gave about a
+  fifth of the distance on the ground and three to four times, not twice, at low health;
+  the phase audit found it and the correction is in progress.
 - Knockout credit lasts 3 seconds after the last hit or push (first guess; not in the GDD).
 - Hit freeze holds the picture of the bot that was hit for two or three frames, not the whole
   screen. Freezing the whole screen needed a GPU read-back on every heavy hit, which is a

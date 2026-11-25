@@ -9,8 +9,8 @@ Build: `builds/jetpack-brawler-debug.apk`, made from `main` at `b90d525` on 25 N
 one permission (internet). The build is not in the repository; it is on this Mac only. On
 the Mac the full test suite passes on this commit (51 of 51).
 
-Nothing in this build has run on a phone. Everything below is unverified until you do it.
-One fix is still in progress and is not in this build; see "Known limits".
+The phone checks are still pending. Use this APK for controls, sync and basic weapon and
+gadget checks. Run the 10-minute phase 1 playtest on a build with corrected push distances.
 
 If you have not done device checkpoint 1 (sticks, jetpack and dash), do it first with this
 same build: its checks 6 to 16 still apply and are not repeated here.
@@ -46,7 +46,7 @@ Connect.
 
 ## What to check
 
-Answer each with yes, no, or what you saw. Play at least 10 minutes in total.
+For each check you run, answer yes, no, or describe what you saw.
 
 Shooting and knockback (the main point)
 
@@ -114,6 +114,9 @@ Performance
 
 ## Known limits of this build
 
+- This build reads the design's push numbers as speeds. A melee hit moves a bot on the ground
+  about half a bot height. The design calls for two and a half. The knockback and recoil
+  parts of checks 2 to 6 and 10 need the push-distance correction.
 - Grey boxes only: no art, no sound.
 - The hit freeze holds the hit bot's picture for a few frames; the game itself never pauses.
 - If the host phone is put in the background, the match breaks. That is not handled yet.
@@ -125,6 +128,5 @@ Performance
 
 ## What I need back
 
-The numbered answers, the phone models and Android versions, and anything that felt wrong
-that the list does not cover. Then say whether the phase 1 gate is passed. That decision is
-yours.
+Send the build commit, numbered answers, phone models and Android versions, and anything
+else that felt wrong. After the full playtest, you decide whether the phase 1 gate passes.
