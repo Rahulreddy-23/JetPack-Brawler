@@ -49,7 +49,7 @@ var wall_nx: int = 0
 var facing: int = 1
 ## Seconds left in which thin platforms are ignored.
 var drop_left: float = 0.0
-## Sanitised aim direction copied from the input, shown as the aim line.
+## Effective aim direction, shown as the aim line.
 var aim_dir: Vector2 = Vector2.RIGHT
 
 ## Tick of the latest _rollback_tick call. Not simulation state; the smoke test
@@ -116,6 +116,11 @@ static func clean_vector(value: Variant) -> Vector2:
 static func clean_bool(value: Variant) -> bool:
 	return typeof(value) == TYPE_BOOL and value == true
 
+## Aim along the stick when held outside the dead zone, otherwise along the bot's facing.
+func input_aim_direction(cfg: TuningConfig) -> Vector2:
+	var aim: Vector2 = clean_vector(input.aim)
+	return aim.normalized() if aim.length() > cfg.stick_deadzone else Vector2(facing, 0.0)
+
 func _rollback_tick(delta: float, tick: int, _is_fresh: bool) -> void:
 	var cfg: TuningConfig = MatchSettings.tuning_at(tick)
 	last_sim_tick = tick
@@ -123,14 +128,12 @@ func _rollback_tick(delta: float, tick: int, _is_fresh: bool) -> void:
 	if vitals.knocked_out:
 		return
 	var move: Vector2 = clean_vector(input.move)
-	var aim: Vector2 = clean_vector(input.aim)
 	var jet: bool = clean_bool(input.jet)
 	var dash_pressed: bool = clean_bool(input.dash)
 
-	if aim.length() > cfg.stick_deadzone:
-		aim_dir = aim.normalized()
 	if absf(move.x) > cfg.stick_deadzone:
 		facing = 1 if move.x > 0.0 else -1
+	aim_dir = input_aim_direction(cfg)
 
 	# Thin platforms are ignored while the stick is held down, plus a short latch.
 	if move.y > cfg.stick_digital_threshold:

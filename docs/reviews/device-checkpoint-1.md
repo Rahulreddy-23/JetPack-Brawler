@@ -2,17 +2,20 @@
 
 For Rahul. This is the GDD's "verify in the first week" check. It is not the phase gate.
 
-Build: `builds/jetpack-brawler-debug.apk`, made from `main` at `cf94537` on 24 Nov 2026.
-28.5 MB, package `com.jetpackbrawler.prototype`, 64-bit ARM only, Android target 36, one
-permission (internet). The build is not in the repository; it is on this Mac only.
+Build: `builds/jetpack-brawler-debug.apk`, made from `main` at `8ccb4b7` on 25 Nov 2026,
+16:14. 28.6 MB, package `com.jetpackbrawler.prototype`, 64-bit ARM only, Android target 36,
+one permission (internet). The build is not in the repository; it is on this Mac only.
 
 Nothing in this build has run on a phone. Everything below is unverified until you do it.
 
 ## What is in the build
 
-Flying one grey-box arena (the Smelter) with up to 4 players: run, steam pack, dash,
-wall-slide, wall-jump, drop-through platforms. Host and join by typing the host's IP address.
-There are no weapons, no health, no hazard and no bots yet.
+This script was written for the first, movement-only build. The current build is the full
+knockback sandbox (weapons, melee, gadgets, a dummy, the rising metal and effects), described
+in `docs/reviews/device-checkpoint-2.md`. The checks below are still the ones to do first:
+they are about the sticks, the steam pack, the dash and the connection, and they do not need
+the weapons. There are three more buttons on screen now (MELEE, GADGET and SWAP, around the
+right stick with DASH); for check 6, say also whether they get in the way.
 
 ## Install
 
@@ -82,8 +85,8 @@ Performance
 
 ## Known limits of this build
 
-- If the host phone stutters for about half a second, other players' bots can hang briefly
-  and snap back. A fix is in progress and is not in this build.
+- If a burst of a player's input packets is late, bots can be shown one step behind for a
+  few frames. The cause is known; the fix is in progress and is not in this build.
 - When the camera reaches the edge of the arena you see a black band. That is deliberate,
   so a bot on the floor is not under your thumbs.
 - A player-to-player test with more than two phones has not been tried.

@@ -4,11 +4,14 @@ For Rahul. This is the play test behind the phase 1 gate: is flying around and k
 dummy bot into the hazard fun for 10 minutes, and does it stay in sync between two phones.
 It is not the gate itself; you decide that afterwards.
 
-Status of this script: draft. The build it describes is not made yet (the effects task and
-three fix rounds are still open on 25 Nov 2026). The build line below is filled in when the
-APK exists. Nothing here has run on a phone.
+Build: `builds/jetpack-brawler-debug.apk`, made from `main` at `8ccb4b7` on 25 Nov 2026,
+16:14. 28.6 MB, package `com.jetpackbrawler.prototype`, 64-bit ARM only, Android target 36,
+one permission (internet). The build is not in the repository; it is on this Mac only. On
+the Mac the full test suite passes on this commit's parent (51 of 51) and the tests the
+last change touches pass on this commit.
 
-Build: not built yet.
+Nothing in this build has run on a phone. Everything below is unverified until you do it.
+Two fixes are still in progress and are not in this build; see "Known limits".
 
 If you have not done device checkpoint 1 (sticks, jetpack and dash), do it first with this
 same build: its checks 6 to 16 still apply and are not repeated here.
@@ -33,8 +36,9 @@ One grey-box arena (the Smelter), up to 4 players, joined by typing the host's I
 
 - Left stick: run; push up for the steam pack; push down on a yellow platform to drop.
 - Right stick: aim. Push it past the ring to fire. A quick tap on it swings a melee hit.
-- Buttons around the right stick: DASH, MELEE, GADGET (throws the Cooker Bomb or the Spring
-  Plate in the aim direction), SWAP (rivet gun or the picked-up weapon).
+- Buttons around the right stick: DASH, MELEE, GADGET (throw the Cooker Bomb or Spring Plate),
+  SWAP (rivet gun or the picked-up weapon). With the right stick released, the white aim line,
+  melee swings and gadget throws follow the direction your bot faces.
 
 ## Install and connect
 
@@ -74,7 +78,8 @@ Weapons and gadgets
     knockout; it does not shake when you hit someone else.)
 11. Punch a rocket that is flying at you (needs the second phone to fire it). Does it turn
     around?
-12. Throw the Cooker Bomb. Does it bounce, and explode about 3 seconds later?
+12. Aim upward, let go of the stick, then tap GADGET. Does the Cooker Bomb follow the white
+    aim line as it returns to horizontal? Does the bomb bounce and explode about 3 seconds later?
 13. Pick up the Spring Plate, throw it on the floor, and walk the other phone's bot over
     it. Is that bot launched upward? Is the plate drawn in your bot's colour?
 14. Throw a second bomb from a new life right after the first one exploded. Does the new
@@ -114,8 +119,14 @@ Performance
 - The hit freeze holds the hit bot's picture for a few frames; the game itself never pauses.
 - If the host phone is put in the background, the match breaks. That is not handled yet.
 - More than two phones has not been tried.
-- On poor Wi-Fi timing a player's own bot can be pulled back about 10 pixels for a fifteenth
-  of a second (check 17). The cause is under investigation.
+- On poor Wi-Fi timing a bot can be shown one step behind for a few frames (check 17): when
+  a burst of a player's input packets is late, the host sends positions that are one step
+  behind until the input arrives. Measured on the Mac with packets held on purpose: up to
+  about 30 pixels. The cause is known and the fix is in progress; it is not in this build.
+- Not in this build, in progress: a plate left on a spawn point can launch a bot that has
+  just come back at the 45-second reset, and a gadget thrown on the exact reset tick is
+  lost; a fast rocket that passes a bot and reaches a wall in the same tick explodes at the
+  wall, slightly past the bot.
 
 ## What I need back
 

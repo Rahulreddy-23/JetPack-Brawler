@@ -121,11 +121,14 @@ func _run() -> void:
 		_touch_event(1, _aim_start(), false)
 
 	Engine.max_fps = 0
-	# A non-finite aim sent to the bot is still cleaned by the existing checks.
-	var before: Vector2 = _bot.aim_dir
+	# A non-finite aim acts as a neutral stick, including for the aim line.
+	_bot.input.move = Vector2.LEFT
+	_bot.input.aim = Vector2.UP
+	_bot._rollback_tick(1.0 / float(_cfg.tick_rate), NetworkTime.tick, true)
+	_check(_bot.aim_dir == Vector2.UP, "the aim line points up before the stick returns to neutral")
 	_bot.input.aim = Vector2(NAN, INF)
 	_bot._rollback_tick(1.0 / float(_cfg.tick_rate), NetworkTime.tick, true)
-	_check(is_finite(_bot.aim_dir.x) and is_finite(_bot.aim_dir.y) and _bot.aim_dir == before, "a non-finite aim leaves the bot's aim direction alone")
+	_check(_bot.aim_dir == Vector2.LEFT, "a non-finite aim points the aim line along the bot's facing")
 	_bot.input.melee = "yes"
 	_bot.input.fire = 7
 	_check(not Bot.clean_bool(_bot.input.melee) and not Bot.clean_bool(_bot.input.fire), "wrongly typed button values count as not pressed")
