@@ -536,3 +536,27 @@ Merged `origin/main` (`cf0dfdd..0229176`: `G-30` recorded in `e8bfcef`, push-dis
 ### CEO Review (Iteration 12)
 1. **First truly playtest-ready APK (`0229176`):** Push numbers now match GDD distances (melee 2.50 bh, close scrap 1.50 bh, bolt 0.10 bh, blast center 5.00 bh, recoil 1.00 bh, 30 bolts = 3.08 bh) with 116/116 push-distance checks green and the floor-metal false-KO fixed.
 2. **Playtest now, land patches 15 & 16 next:** Rahul has a clean, accurate build to run the 10-minute knockback fun test on two phones right away, while netfox patch 16 (`G-28`/`G-29` + log limits) and patch 15 (`D-10` + past-tick input bound) finish review. Keep Dabba held until phone feedback comes back.
+
+
+---
+
+## Iteration 13 Audit Update (25 Nov 2026 21:29 — against `origin/main` `2326514`)
+
+Merged `origin/main` (`0229176..2326514`: `G-30` landed in `1414f84` with 0 failures in 120 runs, and D-17 counter-push window shortening in `2326514`). Aligned `tests/test_fx_net.gd` verbatim with `origin/main`. Audited `2326514` (`scripts/game/bot_arsenal.gd`, `scripts/game/combat_rules.gd`, `tests/test_push_distance.gd`).
+
+### Findings (`0229176..2326514`)
+- **Crashes and logic bugs:** none found. (`CombatRules.push_window_end_tick` cleanly shortens `push_until_tick` when `absf(sideways_speed) < absf(previous_speed)` and keeps `maxi(previous_end, end)` when speed grows; zero remaining speed closes the window on `tick + 1` as expected.)
+- **Network trust:** none found. (No new RPCs or client-owned state.)
+- **Desync:** none found. (`push_window_end_tick` is a pure function of `tick`, restored speeds, and `TuningConfig`, applied identically in both `CombatRules._apply_hits` and `BotArsenal._fire`.)
+- **Denial of service:** none found beyond active `G-28`/`G-29` (in final review as netfox patch 16 on worktree `4f4842d`).
+- **Untrusted input, Purchases/unlocks, Android/privacy, Repository hygiene, Performance bugs:** none found.
+
+### Active Unmerged `geminiceo` Fixes
+- `G-28` & `G-29` (`addons/netfox/`): 4-byte `SIGBUS` crash fix + 16 KB identity packet cap + truncated 3-byte raw command prefix guard (verified 6/6 in `tests/test_security_audit.tscn`; accepted for netfox patch 16, in review on `4f4842d`).
+
+### Could Not Check (Iteration 13)
+- Multi-process loopback UDP suites (`tests/net_*.sh`), `tests/test_fx_client.tscn`, and `tests/test_full_state_coverage.tscn` (loopback UDP blocked in sandbox); real Android device testing.
+
+### CEO Review (Iteration 13)
+1. **Clean execution:** `G-30` (`net_fx` 0/120 flakes) and `D-17` (opposing pushes/recoil no longer leave dead steering windows) both landed cleanly, while netfox patch 15 (`08fa764`) and patch 16 (`4f4842d`) are in final review on their worktrees.
+2. **Next step:** Once patches 15 and 16 merge onto `main`, cut the security-hardened Phase 1 APK so Rahul's two-phone test runs on the final Phase 1 netcode + knockback physics.
