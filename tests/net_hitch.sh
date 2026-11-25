@@ -53,7 +53,7 @@ wait_exit "$HOST_PID" 60 || { echo "FAIL: host test did not finish in time"; tai
 wait "$HOST_PID"
 STATUS=$?
 
-grep "^PASS\|^FAIL\|^client input\|failures" "$TMP/host.log"
+grep "^PASS\|^FAIL\|^client input\|^INPUT_AGE\|failures" "$TMP/host.log"
 if grep -q "SCRIPT ERROR" "$TMP/host.log" "$TMP/client.log"; then
 	echo "FAIL: script errors in logs"; grep -h "SCRIPT ERROR" "$TMP/host.log" "$TMP/client.log" | head; exit 1
 fi

@@ -123,7 +123,7 @@ func simulate(delta: float, tick: int) -> void:
 
 	# Determine predicted nodes
 	for node in _callbacks.keys():
-		if _is_predicting(input_snapshot, node):
+		if _is_predicting(input_snapshot, node, tick):
 			_predicted_nodes.add(node)
 
 	# Run callbacks and clear group
@@ -171,11 +171,20 @@ func _get_nodes_to_simulate(input_snapshot: _Snapshot) -> Array[Node]:
 			# Don't simulate
 			continue
 
+		# PATCH (see addons/NETFOX_PATCHES.md): an owned node does not build on
+		# a state that is only a carry-over, see _starts_from_carry_over()
+		if input_snapshot.has_subjects(inputs, true) and _starts_from_carry_over(node, tick):
+			continue
+
 		result.append(node)
 
 	return result
 
-func _is_predicting(input_snapshot: _Snapshot, node: Node) -> bool:
+# PATCH (see addons/NETFOX_PATCHES.md): `tick` is the tick of the input snapshot, for when there
+# is no input snapshot at all for that tick
+func _is_predicting(input_snapshot: _Snapshot, node: Node, tick: int = -1) -> bool:
+	if input_snapshot:
+		tick = input_snapshot.tick
 	var input_nodes := [] as Array[Node]
 	input_nodes.assign(_input_graph.get_linked_to(node))
 
@@ -197,9 +206,111 @@ func _is_predicting(input_snapshot: _Snapshot, node: Node) -> bool:
 		return false
 	if is_owned and not has_input:
 		# We own the node, node depends on input, we don't have data for input - predict
+		# PATCH (see addons/NETFOX_PATCHES.md): unless this is no hole, or the hole has
+		# expired; the node was not simulated, and its state carried over is then the state
+		# of record
+		if tick >= 0 and not is_prediction_enabled_for(node) and _is_hole_accepted(node, input_nodes, tick):
+			return false
 		return true
 	# We own the node and we have data for node's input - we're sure
+	# PATCH (see addons/NETFOX_PATCHES.md): but not if it starts from a carry-over
+	if tick >= 0 and _starts_from_carry_over(node, tick):
+		return true
 	return false
+
+# PATCH (see addons/NETFOX_PATCHES.md): true if `node`, which this peer owns, has a state
+# at `tick` that is only a carry-over: it was skipped on an earlier tick because its input
+# for that tick had not arrived, so its state at `tick` is the state before it, recorded as
+# not authoritative. Simulating from it, with the input of `tick`, would build a state
+# that is one or more steps behind and record it as authoritative.
+func _starts_from_carry_over(node: Node, tick: int) -> bool:
+	if not node.is_multiplayer_authority():
+		return false
+	var state_snapshot := NetworkHistoryServer._get_rollback_state_snapshot(tick)
+	return state_snapshot != null and state_snapshot.has_subject(node) and not state_snapshot.is_auth(node)
+
+# PATCH (see addons/NETFOX_PATCHES.md): the latest an honest input may arrive, as a multiple of
+# input_redundancy ticks counted on the host's own clock from the tick the input belongs to.
+# Later than that is the same as lost: the host stops waiting, the tick stands as one where
+# the subject did not act, and input for it that arrives afterwards is refused. It also
+# covers honest input that is merely late and in order (a stall delivers a run of packets at
+# once; what is older than the allowance in it is refused). 3 times 4 ticks is 12 ticks, 400 ms
+# at 30 ticks per second. A first guess, to be judged after the phone test.
+const _INPUT_ALLOWANCE_FACTOR := 3
+
+# PATCH (see addons/NETFOX_PATCHES.md): the input allowance in ticks (see above). After it
+# the tick is final: its hole is accepted (see _is_hole_accepted) and the host refuses input
+# stamped with it (see NetworkHistoryServer._merge_rollback_input).
+func _get_hole_allowance() -> int:
+	return _INPUT_ALLOWANCE_FACTOR * NetworkRollback.input_redundancy
+
+# PATCH (see addons/NETFOX_PATCHES.md): true if `node`, which this peer owns, was not
+# simulated on `tick` for lack of input and that is final, so that the state carried over
+# from `tick` is the state of record (the node did not act on that tick; no input is made up):
+#   - there is no input before `tick` and one after it: the subject started to send later,
+#     which is no hole; or
+#   - there is an input after `tick` and the host's own tick is more than
+#     _INPUT_ALLOWANCE_FACTOR times input_redundancy ticks past it: the hole expired.
+# It depends only on the input history and NetworkTime.tick, which does not change within a
+# rollback loop, so every pass over the tick gives the same answer.
+func _is_hole_accepted(node: Node, inputs: Array, tick: int) -> bool:
+	if not node.is_multiplayer_authority():
+		return false
+	if NetworkHistoryServer.get_latest_input_for(inputs, NetworkTime.tick + NetworkRollback.history_limit) <= tick:
+		return false
+	if NetworkHistoryServer.get_latest_input_for(inputs, tick) < 0:
+		return true
+	return NetworkTime.tick - tick > _get_hole_allowance()
+
+# PATCH (see addons/NETFOX_PATCHES.md): true if `snapshot` holds input for a tick that the host
+# has already decided had no input and no hole: nothing is held for the tick or before it, and
+# the state after the tick is a carry-over recorded as authoritative (see _is_hole_accepted, the
+# first case: a tick before a subject's first input). The host may have sent that state, so the
+# input is refused and the decision is final, like an expiry. It reads only the histories.
+func _is_start_decided(snapshot: _Snapshot) -> bool:
+	for input in snapshot.get_subjects():
+		for node in _input_graph.get_linked_from(input):
+			if not node.is_multiplayer_authority():
+				continue
+			if NetworkHistoryServer.get_latest_input_for(_input_graph.get_linked_to(node), snapshot.tick) >= 0:
+				continue
+			var state_snapshot := NetworkHistoryServer._get_rollback_state_snapshot(snapshot.tick + 1)
+			if state_snapshot != null and state_snapshot.has_subject(node) and state_snapshot.is_auth(node):
+				return true
+	return false
+
+# PATCH (see addons/NETFOX_PATCHES.md): the earliest tick whose input is missing, whose hole
+# is accepted (see above) and whose carried-over state is not yet the state of record, or -1.
+# Nothing arrives when a hole expires, and the first input of a subject arrives after the
+# ticks before it were passed, so NetworkRollback asks for this at the start of each loop
+# and re-simulates from there. Looked at once per input node of another peer, and only at the
+# ticks after the last authoritative state of the first node that input drives (the others
+# have the same chain), which is where such a hole can be.
+func _get_earliest_expired_hole() -> int:
+	var now := NetworkTime.tick
+	var oldest := maxi(NetworkRollback.history_start, 0)
+	for input: Node in _input_graph._links_from:
+		if input.is_multiplayer_authority():
+			continue
+		var nodes := _input_graph.get_linked_from(input)
+		var node := nodes[0] as Node
+		if not node.is_multiplayer_authority():
+			continue
+
+		# The states of the ticks of this loop are not recorded yet: start at the newest that is.
+		var first := now
+		while first > oldest:
+			var state_snapshot := NetworkHistoryServer._get_rollback_state_snapshot(first)
+			if state_snapshot != null and (not state_snapshot.has_subject(node) or state_snapshot.is_auth(node)):
+				break
+			first -= 1
+
+		var inputs := _input_graph.get_linked_to(node)
+		for tick in range(first, now):
+			var input_snapshot := NetworkHistoryServer._get_rollback_input_snapshot(tick)
+			if (input_snapshot == null or not input_snapshot.has_subject(input, true)) and _is_hole_accepted(node, inputs, tick) and _liveness_server.is_alive(node, tick):
+				return tick
+	return -1
 
 func _is_tick_fresh_for(node: Node, tick: int) -> bool:
 	if not _simulated_ticks.has(node):

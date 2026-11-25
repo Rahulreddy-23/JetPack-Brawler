@@ -397,6 +397,12 @@ func _rollback() -> void:
 	if _earliest_state >= 0 and _earliest_state <= _resim_from:
 		range_source = "latest state"
 		_resim_from = _earliest_state
+	# PATCH (see addons/NETFOX_PATCHES.md): nothing arrives when a hole in a subject's
+	# input expires, so go back to it here
+	var expired_hole := RollbackSimulationServer._get_earliest_expired_hole()
+	if expired_hole >= 0 and expired_hole <= _resim_from:
+		range_source = "expired input hole"
+		_resim_from = expired_hole
 	_resim_from = mini(_resim_from, NetworkTime.tick - 1)
 	_logger.trace("Simulating range @%d>@%d using %s", [_resim_from, NetworkTime.tick, range_source])
 

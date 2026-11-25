@@ -23,10 +23,21 @@ const SEGMENTS: Array[Dictionary] = [
 ## the stick neutral, so it goes the facing way (left, from the earlier run).
 const DASH_AT_SECONDS: Array[float] = [1.0, 4.2]
 
+## --autopilot-wiggle: the stick, the jetpack and the aim change every few ticks for the whole
+## script instead of following the segments, so that an input that is filled in or replayed
+## from the tick before differs from the real one on almost every tick (late-input tests).
+static var wiggle: bool = false
+
 ## Input for the tick that is tick_offset ticks after the script start.
 static func sample(tick_offset: int, tick_rate: int) -> Dictionary:
 	if tick_offset < 0 or tick_offset >= int(LENGTH_SECONDS * tick_rate):
 		return {}
+	if wiggle:
+		return {
+			"move": Vector2(1.0 if (tick_offset / 2) % 2 == 0 else -1.0, 0.0),
+			"jet": (tick_offset / 3) % 2 == 0,
+			"aim": Vector2.from_angle(float(tick_offset) * 0.37),
+		}
 	var t: float = float(tick_offset) / float(tick_rate)
 	var result: Dictionary = {"aim": Vector2.from_angle(t)}
 	for segment: Dictionary in SEGMENTS:

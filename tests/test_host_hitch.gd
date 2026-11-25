@@ -26,6 +26,8 @@ const REPORT_MARGIN_TICKS: int = 5
 var _main: Main = null
 var _client_input: Node = null
 var _stored: Dictionary = {}
+## Age of each merged input tick when it was merged: the host's tick minus the input's tick.
+var _ages: Dictionary = {}
 var _simulated: Dictionary = {}
 var _pending_hitch_msec: int = 0
 var _hitch_ticks: Array[Dictionary] = []
@@ -45,6 +47,7 @@ func _on_timeout() -> void:
 func _on_input(snapshot: _Snapshot) -> void:
 	if _client_input != null and snapshot.has_subject(_client_input):
 		_stored[snapshot.tick] = true
+		_ages[snapshot.tick] = NetworkTime.tick - snapshot.tick
 
 func _on_after_process_tick(tick: int) -> void:
 	var bot: Bot = _client_bot()
@@ -121,7 +124,12 @@ func _run() -> void:
 		for tick: int in skipped:
 			if tick >= from and tick <= to:
 				never_simulated += 1
+		var oldest: int = -1000
+		for tick: int in _ages:
+			if tick >= from and tick <= to:
+				oldest = maxi(oldest, _ages[tick] as int)
 		var ok: bool = lost == 0 and never_simulated == 0
+		print("INPUT_AGE hitch %d ms: oldest input merged was %d ticks old (allowance %d)" % [hitch["msec"] as int, oldest, RollbackSimulationServer._get_hole_allowance()])
 		failures += 0 if ok else 1
 		print("%s host hitch of %d ms at @%d: %d client input ticks lost, %d stored but never simulated" % ["PASS" if ok else "FAIL", hitch["msec"] as int, hitch["tick"] as int, lost, never_simulated])
 	if failures == 0 and (missing.size() > 0 or skipped.size() > 0):

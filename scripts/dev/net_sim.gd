@@ -11,6 +11,8 @@ extends Node
 ## latency_ms in each direction, so the measured round trip is about twice latency_ms. With
 ## jitter_ms each packet is held a further random 0 to jitter_ms, so packets can also arrive
 ## out of order.
+## With set_hold the packets that clients send in one window of time are held an extra
+## hold_ms, once, so that later packets overtake them: a late input packet on demand.
 ## Both the host and the client must be started with the same flags.
 
 const HOST_ADDRESS: String = "127.0.0.1"
@@ -21,6 +23,13 @@ var _server_port: int = 0
 var _latency_ms: int = 0
 var _loss_percent: float = 0.0
 var _jitter_ms: int = 0
+var _hold_ms: int = 0
+var _hold_at_ms: int = 0
+var _hold_window_ms: int = 100
+var _drop_window_ms: int = 0
+var _drop_at_ms: int = 0
+## Time of the first packet from a client, which the hold window is measured from.
+var _first_client_packet_msec: int = -1
 var _thread: Thread
 var _running: bool = true
 var _socket: PacketPeerUDP
@@ -58,6 +67,23 @@ func start(server_port: int, latency_ms: int, loss_percent: float, jitter_ms: in
 	_thread.start(_loop)
 	print("NETSIM latency_ms=%d jitter_ms=%d loss_percent=%.2f proxy_port=%d" % [latency_ms, jitter_ms, loss_percent, server_port + 1])
 
+## Hold client-to-host packets that arrive from at_ms to at_ms + window_ms after the first
+## client packet an extra hold_ms. 0 turns it off.
+func set_hold(hold_ms: int, at_ms: int, window_ms: int) -> void:
+	_hold_ms = hold_ms
+	_hold_at_ms = at_ms
+	_hold_window_ms = window_ms
+	if hold_ms > 0:
+		print("NETSIM hold_ms=%d at_ms=%d window_ms=%d" % [hold_ms, at_ms, window_ms])
+
+## Drop the client-to-host packets that arrive from at_ms to at_ms + window_ms after the first
+## client packet. 0 turns it off.
+func set_drop(window_ms: int, at_ms: int) -> void:
+	_drop_window_ms = window_ms
+	_drop_at_ms = at_ms
+	if window_ms > 0:
+		print("NETSIM drop_window_ms=%d at_ms=%d" % [window_ms, at_ms])
+
 func _exit_tree() -> void:
 	if _thread != null and _thread.is_started():
 		_running = false
@@ -82,7 +108,9 @@ func _read_from_clients(now: int) -> void:
 			var peer: PacketPeerUDP = PacketPeerUDP.new()
 			peer.set_dest_address(HOST_ADDRESS, _server_port)
 			_client_peers[from_port] = peer
-		_to_server.push_back(QueueEntry.new(packet, now, from_port, _delay()))
+		if _is_dropped(now):
+			continue
+		_to_server.push_back(QueueEntry.new(packet, now, from_port, _delay() + _hold_delay(now)))
 
 func _forward_to_server(now: int) -> void:
 	var keep: Array[QueueEntry] = []
@@ -117,3 +145,23 @@ func _keeps_packet() -> bool:
 
 func _delay() -> int:
 	return _latency_ms + (_rng.randi_range(0, _jitter_ms) if _jitter_ms > 0 else 0)
+
+# True for a packet that reaches the proxy inside the drop window.
+func _is_dropped(now: int) -> bool:
+	if _drop_window_ms <= 0:
+		return false
+	if _first_client_packet_msec < 0:
+		_first_client_packet_msec = now
+	var since: int = now - _first_client_packet_msec
+	return since >= _drop_at_ms and since < _drop_at_ms + _drop_window_ms
+
+# The extra delay of a packet that reaches the proxy at `now`: hold_ms inside the window, else 0.
+func _hold_delay(now: int) -> int:
+	if _hold_ms <= 0:
+		return 0
+	if _first_client_packet_msec < 0:
+		_first_client_packet_msec = now
+	var since: int = now - _first_client_packet_msec
+	if since >= _hold_at_ms and since < _hold_at_ms + _hold_window_ms:
+		return _hold_ms
+	return 0

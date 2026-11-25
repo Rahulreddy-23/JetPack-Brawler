@@ -37,6 +37,13 @@ run clock_hijack env TEST_PORT="$((BASE + 2))" "$GODOT" --headless --path "$ROOT
 run netfox_host "$GODOT" --headless --path "$ROOT" res://tests/test_netfox_handlers.tscn -- --mode=host --port="$((BASE + 1))"
 run netfox_client "$GODOT" --headless --path "$ROOT" res://tests/test_netfox_handlers.tscn -- --mode=client --port="$((BASE + 40))"
 run host_hitch env PORT="$((BASE + 4))" "$ROOT/tests/net_hitch.sh"
+run hole_rule env TEST_PORT="$((BASE + 94))" "$GODOT" --headless --path "$ROOT" res://tests/test_hole_rule.tscn
+run late_input_1 env PORT="$((BASE + 84))" HOLD_MS=183 "$ROOT/tests/net_late_input.sh"
+run late_input_2 env PORT="$((BASE + 86))" HOLD_MS=217 OBSERVER=1 "$ROOT/tests/net_late_input.sh"
+run late_input_refused env PORT="$((BASE + 96))" HOLD_MS=600 EXPECT_REFUSED=1 OBSERVER=1 "$ROOT/tests/net_late_input.sh"
+run silent_peer env PORT="$((BASE + 26))" EXPECT_SILENT=1 LATENCY_MS=600 HOLD_MS=0 "$ROOT/tests/net_late_input.sh"
+run pause_input env PORT="$((BASE + 24))" HOLD_MS=0 PAUSE_MS=1000 "$ROOT/tests/net_late_input.sh"
+run lost_input env PORT="$((BASE + 98))" "$ROOT/tests/net_lost_input.sh"
 run slow_frames env TEST_PORT="$((BASE + 15))" "$GODOT" --headless --path "$ROOT" res://tests/test_slow_frames.tscn
 run netfox_diffs "$GODOT" --headless --path "$ROOT" res://tests/test_netfox_diffs.tscn -- --port="$((BASE + 41))"
 run full_state_coverage env TEST_PORT="$((BASE + 17))" "$GODOT" --headless --path "$ROOT" res://tests/test_full_state_coverage.tscn

@@ -176,11 +176,21 @@ these.
   for the whole pause; the bot was driven about 390 px and burned a second of fuel. A
   one-tick press before a lost input was applied twice, a joining bot started 5 to 6 ticks
   late, and the fill could fire before a late input arrived.
-- Second version, in progress: no input is ever invented. A gap the host has waited on for
-  twice the redundancy window (8 ticks) is accepted as a tick on which the bot did not
-  act, which is what netfox itself ends up with, and play continues from there. A tick
-  before a bot's first input is not a gap. The smoke test's comparison rule is corrected
-  in the same change.
+- Second version, merged: no input is ever invented. The host waits up to 12 ticks
+  (400 ms, three times the redundancy window, on its own clock) for a missing input, then
+  accepts the tick as one on which the bot did not act, which is what netfox itself ends
+  up with, and refuses input older than that, so nothing it has sent for that bot is
+  replaced. A tick before a bot's first input is not a gap, and that start is final. A
+  device whose input is always too late gets a warning on the host, at most once a
+  second, and a count the game can read. Measured with packets held or dropped on
+  purpose: inputs 6 to 8 ticks late give no state sent then replaced and no wrong
+  display; a 1-second pause leaves the bot standing still (the first version drove it
+  410 px); the smoke test at 300 ms jitter went from 10 failures in 10 to none. The host
+  freeze test still stores every input. Reviewed three times; suite on `main` 59 of 59.
+- What it costs, written into section 15 of the patch notes: a lost input, or the end of a
+  pause, holds that bot still for every other player for up to 400 ms and then it jumps;
+  a player whose input is steadily later than 400 ms is frozen for everyone else. The
+  400 ms is a first guess to be judged on phones.
 
 ### D-11 (dev, `782da7b`): a deflected rocket was checked against a path it never flew
 
