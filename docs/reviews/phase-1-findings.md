@@ -16,8 +16,8 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `beaf6cb` | 24 Nov 2026 22:52 | One reviewer commit, `beaf6cb` (finding D-9, accepted). `d04c17f` only merges `main` into `dev`. |
-| `geminiceo` | `60fabd3` | 24 Nov 2026 23:26 | One reviewer commit, `60fabd3` (follow-up check: findings G-13 and G-14, decided below; its one code change only brings the branch's future-tick bound in line with `main`). `290ac58` only merges `main`. |
+| `dev` | `782da7b` | 25 Nov 2026 09:19 | Two reviewer commits: `2ce67fc` (finding D-10, reproduced, open) and `782da7b` (finding D-11, accepted). `521903f` and later merge commits only merge `main`. |
+| `geminiceo` | `2afecfe` | 25 Nov 2026 09:31 | Two reviewer commits, `ba1904c` and `2afecfe` (findings G-15 to G-24, decided below). `6d966de` and `880200a` only merge `main`. Neither commit is taken whole: `ba1904c` carries netfox hunks `main` already has in another form and a session change already rejected, and the object hunks of `2afecfe` conflict with D-11. |
 
 ## Findings
 
@@ -137,6 +137,40 @@ these.
   push ends a dash and that recoil is a push on the shooter. Consequence to know: firing the
   scrap blaster mid-dash cuts the dash short, so its bullet immunity ends on that tick.
 
+### D-10 (dev, `2ce67fc`): an intermittent position mismatch under simulated jitter
+
+- Report: one `SIM_JITTER_MS=150 tests/net_smoke.sh` run showed the client's bot 14.93 px
+  from the host's on two ticks, with matching inputs and no stall; three reruns passed.
+- Verified: yes, reproduced. 14 runs on `main` at `39339bc`: 13 passed with no difference,
+  1 failed with 9.96 px at ticks 196 and 197. In that run the client's value for each of
+  the two ticks is exactly one simulation step from the host's value two ticks earlier,
+  and it is right again from the next tick. So the client was sent, and applied, two states
+  for its own bot that were one tick behind the host's final history. No input was lost,
+  no stall was logged and the throttle stayed at its maximum.
+- Reading (not yet proven): the client's input for one tick reached the host late; the
+  host sent the bot's state for that tick without having simulated it, then repaired its
+  own history when the input arrived. If so, a late input packet on real Wi-Fi shows the
+  player a small snap of their own bot.
+- Outcome: accepted as a real fault, open. An investigation is assigned: the mechanism in
+  netfox, a reproduction on demand, and the options (an input delay, not sending a state
+  that was not simulated, or the client keeping its own prediction).
+
+### D-11 (dev, `782da7b`): a deflected rocket was checked against a path it never flew
+
+- Change: the slot records where the rocket's move of this tick started
+  (`rocket_step_start`, written at launch and at the start of every rocket step), and the
+  contact sweep uses that point instead of rebuilding it from the end position and the
+  velocity. One new check, two cases, in `tests/test_world_objects.gd`.
+- Verified: yes. A melee deflect changes the rocket's velocity after it has moved for the
+  tick, so "end minus one tick of velocity" pointed along the new direction: a bot beside
+  the real path could be hit and a bot on it missed. With the reviewer's test and the
+  scripts from before the change both cases fail; with the change all 253 checks pass, and
+  the two-process object tests and the rocket blast tests at 75 ms, with and without 5%
+  loss, still pass. The new field is not rollback state, which is safe here: only the host
+  runs the contact rule, and the host rewrites the field on launch and on every step,
+  re-simulated ones included, before the rule reads it.
+- Outcome: accepted and cherry-picked onto `main`.
+
 ## geminiceo audit (`e66eee1`)
 
 Status at 18:50: every finding was checked against the current code by an independent Opus
@@ -194,6 +228,34 @@ fix and the netfox hardening merged. Each part was checked against `main` at `24
 
 The reviewer's clean audit of `scripts/game/combat_geometry.gd` and `cast_result.gd` (NaN and
 infinite inputs, zero-length segments, corner normals) is noted; no change follows from it.
+
+### geminiceo iterations 2 and 3 (`ba1904c`, `2afecfe`)
+
+Each finding was checked against `main` at `f479130` by an independent verifier, with a run
+where one was cheap. The reviewer's own test suite gives 22 of 22 on its branch and 10
+failures of 19 on `main`.
+
+| Id | Finding | Verified against `main` | Outcome |
+|---|---|---|---|
+| G-15 | A bot flush against a wall fires its rocket from 16 px inside the wall | Partly: no tunnelling (the rocket explodes at once, by design), but the blast centre sits inside the wall, so self-damage is 32.7 instead of 36.0 | Accepted as is, low. In the fix round |
+| G-16 | The reject timer has no tree or peer guard | Same as G-13.3; the reviewer reverted it | Rejected (already decided) |
+| G-17 | The pickup cycle reset is missed when a stall skips the boundary tick | Confirmed by run: a spot stayed on cooldown up to 15 s into the next cycle | Accepted, low. In the fix round, with the limit noted (the take tick is inferred from the respawn time) |
+| G-18 | The HUD does not redraw on resize; divide by zero on maximum health | Not real: a Control redraws on resize, and the draw returns before the value is used | Rejected |
+| G-19 | A flick that curves past the fire ring fires at the crossing angle | Confirmed by run | Accepted with a smaller fix: the reviewer's version gives an extra shot when the thumb is pulled back inside the ring between two ticks. In the fix round |
+| G-20 | Reapply the 1.1b-N netfox hardening | Already on `main` as patches 1 to 13 | Already fixed |
+| G-21a, b | A rocket that passes a bot and reaches a wall or its range in the same tick explodes past the bot | Confirmed by run; the blast lands at most one tick of travel past the bot (about 5 to 10 of 40 damage) | Accepted with a smaller fix on top of D-11. The independent review of task D found the same fault. In the fix round |
+| G-21c | A deflected rocket is swept along its new velocity | Was real | Already fixed (D-11, the same code) |
+| G-22 | The gadget cycle reset runs after blasts, plates and throws, and misses skipped ticks | Confirmed by run: a plate on a spawn point launches the fresh bot, a gadget thrown on the boundary tick is wiped, a stall leaves old plates | Accepted. In the fix round |
+| G-23 | Pickups never reset between sessions | Confirmed by reading: after Leave then Host a spot can stay empty up to 45 s | Accepted, needed before the phone test. In the fix round |
+| G-24 | The oversized-packet warning is not rate limited | Confirmed by run: 1000 packets printed 8003 log lines in 45 ms on the Mac; any device on the hotspot can do it | Accepted, as a new recorded netfox patch. In the fix round |
+
+The reviewer's `tests/test_security_audit.gd` is not taken as it is: several of its checks
+pass on `main` without the fix they name, and two error out instead of failing. Each
+accepted fix gets its own test that fails without it.
+
+A note for the architecture: `rocket_step_start` (D-11) is written during the rollback tick
+without being registered state. That is safe because only the host reads it and rewrites
+it before every read; `docs/ARCHITECTURE.md` records the exception.
 
 The reviewer's test file is not taken as it is: against `main` it exits 1, three of its nine
 checks assert nothing, and five findings have no check. Each accepted fix gets its own test

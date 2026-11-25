@@ -146,6 +146,19 @@ func _host_checks() -> void:
 	_sync._handle_diff_sync(OTHER_PEER, _probe.diff_sync_packet(tick, 9))
 	_check(not _has_sync(tick), "diff sync that is empty after sanitising is not merged")
 
+	# The public query only follows what sanitising let through: a subject owned by
+	# peer 3 is not authoritative here (the host owns neither) after a packet for it
+	# from peer 2, and is after one from peer 3.
+	var other: Node = Probe.new()
+	add_child(other)
+	other.register("OwnedByThirdPeer")
+	other.set_multiplayer_authority(THIRD_PEER)
+	var query_tick: int = NetworkTime.tick + 4
+	_sync._handle_full_state(OTHER_PEER, other.full_state_packet(query_tick, 1))
+	_check(not NetworkHistoryServer.has_authoritative_state(other), "host: state from peer 2 for a subject peer 3 owns does not set the query")
+	_sync._handle_full_state(THIRD_PEER, other.full_state_packet(query_tick + 1, 1))
+	_check(NetworkHistoryServer.has_authoritative_state(other), "host: state from its owner sets it")
+
 	# Item 4a: a changed-bits index past the node's property count.
 	_probe.set_multiplayer_authority(OTHER_PEER)
 	tick = NetworkTime.tick + 8

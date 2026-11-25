@@ -149,7 +149,13 @@ func get_input_age_for(subjects: Array, tick: int) -> int:
 ## true once any state received from the authority has been merged for
 ## [param subject] in this session, and always true on the authority itself. It
 ## is false again after [method _NetworkTime.stop], which calls [method reset].
-func has_authoritative_state(subject: Object) -> bool:
+## [br][br]
+## [param subject] is a [Variant] so that a freed node can be passed and gives
+## [code]false[/code]: GDScript refuses a freed object for an [Object] parameter
+## before the function runs.
+func has_authoritative_state(subject: Variant) -> bool:
+	if not is_instance_valid(subject):
+		return false
 	if subject is Node and (subject as Node).is_multiplayer_authority():
 		return true
 	return _authoritative_subjects.has(subject)

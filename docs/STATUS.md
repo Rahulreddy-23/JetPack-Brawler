@@ -23,6 +23,8 @@ Current stage: Prototype, phase 1. Gate not passed.
       only; real Wi-Fi between phones is untested.
 - [x] A Foundation and contracts. Reviewed, merged (`afc2eee`). No gameplay rule yet; the
       game still plays as movement only.
+- [ ] Under simulated jitter the client's own bot is sometimes sent two states that are one
+      tick behind (dev finding D-10; 1 run in 14). Cause under investigation.
 - [ ] Device checkpoint 1 (Rahul): sticks, jetpack and dash on two phones over a hotspot.
       Build and script are ready (`docs/reviews/device-checkpoint-1.md`); not yet run.
 - [x] B Combat core, hazard wiring, dummy, push window. Reviewed, merged (`a170e4b`).

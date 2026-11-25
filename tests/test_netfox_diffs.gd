@@ -121,6 +121,9 @@ func _run() -> void:
 	NetworkHistoryServer._merge_rollback_state(_probe.snapshot_of(42, {Probe.PROP_A: 2}), true)
 	_expect(_tick_snapshot_of(42), 2, 1, "the same merge marked as a diff is completed, per-tick snapshot")
 
+	NetworkHistoryServer._merge_synchronizer_state(_probe.snapshot_of(32, {Probe.PROP_A: 2}))
+	_check(_tick_snapshot_of(32, true).get("a") == 2 and _tick_snapshot_of(32, true).get("b") == null, "a sync merge not marked as a diff is not completed (b is %s)" % str(_tick_snapshot_of(32, true).get("b")))
+
 	# A lost diff. The host: full at 100 (a=1, b=1); diff at 101 (a=2, b=2) lost; then
 	# a diff per tick that changes only a; a full state one interval after the first.
 	# Until that full state the client's b stays wrong: a diff cannot repair what an
@@ -135,6 +138,23 @@ func _run() -> void:
 	_expect(_history_of(100 + interval), 2, 2, "full state one interval after the first")
 	_diff_a(100 + interval + 1, 7)
 	_expect(_history_of(100 + interval + 1), 7, 2, "diff after the repairing full state")
+
+	# Negative cases of the public query, each on a subject of its own.
+	var refused: Node = Probe.new()
+	add_child(refused)
+	refused.register("RefusedSubject")
+	refused.set_multiplayer_authority(SERVER_PEER)
+	NetworkRollback._history_floor = 500
+	_sync._handle_full_state(SERVER_PEER, refused.full_state_packet(450, 1))
+	NetworkRollback._history_floor = 0
+	_check(not NetworkHistoryServer.has_authoritative_state(refused), "client: a snapshot whose tick is refused does not set it")
+	_sync._handle_full_sync(SERVER_PEER, refused.full_sync_packet(460, 1))
+	_check(NetworkHistoryServer.has_authoritative_state(refused), "client: a received synchronized state sets it")
+	NetworkHistoryServer.deregister(refused)
+	_check(not NetworkHistoryServer.has_authoritative_state(refused), "client: deregistering the node clears it")
+	var freed: Object = Node.new()
+	freed.free()
+	_check(not NetworkHistoryServer.has_authoritative_state(freed), "client: a freed subject is not authoritative and raises no error")
 
 	# A stop forgets it, and the next state received sets it again.
 	NetworkTime.stop()
