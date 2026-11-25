@@ -513,17 +513,22 @@ Part A, the crash. Part A2, strings that cost a line per byte. Part B, the sweep
   reading the rest. A packet that reads as nothing but is not empty is refused with the
   same rate limited warning as an oversized one. Assumption, stated in the code: node
   paths in this project are ASCII. A node named with other characters would not be
-  synchronised. The honest sessions refuse nothing: `net_smoke` (also its lag and jitter
+  synchronised. A NUL byte inside a name truncates it when it is read as ASCII; that is
+  harmless, because a peer can only set its own id mapping, and a truncated name either
+  matches no node or names one the peer could have named in full. The honest sessions refuse nothing: `net_smoke` (also its lag and jitter
   runs), `net_full` and `net_world_objects_join` now fail on the text "Refusing identity
   packet", and an instrumented run over seven session scripts (349 packets) saw no
   refusal and names of 37 bytes at most.
 - Clock commands: the payload of a ping is `var_to_bytes(int)`, of a pong
   `var_to_bytes([int, float, float])`, of a timestamp `var_to_bytes(float)`. The handlers
-  refuse a payload over the largest honest size (12, 44 and 12 bytes: 4 byte headers and
-  8 bytes for each 64 bit number) or whose header type is not int, array or float, before
-  decoding; the pong must also be an array of an int and two floats. A pong that passes
-  the size check can still hold a string of up to about 30 bytes, so up to about 30 lines,
-  from the server only.
+  refuse a payload whose header type is not int or float, before decoding, and whose size
+  is not exactly 8 bytes (12 with the header's 64 bit flag, bit 16): any other size is a
+  malformed variant that prints a line or two when decoded (the first version only
+  bounded the size from above, and an int header with the flag and a 4 byte body passed).
+  A pong must have an array header, a count of 3, and at most 44 bytes (4 byte headers
+  and 8 bytes for each 64 bit number), and be an array of an int and two floats once
+  decoded. A pong that passes can still hold a string of up to about 30 bytes, or be
+  cut inside an element, so up to about 30 lines a packet, from the server only.
 - Variant fallback: only fixed-size values are decoded. The type is read from the 4 byte
   header after the length (without decoding) and the value is decoded only if it is nil,
   bool, int, float, or one of the math types and Color: Vector2, Vector2i, Rect2, Rect2i,
@@ -550,19 +555,46 @@ Part A, the crash. Part A2, strings that cost a line per byte. Part B, the sweep
   - int (35): the other bot state (wall_nx, facing, the counters and ticks of Vitals,
     Arsenal and Gadgets), the world object's kind, owner_peer, spawn_tick, arm_tick,
     fuse_tick, explode_tick, launches, blasts, and the pickup spot's ready_tick.
+- Header type and body size: the fixed-size check above still let `get_var` fail, at two
+  engine error lines a value, in two shapes. The type was read as `header & 0xff`, so
+  it could be 0 to 255, and the allow-list was tested by a shift, which wraps in
+  GDScript for a count of 64 or more (`6 >> 65` is 3): a header type of 65 was tested as
+  type 1 (bool) and allowed, and `get_var` then failed on a type the engine does not
+  know. And an allowed type with a declared size shorter than its body (a size of 4 with
+  an int header and no body) was let through. A packet of 4,056 bytes of such 8 byte
+  values cost 1,016 error lines and 25 ms. Now the type must be at most `TYPE_COLOR`
+  before it is shifted, and the declared size must hold the 4 byte header and the body
+  of the type, from two constant tables (without the header's 64 bit flag and with it).
+  Probed for each allowed type with the flag clear and set, and with the other 15 flag
+  bits set: the smallest body the engine decodes with no error is, in bytes, nil 0; bool 4;
+  int and float 4, 8 with the flag; Vector2 8, 16; Vector2i 8; Rect2 16, 32; Rect2i 16;
+  Vector3 12, 24; Vector3i 12; Transform2D 24, 48; Vector4 16, 32; Vector4i 16; Plane 16,
+  32; Quaternion 16, 32; AABB 24, 48; Basis 36, 72; Transform3D 48, 96; Projection 64,
+  128; Color 16. Only the flag (bit 16) changes the size, and only for int, float and the
+  types made of floats. Longer bodies decode with no error. A declared size larger than
+  the type needs is consumed in full (the decoder seeks past `size` bytes, `get_var` reads
+  that many and ignores the extra), so the reader stays aligned: the test reads a value
+  with 8 bytes too many and then the next value in place. With both checks `get_var`
+  cannot fail on a value the decoder passes to it; the test runs every allowed type in
+  both forms at its exact size (accepted), one byte short (refused, skipped) and 8
+  bytes too long (aligned), with 0 engine errors, and header types 21, 38, 39, 64, 65,
+  66, 128, 129 and 255 (refused). After this the packets of 8 byte values cost 0 engine
+  error lines in 2 ms for a state packet and an input packet at the size caps.
 - Speed: after the length and the type are checked the value is decoded by `get_var(false)`
   after a seek back, which allocates nothing more than the unpatched code did (the length
   is below the bytes left). The first version of this patch decoded with `get_data` and
   `bytes_to_var` and was slower. 20,000 decodes of a bool, an int, a float, a Vector2 and
   a Vector2i, median of 7, Mac debug build, in microseconds: a bare `get_var(false)` loop
-  1,250 to 1,420; the unpatched serializer method (one call around `get_var`) 3,850 to
-  3,970; the first version of the patch 9,600 to 9,820; this version 7,800 to 8,070. Through
-  `_NetworkSchema.decode`, the call the synchronisers actually make: unpatched 16,300 to
-  16,400, this version 20,350 to 20,530, 1.25 times. Per property that is about 0.2
-  microseconds more on a Mac, about 0.1 ms for a full client state of 520 properties; a
-  phone will be several times that, not measured. The serializer alone is 2 times the
-  unpatched serializer, more than 1.5: the extra is the 6 calls of the checks, which
-  were tried as 5 (one 64 bit read for the length and type) with no gain.
+  1,240 to 1,340; the unpatched serializer method (one call around `get_var`) 3,820 to
+  4,100; the first version of the patch 9,610 to 10,260; this version, with the type and
+  size checks of the paragraph above, 9,460 to 9,680. Through `_NetworkSchema.decode`,
+  the call the synchronisers actually make: unpatched 16,260 to 16,850, this version
+  22,250 to 22,860, 1.37 to 1.40 times. Per property that is about 0.3 microseconds more
+  on a Mac, about 0.15 ms for a full client state of 520 properties; a phone will be
+  several times that, not measured. The serializer alone is 2.4 times the unpatched
+  serializer, more than 1.5: the extra is the calls of the checks (the first round of this
+  patch, before the type and size checks, was 2.0 times; a variant with one 64 bit read
+  for the length and type was tried and was no faster).
 
 ### B. The sweep: every read on network data whose size or count comes from the packet
 
@@ -712,21 +744,28 @@ Not reachable from a peer: nothing else in `addons/` reads a network buffer.
 ### D. What is not fixed
 
 This patch bounds the cost of a packet. It does not make the host safe against a peer
-that sends a lot of packets.
-- Any reliable command, at the network's own rate. There is no per-peer packet rate
-  limit anywhere in the addon or in the game: a peer can send identity packets (each one
-  now cheap but not free: parsed up to 14,522 bytes and 107 entries), unknown commands,
-  tickrate messages and input packets as fast as ENet carries them, and the host spends
-  its time reading them. The rate limited log lines bound the output, not the work.
-- Godot's own `SceneMultiplayer` layer below netfox: malformed remote calls, the path
-  strings of RPC and node-path caches, the system messages. They were not probed.
-- The string schema of this addon (`_StringSerializer`) decodes UTF-8 and has the same
-  cost per invalid byte; it is bounded by the packet size only and is not registered
-  anywhere in this project. A pong may still hold a string of about 30 bytes.
+that sends a lot of packets. All three items of the list below must be dealt with
+before strangers can join (a match of friends on one hotspot does not need them).
+- Before strangers can join: any command or input flood at the network's own rate. There
+  is no per-peer packet rate limit anywhere in the addon or in the game: a peer can send
+  identity packets (each one now cheap but not free: parsed up to 14,522 bytes and 107
+  entries), unknown commands, tickrate messages and input packets (up to 4,064 bytes
+  and the frames in them, 225 or so frames of two values) as fast as ENet carries them,
+  and the host spends its time reading them. The rate limited log lines bound the
+  output, not the work.
+- Before strangers can join: Godot's own `SceneMultiplayer` layer below netfox. A
+  malformed remote call prints about a line, and the path strings of RPC and node-path
+  caches may cost a line per invalid byte. This was not probed.
+- Before strangers can join: the string schema of this addon (`_StringSerializer`)
+  decodes UTF-8 and has the same cost per invalid byte (a line each); it is bounded by
+  the packet size only and is not registered anywhere in this project, so it cannot be
+  reached today. It must not be registered for peer input until it checks its bytes as
+  the identity names do. The array and dictionary schemas are bounded by their counts
+  only, with the same limit. A pong may still hold a string of about 30 bytes (from the
+  server only).
 - Every measurement is from a Mac debug build, headless. A phone host writing its log to
   the system log will be slower per line, and the CPU of a budget phone several times
   slower per call. Nothing here was measured on a device or over a real network.
-
 
 ## The diffs
 
@@ -747,29 +786,35 @@ diff --git a/addons/netfox/network-time-synchronizer.gd b/addons/netfox/network-
  @onready var _cmd_ping := NetworkCommandServer.register_command(_handle_ping, MultiplayerPeer.TRANSFER_MODE_UNRELIABLE)
  @onready var _cmd_pong := NetworkCommandServer.register_command(_handle_pong, MultiplayerPeer.TRANSFER_MODE_UNRELIABLE)
  @onready var _cmd_req_time := NetworkCommandServer.register_command(_handle_request_timestamp, MultiplayerPeer.TRANSFER_MODE_RELIABLE)
-@@ -247,16 +249,46 @@
- 		_logger.trace("Adjusted clock by %.2fms, offset: %.2fms, new time: %.4fss", [nudge * 1000., offset * 1000., _clock.get_time()])
+@@ -248,15 +250,52 @@
  
  		_offset = offset - nudge
-+
+ 
 +# PATCH (see addons/NETFOX_PATCHES.md): the payloads of the clock commands are
 +# var_to_bytes of an int (ping), of an array of an int and two floats (pong) and of
 +# a float (timestamp). Anything of another size or type is refused before it is
 +# decoded: the engine prints an error line for every invalid UTF-8 byte of a string
-+# variant, so a ping of 200,000 bad bytes cost 1.7 s and 200,000 lines. The limits
-+# are the largest honest sizes: a 4 byte header and 8 bytes for each 64 bit number
-+# plus a 4 byte header for each element and for the array's count.
-+const _PING_MAX_BYTES := 4 + 8
++# variant, so a ping of 200,000 bad bytes cost 1.7 s and 200,000 lines. A ping and a
++# timestamp are one number, so their size is exactly 8 bytes, or 12 if the header has
++# the 64 bit flag (bit 16): any other size is a malformed variant, which prints a line
++# or two when decoded. A pong is an array, its size is at most the largest honest one:
++# a 4 byte header and a 4 byte count and, for each of its 3 elements, a 4 byte header
++# and 8 bytes.
 +const _PONG_MAX_BYTES := 4 + 4 + 3 * (4 + 8)
-+const _TIMESTAMP_MAX_BYTES := 4 + 8
- 
-+func _is_payload_of(data: PackedByteArray, type: int, max_bytes: int) -> bool:
-+	return data.size() >= 8 and data.size() <= max_bytes and (data.decode_u32(0) & 0xff) == type
++
++func _is_scalar_payload(data: PackedByteArray, type: int) -> bool:
++	if data.size() < 8:
++		return false
++	var header := data.decode_u32(0)
++	return (header & 0xff) == type and data.size() == (12 if header & 0x10000 else 8)
++
++func _is_pong_payload(data: PackedByteArray) -> bool:
++	return data.size() >= 8 and data.size() <= _PONG_MAX_BYTES and (data.decode_u32(0) & 0xff) == TYPE_ARRAY and (data.decode_u32(4) & 0x7fffffff) == 3
 +
  func _handle_ping(sender: int, data: PackedByteArray) -> void:
 -	var idx := bytes_to_var(data) as int
 +	# PATCH: a malformed payload is not an index.
-+	if not _is_payload_of(data, TYPE_INT, _PING_MAX_BYTES):
++	if not _is_scalar_payload(data, TYPE_INT):
 +		return
 +	var decoded: Variant = bytes_to_var(data)
 +	if typeof(decoded) != TYPE_INT:
@@ -787,7 +832,7 @@ diff --git a/addons/netfox/network-time-synchronizer.gd b/addons/netfox/network-
 +		return
  
 +	# PATCH: a pong is an array of an int and two floats, and nothing else
-+	if not _is_payload_of(data, TYPE_ARRAY, _PONG_MAX_BYTES):
++	if not _is_pong_payload(data):
 +		return
 +	var args: Variant = bytes_to_var(data)
 +	if typeof(args) != TYPE_ARRAY or (args as Array).size() != 3 or typeof(args[0]) != TYPE_INT or typeof(args[1]) != TYPE_FLOAT or typeof(args[2]) != TYPE_FLOAT:
@@ -796,7 +841,7 @@ diff --git a/addons/netfox/network-time-synchronizer.gd b/addons/netfox/network-
  	var idx := args[0] as int
  	var ping_received := args[1] as float
  	var pong_sent := args[2] as float
-@@ -296,6 +328,14 @@
+@@ -296,6 +335,14 @@
  	_cmd_set_time.send(var_to_bytes(_clock.get_time()), sender)
  
  func _handle_set_timestamp(sender: int, data: PackedByteArray) -> void:
@@ -806,7 +851,7 @@ diff --git a/addons/netfox/network-time-synchronizer.gd b/addons/netfox/network-
 +		return
 +
 +	# PATCH: a timestamp is a float, and nothing else
-+	if not _is_payload_of(data, TYPE_FLOAT, _TIMESTAMP_MAX_BYTES):
++	if not _is_scalar_payload(data, TYPE_FLOAT):
 +		return
  	var timestamp := bytes_to_var(data) as float
  
@@ -866,10 +911,11 @@ diff --git a/addons/netfox/schemas/network-schemas.gd b/addons/netfox/schemas/ne
  	return _VariableBitsetSerializer.instance
  
  ## Serialize signed integers as 8 bits.
-@@ -489,15 +489,51 @@
+@@ -488,16 +488,67 @@
+ class _VariantSerializer extends NetworkSchemaSerializer:
  	func encode(v: Variant, b: StreamPeerBuffer) -> void:
  		b.put_var(v, false)
- 
++
 +	# PATCH (see addons/NETFOX_PATCHES.md): two limits, for a decoder that reads what a
 +	# peer sends.
 +	# 1. get_var() allocates the length the packet declares before it checks the bytes
@@ -881,10 +927,24 @@ diff --git a/addons/netfox/schemas/network-schemas.gd b/addons/netfox/schemas/ne
 +	#    carry no length and no string. Anything else, the strings, node paths,
 +	#    containers and objects included, is skipped and read as null. A property of
 +	#    such a type needs a registered schema with a bounded decoder of its own.
++	# 3. get_var itself prints error lines (two per value) for a header it does not know
++	#    or a body shorter than its type needs. The type must therefore be below
++	#    TYPE_COLOR + 1 (a shift by 64 or more wraps in GDScript, so the type 65 would
++	#    pass as the type 1), and the declared size must hold the header and the body
++	#    of that type, from the tables below. With these checks get_var fails on nothing
++	#    this decoder passes to it (probed for every allowed type, with and without the
++	#    64 bit flag). A declared size larger than the type needs is read in full and
++	#    the extra bytes are ignored, so the reader stays aligned.
 +	# The checks read the 4 byte length and the 4 byte type header, then seek back and
 +	# let get_var decode (which does not build objects with allow_objects false).
 +	const _FIXED_SIZE_TYPES := ((1 << (TYPE_COLOR + 1)) - 1) & ~(1 << TYPE_STRING)
-+
++	# Body bytes of each allowed type, indexed by type number, without the header's
++	# 64 bit flag (bit 16) and with it. The flag doubles int, float and the types made
++	# of floats; bool, the integer vectors and rects and Color ignore it. Only bit 16
++	# matters (probed: the other 15 flag bits change nothing). Index 4 (String) is unused.
++	const _BODY_BYTES := [0, 4, 4, 4, 0, 8, 8, 16, 16, 12, 12, 24, 16, 16, 16, 16, 24, 36, 48, 64, 16]
++	const _BODY_BYTES_64 := [0, 4, 8, 8, 0, 16, 8, 32, 16, 24, 12, 48, 32, 16, 32, 32, 48, 72, 96, 128, 16]
+ 
  	func decode(b: StreamPeerBuffer) -> Variant:
 +		var start := b.get_position()
 +		var left := b.get_available_bytes() - 4
@@ -895,8 +955,9 @@ diff --git a/addons/netfox/schemas/network-schemas.gd b/addons/netfox/schemas/ne
 +		if size < 4 or size > left:
 +			b.seek(start + 4 + clampi(size, 0, left))
 +			return null
-+		var type := b.get_32() & 0xff
-+		if (_FIXED_SIZE_TYPES >> type) & 1 == 0:
++		var header := b.get_32()
++		var type := header & 0xff
++		if type > TYPE_COLOR or (_FIXED_SIZE_TYPES >> type) & 1 == 0 or size < 4 + (_BODY_BYTES_64[type] if header & 0x10000 else _BODY_BYTES[type]):
 +			b.seek(start + 4 + size)
 +			return null
 +		b.seek(start)
@@ -919,7 +980,7 @@ diff --git a/addons/netfox/schemas/network-schemas.gd b/addons/netfox/schemas/ne
  
  class _CStringSerializer extends NetworkSchemaSerializer:
  	static var instance := _CStringSerializer.new()
-@@ -610,9 +646,19 @@
+@@ -610,9 +661,19 @@
  			b.put_u8(byte)
  
  	func decode(b: StreamPeerBuffer) -> Variant:
@@ -940,7 +1001,7 @@ diff --git a/addons/netfox/schemas/network-schemas.gd b/addons/netfox/schemas/ne
  			var byte := b.get_u8()
  
  			bools.append(byte & 0x01)
-@@ -625,9 +671,9 @@
+@@ -625,9 +686,9 @@
  
  			# Stop if no more data to read
  			if byte & 0x80 == 0:
@@ -952,7 +1013,7 @@ diff --git a/addons/netfox/schemas/network-schemas.gd b/addons/netfox/schemas/ne
  
  class _Float16Serializer extends NetworkSchemaSerializer:
  	func encode(v: Variant, b: StreamPeerBuffer) -> void:
-@@ -850,6 +896,10 @@
+@@ -850,6 +911,10 @@
  		var array := []
  
  		var item_count = size.decode(b)
@@ -963,7 +1024,7 @@ diff --git a/addons/netfox/schemas/network-schemas.gd b/addons/netfox/schemas/ne
  		array.resize(item_count)
  		for i in item_count:
  			array[i] = component.decode(b)
-@@ -879,6 +929,10 @@
+@@ -879,6 +944,10 @@
  		var dictionary := {}
  
  		var size = size_serializer.decode(b)
@@ -2038,6 +2099,11 @@ the patch restored. "FAIL" means the test exited 1 or printed a SCRIPT ERROR.
 | 14 | the erase in `erase_peer` and the clear in `reset` | netfox_host | FAIL, 4 checks (no warning after the peer is erased or after a reset, 3 peers kept) |
 | 16 | the identity serializer back to the unpatched one (`get_utf8_string`) | netfox_host | process killed, exit 138 (SIGBUS), on the first call: the 4 byte identity packet |
 | 16 | the variant serializer back to `get_var(false)` | netfox_host | process killed, exit 138, on the first 2 GB variant |
+| 16 | the header type bound (`type > TYPE_COLOR`) | netfox_host | FAIL, the header types 64 to 129 pass the wrapped shift (SCRIPT ERROR x5, the table has no such index) and 5 of the 9 bad types are not refused |
+| 16 | the declared size against the body size of the type | netfox_host | FAIL, 2 checks: 76 engine errors for the short values of the 40 type forms, and 1,124 engine errors, 52 ms, for a packet of values with no body |
+| 16 | the 64 bit column of the size table (the flag ignored) | netfox_host | FAIL, 26 engine errors for the flagged short values |
+| 16 | the exact size of a ping and a timestamp | netfox_host | FAIL, 3 engine errors (and a SCRIPT ERROR, a malformed float cast) for the 8 bytes with the flag and the 12 bytes without it |
+| 16 | the element count of a pong | netfox_host | FAIL, a pong of 2 elements passes the check |
 | 16 | the variant length check (`size > left`; the 4 byte packets still stop at the earlier size check) | netfox_host | process killed, exit 138, on a 2 GB length followed by a header and a value (a check was added for it; the mutation survived the first version of the test) |
 | 16 | the string serializer back to `get_utf8_string()` | netfox_host | process killed, exit 138 |
 | 16 | the array count check | netfox_host | SCRIPT ERROR x2 (the resize of 2^40 items; scene exits 0, `run_all.sh` fails) |

@@ -34,8 +34,12 @@ class WarningCounter extends Logger:
 	var id_lines: int = 0
 	## Lines the engine prints for invalid UTF-8 ("Unicode parsing error"), one per bad byte.
 	var bad_utf8: int = 0
+	## Every error (not warning) reported, the engine's decoder errors included.
+	var errors: int = 0
 
 	func _log_error(_function: String, _file: String, _line: int, code: String, rationale: String, _editor_notify: bool, error_type: int, _script_backtraces: Array[ScriptBacktrace]) -> void:
+		if error_type == Logger.ERROR_TYPE_ERROR:
+			errors += 1
 		if "Unicode parsing error" in code or "Unicode parsing error" in rationale:
 			bad_utf8 += 1
 		for needle: String in lines:
@@ -126,6 +130,7 @@ func _run() -> void:
 		_declared_length_checks()
 		_text_cost_checks()
 		_variant_type_checks()
+		_variant_shape_checks()
 		_frame_size_checks()
 		_command_prefix_checks()
 	else:
@@ -637,8 +642,17 @@ func _text_cost_checks() -> void:
 	synchronizer._handle_set_timestamp(SERVER_PEER, var_to_bytes("not a time"))
 	elapsed = Time.get_ticks_msec() - start
 	_check(_warnings.bad_utf8 == 0 and elapsed < TIME_BOUND_MSEC, "a pong and a timestamp from the server that are bad strings: %d engine error lines (0), %d ms (limit %d)" % [_warnings.bad_utf8, elapsed, TIME_BOUND_MSEC])
-	_check(synchronizer._is_payload_of(var_to_bytes(5), TYPE_INT, synchronizer._PING_MAX_BYTES) and synchronizer._is_payload_of(var_to_bytes(1 << 40), TYPE_INT, synchronizer._PING_MAX_BYTES) and synchronizer._is_payload_of(var_to_bytes([1 << 40, 1234567.891, 1e300]), TYPE_ARRAY, synchronizer._PONG_MAX_BYTES) and synchronizer._is_payload_of(var_to_bytes(1234567.891), TYPE_FLOAT, synchronizer._TIMESTAMP_MAX_BYTES), "control: an honest ping, a ping with a 64 bit index, a pong and a timestamp pass the size and type check")
-	_check(not synchronizer._is_payload_of(var_to_bytes("ab"), TYPE_INT, synchronizer._PING_MAX_BYTES) and not synchronizer._is_payload_of(var_to_bytes(5), TYPE_FLOAT, synchronizer._PING_MAX_BYTES) and not synchronizer._is_payload_of(PackedByteArray(), TYPE_INT, synchronizer._PING_MAX_BYTES), "a ping of the wrong type, or empty, fails the size and type check")
+	_check(synchronizer._is_scalar_payload(var_to_bytes(5), TYPE_INT) and synchronizer._is_scalar_payload(var_to_bytes(1 << 40), TYPE_INT) and synchronizer._is_pong_payload(var_to_bytes([1 << 40, 1234567.891, 1e300])) and synchronizer._is_pong_payload(var_to_bytes([3, 0.5, 1.25])) and synchronizer._is_scalar_payload(var_to_bytes(1234567.891), TYPE_FLOAT) and synchronizer._is_scalar_payload(var_to_bytes(0.5), TYPE_FLOAT), "control: an honest ping (also with a 64 bit index), pong and timestamp (a float of either width) pass the size and type check")
+	_check(not synchronizer._is_scalar_payload(var_to_bytes("ab"), TYPE_INT) and not synchronizer._is_scalar_payload(var_to_bytes(5), TYPE_FLOAT) and not synchronizer._is_scalar_payload(PackedByteArray(), TYPE_INT) and not synchronizer._is_pong_payload(var_to_bytes([1, 2])), "a ping of the wrong type, an empty one and a pong of 2 elements fail the size and type check")
+	# A size inside the old window that does not match the header: 8 bytes with the 64 bit flag set
+	var flagged_int: PackedByteArray = PackedByteArray([2, 0, 1, 0, 5, 0, 0, 0])
+	var flagged_float: PackedByteArray = PackedByteArray([3, 0, 1, 0, 0, 0, 0, 0])
+	var long_int: PackedByteArray = PackedByteArray([2, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0])
+	_warnings.errors = 0
+	synchronizer._handle_ping(OTHER_PEER, flagged_int)
+	synchronizer._handle_ping(OTHER_PEER, long_int)
+	synchronizer._handle_set_timestamp(SERVER_PEER, flagged_float)
+	_check(not synchronizer._is_scalar_payload(flagged_int, TYPE_INT) and not synchronizer._is_scalar_payload(long_int, TYPE_INT) and not synchronizer._is_scalar_payload(flagged_float, TYPE_FLOAT) and _warnings.errors == 0, "a ping of 8 bytes with the 64 bit flag, one of 12 bytes without it, and a timestamp of 8 bytes with it are refused: %d engine errors (0)" % _warnings.errors)
 
 	# A string-typed property in a state packet and in an input packet
 	var properties: StreamPeerBuffer = StreamPeerBuffer.new()
@@ -657,6 +671,104 @@ func _text_cost_checks() -> void:
 	_sync._handle_input(OTHER_PEER, input.data_array)
 	elapsed = Time.get_ticks_msec() - start
 	_check(_warnings.bad_utf8 == 0 and elapsed < TIME_BOUND_MSEC, "a string property of 2000 bad bytes in a state packet, a diff state packet and an input packet: %d engine error lines (0), %d ms (limit %d)" % [_warnings.bad_utf8, elapsed, TIME_BOUND_MSEC])
+
+## The value of the variant fallback as put_var frames it, with a chosen header and body.
+func _framed_value(header: int, body: PackedByteArray) -> PackedByteArray:
+	var inner: PackedByteArray = PackedByteArray()
+	inner.resize(4)
+	inner.encode_u32(0, header)
+	inner.append_array(body)
+	return _framed(inner)
+
+# get_var prints error lines (two per value) for a header it does not know and for a
+# body shorter than its type needs, so the decoder checks both before it calls get_var.
+func _variant_shape_checks() -> void:
+	var serializer: NetworkSchemaSerializer = NetworkSchemas.variant()
+	var flag: int = 1 << 16
+	# Body bytes of each allowed type, without and with the 64 bit flag, as the engine reads them
+	var bodies: Dictionary = {TYPE_NIL: [0, 0], TYPE_BOOL: [4, 4], TYPE_INT: [4, 8], TYPE_FLOAT: [4, 8], TYPE_VECTOR2: [8, 16], TYPE_VECTOR2I: [8, 8], TYPE_RECT2: [16, 32], TYPE_RECT2I: [16, 16], TYPE_VECTOR3: [12, 24], TYPE_VECTOR3I: [12, 12], TYPE_TRANSFORM2D: [24, 48], TYPE_VECTOR4: [16, 32], TYPE_VECTOR4I: [16, 16], TYPE_PLANE: [16, 32], TYPE_QUATERNION: [16, 32], TYPE_AABB: [24, 48], TYPE_BASIS: [36, 72], TYPE_TRANSFORM3D: [48, 96], TYPE_PROJECTION: [64, 128], TYPE_COLOR: [16, 16]}
+	var exact_ok: int = 0
+	var short_refused: int = 0
+	var long_aligned: int = 0
+	var cases: int = 0
+	_warnings.errors = 0
+	for type: int in bodies:
+		for form: int in 2:
+			var header: int = type | (flag if form == 1 else 0)
+			var need: int = bodies[type][form]
+			cases += 1
+			var exact: StreamPeerBuffer = _buffer_of(_framed_value(header, _zero_bytes(need)))
+			var value: Variant = serializer.decode(exact)
+			if (typeof(value) == type or type == TYPE_NIL) and exact.get_available_bytes() == 0:
+				exact_ok += 1
+			else:
+				print("  exact size not accepted: type ", type, " form ", form, " got ", value)
+			if need > 0:
+				var short: StreamPeerBuffer = _buffer_of(_framed_value(header, _zero_bytes(need - 1)))
+				if serializer.decode(short) == null and short.get_available_bytes() == 0:
+					short_refused += 1
+				else:
+					print("  one byte short not refused: type ", type, " form ", form)
+			else:
+				short_refused += 1
+			# A declared size larger than the type needs is consumed in full: the next value is read in place
+			var longer: StreamPeerBuffer = _buffer_of(_framed_value(header, _zero_bytes(need + 8)) + _framed_value(TYPE_INT, PackedByteArray([77, 0, 0, 0])))
+			var first: Variant = serializer.decode(longer)
+			if (typeof(first) == type or type == TYPE_NIL) and serializer.decode(longer) == 77:
+				long_aligned += 1
+			else:
+				print("  longer size not aligned: type ", type, " form ", form)
+	_check(exact_ok == cases and short_refused == cases and long_aligned == cases and _warnings.errors == 0, "every allowed type, with and without the 64 bit flag (%d cases): the exact size is accepted (%d), one byte short is refused (%d), 8 bytes too many is read in full and the next value is in place (%d), %d engine errors (0)" % [cases, exact_ok, short_refused, long_aligned, _warnings.errors])
+	# Header types at or above the engine's type count, and ones that a shift would wrap: refused, no engine error
+	_warnings.errors = 0
+	var refused_types: int = 0
+	for bad_type: int in [21, 38, 39, 64, 65, 66, 128, 129, 255]:
+		var buffer: StreamPeerBuffer = _buffer_of(_framed_value(bad_type, _zero_bytes(16)))
+		if serializer.decode(buffer) == null and buffer.get_available_bytes() == 0:
+			refused_types += 1
+		else:
+			print("  type not refused: ", bad_type)
+	_check(refused_types == 9 and _warnings.errors == 0, "header types 21, 38, 39, 64, 65, 66, 128, 129 and 255 are refused and skipped: %d of 9, %d engine errors (0)" % [refused_types, _warnings.errors])
+
+	# Whole packets of 8 byte values through the real handlers: a declared size of 4 with an
+	# int header and no body, and a header type of 65 (the shift would read it as a bool)
+	var tick: int = NetworkTime.tick + 6
+	var identifier: _NetworkIdentifier = NetworkIdentityServer._get_identifier_of(_probe)
+	_probe.set_multiplayer_authority(OTHER_PEER)
+	var shapes: Dictionary = {"no body": TYPE_INT, "type 65": 65}
+	for shape: String in shapes:
+		var state: PackedByteArray = _value_packet(tick + 1, identifier, shapes[shape], _sync._max_packet_size * 2)
+		var input_body: PackedByteArray = _value_packet(tick + 2, identifier, shapes[shape], _sync._max_packet_size * 2 * NetworkRollback.input_redundancy - 8)
+		var input: StreamPeerBuffer = StreamPeerBuffer.new()
+		NetworkSchemas.varuint().encode(input_body.size(), input)
+		input.put_data(input_body)
+		_warnings.errors = 0
+		var start: int = Time.get_ticks_msec()
+		_sync._handle_full_state(OTHER_PEER, state)
+		_sync._handle_input(OTHER_PEER, input.data_array)
+		var elapsed: int = Time.get_ticks_msec() - start
+		_check(state.size() > 900 and input_body.size() > 3900 and _warnings.errors == 0 and elapsed < TIME_BOUND_MSEC, "a state packet of %d bytes and an input packet of %d bytes made of 8 byte values (%s): %d engine errors (0), %d ms (limit %d)" % [state.size(), input.get_size(), shape, _warnings.errors, elapsed, TIME_BOUND_MSEC])
+
+## A packet of frames of the probe, each holding two 8 byte values (a declared size of 4
+## and the header only), as many as fit under limit bytes. The probe is named by its id.
+func _value_packet(tick: int, identifier: _NetworkIdentifier, header: int, limit: int) -> PackedByteArray:
+	var frame_header: StreamPeerBuffer = StreamPeerBuffer.new()
+	NetworkSchemas._netref().encode(_NetworkIdentityReference.of_id(identifier.get_local_id()), frame_header)
+	var values: PackedByteArray = _framed_value(header, PackedByteArray()) + _framed_value(header, PackedByteArray())
+	var frame: StreamPeerBuffer = StreamPeerBuffer.new()
+	frame.put_data(frame_header.data_array)
+	NetworkSchemas.varuint().encode(values.size(), frame)
+	frame.put_data(values)
+	var packet: PackedByteArray = PackedByteArray([0, 0, 0, 0])
+	packet.encode_u32(0, tick)
+	while packet.size() + frame.get_size() <= limit:
+		packet.append_array(frame.data_array)
+	return packet
+
+func _zero_bytes(count: int) -> PackedByteArray:
+	var zeros: PackedByteArray = PackedByteArray()
+	zeros.resize(count)
+	return zeros
 
 # The variant fallback decodes only fixed-size values, and skips what it refuses.
 func _variant_type_checks() -> void:

@@ -500,9 +500,23 @@ class _VariantSerializer extends NetworkSchemaSerializer:
 	#    carry no length and no string. Anything else, the strings, node paths,
 	#    containers and objects included, is skipped and read as null. A property of
 	#    such a type needs a registered schema with a bounded decoder of its own.
+	# 3. get_var itself prints error lines (two per value) for a header it does not know
+	#    or a body shorter than its type needs. The type must therefore be below
+	#    TYPE_COLOR + 1 (a shift by 64 or more wraps in GDScript, so the type 65 would
+	#    pass as the type 1), and the declared size must hold the header and the body
+	#    of that type, from the tables below. With these checks get_var fails on nothing
+	#    this decoder passes to it (probed for every allowed type, with and without the
+	#    64 bit flag). A declared size larger than the type needs is read in full and
+	#    the extra bytes are ignored, so the reader stays aligned.
 	# The checks read the 4 byte length and the 4 byte type header, then seek back and
 	# let get_var decode (which does not build objects with allow_objects false).
 	const _FIXED_SIZE_TYPES := ((1 << (TYPE_COLOR + 1)) - 1) & ~(1 << TYPE_STRING)
+	# Body bytes of each allowed type, indexed by type number, without the header's
+	# 64 bit flag (bit 16) and with it. The flag doubles int, float and the types made
+	# of floats; bool, the integer vectors and rects and Color ignore it. Only bit 16
+	# matters (probed: the other 15 flag bits change nothing). Index 4 (String) is unused.
+	const _BODY_BYTES := [0, 4, 4, 4, 0, 8, 8, 16, 16, 12, 12, 24, 16, 16, 16, 16, 24, 36, 48, 64, 16]
+	const _BODY_BYTES_64 := [0, 4, 8, 8, 0, 16, 8, 32, 16, 24, 12, 48, 32, 16, 32, 32, 48, 72, 96, 128, 16]
 
 	func decode(b: StreamPeerBuffer) -> Variant:
 		var start := b.get_position()
@@ -514,8 +528,9 @@ class _VariantSerializer extends NetworkSchemaSerializer:
 		if size < 4 or size > left:
 			b.seek(start + 4 + clampi(size, 0, left))
 			return null
-		var type := b.get_32() & 0xff
-		if (_FIXED_SIZE_TYPES >> type) & 1 == 0:
+		var header := b.get_32()
+		var type := header & 0xff
+		if type > TYPE_COLOR or (_FIXED_SIZE_TYPES >> type) & 1 == 0 or size < 4 + (_BODY_BYTES_64[type] if header & 0x10000 else _BODY_BYTES[type]):
 			b.seek(start + 4 + size)
 			return null
 		b.seek(start)

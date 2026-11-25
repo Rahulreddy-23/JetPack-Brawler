@@ -82,9 +82,8 @@ host reads a client's input.
   the bytes left. Every read that takes a length or count from a packet is now checked
   first, join packets are bounded and must be plain ASCII, clock messages must have their
   exact size and type, and only fixed-size values are decoded.
-- Still open, before strangers can join: a packet of malformed fixed-size values costs
-  about 1,000 log lines (being fixed); there is no limit on how fast a device may send
-  packets; the engine's own network layer below netfox has not been examined.
+- Still open, before strangers can join: there is no limit on how fast a device may send
+  packets, and the engine's own network layer below netfox has not been examined.
 - Noted for phase 2: leaving and rejoining gives a fresh bot at full health with no
   respawn wait, which matters once there is scoring. A modified client can aim perfectly;
   the host cannot tell.

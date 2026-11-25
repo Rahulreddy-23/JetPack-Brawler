@@ -46,10 +46,10 @@ Current stage: Prototype, phase 1. Gate not passed.
       length taken from the packet before checking the bytes left, and every synchronised
       value went through the same call. Fixed in netfox patch 16 with a sweep of every read
       that takes a length from a packet, bounds on join packets, and limits on three log
-      floods. Reviewed twice; approved for play with friends. One smaller stall (malformed
-      fixed-size values, about 1,000 log lines per packet) is being fixed; with no per-peer
-      packet rate limit and the engine's own network layer unexamined, the game is not yet
-      fit for strangers. Builds up to 21:01 on 25 Nov have the crash.
+      floods. Reviewed twice; approved for play with friends. The last stall the review
+      named (malformed fixed-size values, about 1,000 log lines per packet) is fixed too.
+      With no per-peer packet rate limit and the engine's own network layer unexamined,
+      the game is not yet fit for strangers. Builds up to 21:01 on 25 Nov have the crash.
 - [ ] Device checkpoint 1 (Rahul): sticks, jetpack and dash on two phones over a hotspot.
       Script `docs/reviews/device-checkpoint-1.md`; build of 25 Nov at `4f4ea2d`; not yet run.
 - [x] B Combat core, hazard wiring, dummy, push window. Reviewed, merged (`a170e4b`).
