@@ -31,7 +31,7 @@ Current stage: Prototype, phase 1. Gate not passed.
       state packet was lost and which the check should not read; not yet proven. With the
       task D implementer.
 - [ ] Device checkpoint 1 (Rahul): sticks, jetpack and dash on two phones over a hotspot.
-      Build and script are ready (`docs/reviews/device-checkpoint-1.md`); not yet run.
+      Script `docs/reviews/device-checkpoint-1.md`; build of 25 Nov at `8ccb4b7`; not yet run.
 - [x] B Combat core, hazard wiring, dummy, push window. Reviewed, merged (`a170e4b`).
 - [x] C Weapons, melee, pickups. Reviewed, merged (`2ad983e`).
 - [ ] D World objects and gadgets. Merged; the fix round still needs its independent review.
@@ -41,7 +41,8 @@ Current stage: Prototype, phase 1. Gate not passed.
 - [x] F Input and HUD for fire, melee, gadget, swap. Reviewed, merged (`5f92739`).
 - [x] Full test suite on `main` with A to F, netfox patches 1 to 14 and the reviewer fixes:
       51 of 51 (Mac, headless; nothing on a phone).
-- [ ] Device checkpoint 2 (Rahul): the knockback sandbox, 10 minutes of play.
+- [ ] Device checkpoint 2 (Rahul): the knockback sandbox, 10 minutes of play. Script
+      `docs/reviews/device-checkpoint-2.md`; the same build; not yet run.
 - [ ] 1.6 Dabba fight, built last.
 - [ ] Phase review and `docs/reviews/phase-1-handoff.md`.
 
