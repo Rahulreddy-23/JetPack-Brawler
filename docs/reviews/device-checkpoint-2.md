@@ -1,0 +1,120 @@
+# Device checkpoint 2: the knockback sandbox on two phones
+
+For Rahul. This is the play test behind the phase 1 gate: is flying around and knocking a
+dummy bot into the hazard fun for 10 minutes, and does it stay in sync between two phones.
+It is not the gate itself; you decide that afterwards.
+
+Status of this script: draft. The build it describes is not made yet (the effects task and
+three fix rounds are still open on 25 Nov 2026). The build line below is filled in when the
+APK exists. Nothing here has run on a phone.
+
+Build: not built yet.
+
+If you have not done device checkpoint 1 (sticks, jetpack and dash), do it first with this
+same build: its checks 6 to 16 still apply and are not repeated here.
+
+## What is in the build
+
+One grey-box arena (the Smelter), up to 4 players, joined by typing the host's IP address.
+
+- Every bot has 100 health and a rivet gun with endless ammo.
+- Four pickup spots: bolt thrower and scrap blaster on the two upper ledges, festival rocket
+  tube in the middle, Spring Plate low on the left. A taken pickup returns after 15 seconds.
+- Every bot starts each life with one Cooker Bomb.
+- A dummy bot stands on the floor in the middle. It does not move or shoot.
+- Every bot has a thin health bar above it.
+- The sandbox runs in 45-second cycles: molten metal starts rising at 30 seconds, and at 45
+  seconds everything resets. A knocked-out bot comes back after 2 seconds, or at the next
+  cycle if the metal is already rising.
+- There are no rounds, scores, Chaos Cards or thinking bots. Those are phase 2.
+
+## Controls
+
+- Left stick: run; push up for the steam pack; push down on a yellow platform to drop.
+- Right stick: aim. Push it past the ring to fire. A quick tap on it swings a melee hit.
+- Buttons around the right stick: DASH, MELEE, GADGET (throws the Cooker Bomb or the Spring
+  Plate in the aim direction), SWAP (rivet gun or the picked-up weapon).
+
+## Install and connect
+
+Same as checkpoint 1: see `docs/reviews/device-checkpoint-1.md`, sections Install and
+Connect.
+
+## What to check
+
+Answer each with yes, no, or what you saw. Play at least 10 minutes in total.
+
+Shooting and knockback (the main point)
+
+1. Shoot the dummy with the rivet gun. Does it lose health, and does each hit feel like a
+   hit (a short freeze of the dummy, a small screen shake)?
+2. Pick up the scrap blaster and fire at the dummy from close range. Does the dummy fly
+   back clearly, and do you feel the recoil push you the other way?
+3. Stand in the air and fire the scrap blaster straight down. Do you get an extra hop?
+4. Wear the dummy down until the bar above it changes colour (25 health or less), then hit
+   it again. Is it pushed visibly further than at full health? Is the bar easy to read?
+5. Knock the dummy into the molten metal after it has risen. Is it knocked out at once, and
+   does that moment feel good?
+6. Melee the dummy (tap the right stick, and also the MELEE button). Does it get pushed?
+   Which of the two do you reach for?
+7. Do the four buttons sit where your right thumb finds them without looking? Do you ever
+   press one by accident while aiming?
+8. Flick the right stick quickly past the ring and let go. Does exactly one shot fire, in
+   the direction you flicked?
+
+Weapons and gadgets
+
+9. Bolt thrower: does holding fire feel like a stream, and does it run out of ammo and
+   switch back to the rivet gun?
+10. Rocket tube: does the rocket fly straight, explode on the dummy or a wall, and push
+    things near the blast? Fire one at your own feet: are you hurt and thrown?
+11. Punch a rocket that is flying at you (needs the second phone to fire it). Does it turn
+    around?
+12. Throw the Cooker Bomb. Does it bounce, and explode about 3 seconds later?
+13. Pick up the Spring Plate, throw it on the floor, and walk the other phone's bot over
+    it. Is that bot launched upward? Is the plate drawn in your bot's colour?
+14. Throw a second bomb from a new life right after the first one exploded. Does the new
+    bomb ever appear for a moment where the old one blew up? (A known risk that cannot be
+    checked on the Mac.)
+
+Two phones in sync
+
+15. On both phones at once: do the dummy's health bar, position and knockout look the
+    same? Watch one knockout into the metal on both screens.
+16. Have each phone shoot the other. Do hits land when they look like they should on the
+    shooter's screen?
+17. While moving on phone B, does your own bot ever jump back a short distance for a moment
+    and then carry on? Say how often. (A known fault under bad Wi-Fi timing, still being
+    worked on.)
+18. Phone B taps Leave and joins again; then phone A leaves and hosts again and B joins.
+    After each, are the pickups present, and are there no leftover bombs or plates from
+    before?
+19. At the 45-second reset: do both phones reset together, with every bot back at full
+    health and its bomb back?
+
+Fun
+
+20. After 10 minutes, do you want to keep going? What was the best moment and what was the
+    most annoying thing?
+21. Is anything too strong, too weak, too slow or too fast? Every such number is in
+    `config/tuning.tres` and is quick to change.
+
+Performance
+
+22. Is either phone warm or stuttering after 10 minutes? Does it stutter when several bombs
+    or rockets go off together?
+
+## Known limits of this build
+
+- Grey boxes only: no art, no sound.
+- The hit freeze holds the hit bot's picture for a few frames; the game itself never pauses.
+- If the host phone is put in the background, the match breaks. That is not handled yet.
+- More than two phones has not been tried.
+- On poor Wi-Fi timing a player's own bot can be pulled back about 10 pixels for a fifteenth
+  of a second (check 17). The cause is under investigation.
+
+## What I need back
+
+The numbered answers, the phone models and Android versions, and anything that felt wrong
+that the list does not cover. Then say whether the phase 1 gate is passed. That decision is
+yours.
