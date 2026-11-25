@@ -4,13 +4,14 @@ For Rahul. This is the play test behind the phase 1 gate: is flying around and k
 dummy bot into the hazard fun for 10 minutes, and does it stay in sync between two phones.
 It is not the gate itself; you decide that afterwards.
 
-Build: `builds/jetpack-brawler-debug.apk`, made from `main` at `b90d525` on 25 Nov 2026,
-16:59. 28.6 MB, package `com.jetpackbrawler.prototype`, 64-bit ARM only, Android target 36,
+Build: `builds/jetpack-brawler-debug.apk`, made from `main` at `24f0224` on 25 Nov 2026,
+21:01. 28.6 MB, package `com.jetpackbrawler.prototype`, 64-bit ARM only, Android target 36,
 one permission (internet). The build is not in the repository; it is on this Mac only. On
-the Mac the full test suite passes on this commit (51 of 51).
+the Mac the full test suite passes on this commit (52 of 52).
 
-The phone checks are still pending. Use this APK for controls, sync and basic weapon and
-gadget checks. Run the 10-minute phase 1 playtest on a build with corrected push distances.
+The phone checks are still pending. This build has the corrected push distances, so it is
+the first one fit for the 10-minute phase 1 playtest. Two network fixes are still in
+progress and are not in it; see "Known limits".
 
 If you have not done device checkpoint 1 (sticks, jetpack and dash), do it first with this
 same build: its checks 6 to 16 still apply and are not repeated here.
@@ -104,8 +105,11 @@ Fun
 
 20. After 10 minutes, do you want to keep going? What was the best moment and what was the
     most annoying thing?
-21. Is anything too strong, too weak, too slow or too fast? Every such number is in
-    `config/tuning.tres` and is quick to change.
+21. Is anything too strong, too weak, too slow or too fast? In particular: does a bot hit
+    in mid-air, or lifted by a blast, fly too far, about right, or not far enough? Does
+    sustained bolt thrower fire push a flying bot too much? After being nicked while
+    running, is turning back too sluggish? Every such number is in `config/tuning.tres`
+    and is quick to change.
 
 Performance
 
@@ -114,9 +118,10 @@ Performance
 
 ## Known limits of this build
 
-- This build reads the design's push numbers as speeds. A melee hit moves a bot on the ground
-  about half a bot height. The design calls for two and a half. The knockback and recoil
-  parts of checks 2 to 6 and 10 need the push-distance correction.
+- Pushes now travel the design's distances on the ground (a melee hit 2.5 bot heights, a
+  close scrap blast 1.5, a blast at its centre 5, twice those at very low health). In the
+  air they carry about five times as far, and a blast usually lifts a bot, so expect bots
+  to fly a long way. That is the first thing to judge (check 21); one number tunes it.
 - Grey boxes only: no art, no sound.
 - The hit freeze holds the hit bot's picture for a few frames; the game itself never pauses.
 - If the host phone is put in the background, the match breaks. That is not handled yet.
@@ -125,6 +130,8 @@ Performance
   a burst of a player's input packets is late, the host sends positions that are one step
   behind until the input arrives. Measured on the Mac with packets held on purpose: up to
   about 30 pixels. The cause is known and the fix is in progress; it is not in this build.
+- A deliberately malformed network packet from a device on the same hotspot can crash the
+  host. It cannot happen by accident. The fix is under review and is not in this build.
 
 ## What I need back
 

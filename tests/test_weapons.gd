@@ -326,7 +326,6 @@ func _test_knocked_out() -> void:
 
 func _test_recoil() -> void:
 	var scrap: WeaponStats = _stats(ItemIds.SCRAP_BLASTER)
-	var kick: float = scrap.recoil * _cfg.push_speed_scale * _px
 	var cases: Array[Vector2] = [Vector2.DOWN, Vector2.LEFT, Vector2(0.6, 0.8), Vector2.UP]
 	for aim: Vector2 in cases:
 		var bot: Bot = _bot()
@@ -335,7 +334,9 @@ func _test_recoil() -> void:
 		bot.input.aim = aim
 		bot.input.fire = true
 		_step(bot, 10)
-		_near_v(bot.velocity, Vector2(30.0, -20.0) - aim * kick, 0.0001, "scrap blaster aimed %s changes the shooter's velocity by exactly recoil x scale x height, opposite the shot" % aim)
+		var kick: Vector2 = CombatRules.push_change(Vector2(30.0, -20.0) / _px, -aim * scrap.recoil, _cfg) * _px
+		_near_v(bot.velocity, Vector2(30.0, -20.0) + kick, 0.0001, "scrap blaster aimed %s changes the shooter's velocity by the launch speed of a push of recoil bot heights, opposite the shot" % aim)
+		_check(signf(kick.x) == -signf(aim.x) and signf(kick.y) == -signf(aim.y), "the recoil points opposite the shot")
 		# Held fire during the wait must not kick again.
 		var after: Vector2 = bot.velocity
 		_step(bot, 11)
@@ -357,7 +358,7 @@ func _test_recoil() -> void:
 	var cooldown: float = dasher.dash_cooldown_left
 	_step(dasher, 10)
 	_check(dasher.dash_left == 0.0 and dasher.dash_cooldown_left == cooldown, "recoil ends an active dash and preserves its cooldown")
-	_near_v(dasher.velocity, Vector2(_cfg.dash_exit_speed * _px, -kick), 0.0001, "recoil adds to normal dash exit velocity")
+	_near_v(dasher.velocity, Vector2(_cfg.dash_exit_speed * _px, 0.0) + CombatRules.push_change(Vector2(_cfg.dash_exit_speed, 0.0), Vector2.UP * scrap.recoil, _cfg) * _px, 0.0001, "recoil adds to normal dash exit velocity")
 	dasher.input.dash = false
 	var start_y: float = dasher.position.y
 	dasher._rollback_tick(_dt, 11, true)
@@ -375,12 +376,15 @@ func _test_recoil() -> void:
 	_clear()
 
 func _test_recoil_window_state() -> void:
-	var window: int = _ticks(_cfg.push_window_time)
 	var bot: Bot = _bot()
 	bot.arsenal.give_weapon(ItemIds.SCRAP_BLASTER, _cfg)
 	bot.input.fire = true
 	_step(bot, 10)
-	_check(bot.vitals.push_until_tick == 10 + 1 + window, "firing the scrap blaster opens the shooter's push window from the next tick for the config's length (until %d)" % bot.vitals.push_until_tick)
+	# The window is as long as the window's braking needs to take the recoil speed away: n ticks do, n - 1 do not.
+	var brake: float = _cfg.ground_brake * _cfg.push_window_control * _px * _dt
+	var window: int = bot.vitals.push_until_tick - 10 - 1
+	var speed: float = absf(bot.velocity.x)
+	_check(speed > 0.0 and float(window) * brake >= speed - 0.0001 and float(window - 1) * brake < speed, "firing the scrap blaster opens the shooter's push window from the next tick for as long as the recoil takes to brake away (%d ticks)" % window)
 	var later: Bot = _bot()
 	later.arsenal.give_weapon(ItemIds.SCRAP_BLASTER, _cfg)
 	later.vitals.push_until_tick = 5000

@@ -36,7 +36,7 @@ this file wins.
    changing, for every bot alike, and disappears again shortly after. The lead had proposed
    a bar that is always shown, because the GDD does not say how a player reads another
    bot's health and the low-health push cannot be judged without it; Rahul chose to show it
-   only on a change. The fill changes colour at 25 health, where the extra push starts. How
+   only on a change. The fill changes colour below 25 health, where the extra push starts. How
    long it stays after a change is a first guess in the config (1.5 seconds).
 
 ## Product owner decisions (taken by the lead under decision 6; Rahul can overrule any)
@@ -67,6 +67,14 @@ this file wins.
 - Trades: when two bots knock each other out on the same tick, both are out, each is credited
   with the other's knockout, and neither gets the 20-health repair. The GDD does not cover
   this; without a rule the result depended on which hit the host processed first.
+- Push numbers are distances (25 Nov 2026): the GDD's push table gives distances in bot heights,
+  and the code now moves a bot that far on flat ground with a neutral stick (architecture D10).
+  The earlier reading, each number a speed times 2, moved a grounded bot a fifth of the design
+  distance. The low-health multiplier multiplies the distance, so 0 health is twice as far.
+  Distances add across ticks as they do within one (30 bolts of 0.1 move a bot 3.0). In the air a
+  push carries further than on the ground (about five times with the present brakes), and a
+  blast lifts the bot so its sideways travel follows the air figures; judge on phones, the knob
+  is push_window_control (lower it and pushes carry less in the air, with a longer window).
 - "Up to double below 25 health" is read as: push multiplier 1 at 25 health or more, rising in
   a straight line to 2 at 0 health.
 - The hazard's 30 seconds and the 45-second cap are counted from the end of the countdown,

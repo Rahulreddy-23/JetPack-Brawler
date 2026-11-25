@@ -118,7 +118,7 @@ static func _blasts(tick: int, bots: Array[Bot], objects: WorldObjects, cfg: Tun
 				continue
 			var push: Vector2 = CombatMath.blast_push(other.global_position / px, centre, centre_push, radius)
 			if push != Vector2.ZERO:
-				other.velocity += push * cfg.push_speed_scale * px
+				other.velocity += push * cfg.blast_object_speed_scale * px
 				other.landed = false
 		slot.blasts += 1
 		slot.active = false

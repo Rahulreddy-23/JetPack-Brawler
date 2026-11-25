@@ -22,7 +22,8 @@ var respawn_tick: int = 0
 var ko_serial: int = 0
 ## Counts hits taken. Never reset; effects compare it with the highest value seen.
 var hits_taken: int = 0
-## Push of the last hit, bh/s, after scaling.
+## Push of the last hit: the summed push distance in bh after the low-health multiplier (plus a
+## plate launch's speed). Effects read only its length and direction.
 var last_hit_push: Vector2 = Vector2.ZERO
 ## Damage of the last hit.
 var last_hit_damage: float = 0.0

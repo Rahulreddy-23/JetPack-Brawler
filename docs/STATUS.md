@@ -32,12 +32,13 @@ Current stage: Prototype, phase 1. Gate not passed.
       after the blast, and under loss the client can hold its own guess for that tick until
       the next state arrives. The game was right. The check now reads the first tick whose
       value came from the host and fails if that takes more than 4 ticks; 0 failures in 80.
-- [ ] Pushes travel about a fifth of the design's distance on the ground and far too much
-      extra at low health (the design's numbers are distances; the code read them as
-      speeds). First correction measured right for single pushes but was rejected in
-      review: hits on separate ticks built on each other (30 bolts moved a bot 19.6 bot
-      heights, design 3). Second round in progress. Builds up to 16:59 on 25 Nov have the
-      weak pushes.
+- [x] Pushes are distances, as the design says: a push of P moves a grounded bot P bot
+      heights, low health doubles the distance, and hits on separate ticks add as
+      distances (30 bolts: 3.08 bot heights; the design's total is 3). Reviewed twice,
+      merged. Known and written down: in the air pushes carry about five times as far and
+      repeated hits still build up (a bolt magazine moves a hovering bot about 27 bot
+      heights); to be judged on phones. Builds up to 16:59 on 25 Nov have the old weak
+      pushes.
 - [ ] From the authority audit: the host accepts input up to 2 seconds late and replays the
       match from there (being bounded with netfox patch 15), and three more log lines can
       be flooded by any connected device (netfox patch 16, in progress).
@@ -47,7 +48,7 @@ Current stage: Prototype, phase 1. Gate not passed.
 - [ ] One 4-byte identity packet crashes the host (geminiceo G-28, confirmed). Fix in
       progress in netfox patch 16. Every build so far has it.
 - [ ] Device checkpoint 1 (Rahul): sticks, jetpack and dash on two phones over a hotspot.
-      Script `docs/reviews/device-checkpoint-1.md`; build of 25 Nov at `b90d525`; not yet run.
+      Script `docs/reviews/device-checkpoint-1.md`; build of 25 Nov at `24f0224`; not yet run.
 - [x] B Combat core, hazard wiring, dummy, push window. Reviewed, merged (`a170e4b`).
 - [x] C Weapons, melee, pickups. Reviewed, merged (`2ad983e`).
 - [x] D World objects and gadgets. Reviewed twice, merged with its follow-ups and the
@@ -56,10 +57,11 @@ Current stage: Prototype, phase 1. Gate not passed.
       and a health bar that shows only while a bot's health changes. Reviewed, merged.
       Nothing in it can be judged without a phone.
 - [x] F Input and HUD for fire, melee, gadget, swap. Reviewed, merged (`5f92739`).
-- [x] Full test suite on `main` with A to F, netfox patches 1 to 14 and the reviewer fixes:
-      51 of 51, last at the task D follow-ups (Mac, headless; nothing on a phone).
-- [ ] Device checkpoint 2 (Rahul): the knockback sandbox, 10 minutes of play on a build with
-      corrected push distances. Script `docs/reviews/device-checkpoint-2.md`; not yet run.
+- [x] Full test suite on `main` with A to F, netfox patches 1 to 14, the reviewer fixes and
+      the push-distance correction: 52 of 52 (Mac, headless; nothing on a phone).
+- [ ] Device checkpoint 2 (Rahul): the knockback sandbox, 10 minutes of play. The build of
+      25 Nov at `24f0224` has the corrected push distances. Script
+      `docs/reviews/device-checkpoint-2.md`; not yet run.
 - [ ] 1.6 Dabba fight, built last.
 - [ ] Phase review and `docs/reviews/phase-1-handoff.md` (started: both audits
       are in; their fixes are in progress).

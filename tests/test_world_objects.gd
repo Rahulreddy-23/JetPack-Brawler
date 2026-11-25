@@ -741,8 +741,8 @@ func _test_blast_pushes_objects() -> void:
 			other_bomb.velocity = Vector2.ZERO
 			other_bomb.global_position = Vector2(500 + 1.5 * _px, 500)
 	_check(bomb.blasts == 1 and other_bomb.active and other_bomb.owner_peer == 11, "a blast does not change the owner of a bomb it pushes")
-	var expected: float = _cfg.bomb_blast_push * 0.5 * _cfg.push_speed_scale * _px
-	_near(other_bomb.velocity.x, expected, 0.001, "a bomb in the blast is pushed away with the blast's push")
+	var expected: float = _cfg.bomb_blast_push * 0.5 * _cfg.blast_object_speed_scale * _px
+	_near(other_bomb.velocity.x, expected, 0.001, "a bomb in the blast is pushed away at the blast's push there times the loose-object speed factor")
 	_check(not other_bomb.landed, "a pushed bomb is no longer at rest")
 	_check(plate.active and plate.velocity == Vector2.ZERO, "a plate is not pushed")
 

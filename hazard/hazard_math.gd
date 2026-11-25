@@ -32,6 +32,10 @@ static func is_config_valid(tick_rate: int, start_time_s: float, cap_time_s: flo
 
 
 ## True when a body whose lowest point is bottom_y is below the metal surface (larger y) at this tick.
-## A body resting exactly on the surface is not in the metal.
+## A body resting exactly on the surface is not in the metal. Before start_time_s there is no
+## metal at all (not even at the floor line), so float error in a bot's resting position on the
+## floor can never count as being in it; with no round (ticks below zero) there is none either.
 static func is_in_metal(bottom_y: float, ticks_since_round_start: int, tick_rate: int, start_time_s: float, cap_time_s: float, floor_y: float, top_y: float) -> bool:
+	if tick_rate > 0 and (ticks_since_round_start < 0 or float(ticks_since_round_start) / float(tick_rate) < start_time_s):
+		return false
 	return bottom_y > surface_y(ticks_since_round_start, tick_rate, start_time_s, cap_time_s, floor_y, top_y)

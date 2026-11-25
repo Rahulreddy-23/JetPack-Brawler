@@ -13,10 +13,37 @@ extends RefCounted
 ##   a negative difference (an attack stamped after this tick, seen on a re-run) never credits.
 ## - The dummy (Bot.DUMMY_PEER, slot cfg.max_players) takes hits and is knocked out like any bot;
 ##   it never fires, throws or picks up. Never use -1 (Bot.NO_PEER) for it.
-## - A push is a velocity change of push x cfg.push_speed_scale bh/s (recoil too), then the
-##   low-health multiplier on the victim's side.
 ##
 ## Rules added by task B:
+## - THE PUSH RULE (push_change below; recoil follows it too). A push number is a DISTANCE in bot
+##   heights, as in the GDD. On flat ground with a neutral stick, a push of P bot heights moves
+##   the bot P bot heights, and distances ADD, within one tick and across ticks: the bot always
+##   gets the launch speed for (the distance its present speed would still carry it under the
+##   push window's braking) + (the new push), per axis, with signs. Hence:
+##   - The bot's own speed counts as distance still to travel, whatever gave it: a bot running
+##     into a push is slowed, and one running away from it goes a little further than P; a
+##     push against an earlier push's motion takes that distance off; 30 bolts of 0.1 move a
+##     bot 3.0, not the 10 or so that adding speeds would give.
+##   - The low-health multiplier multiplies each push's distance (1 at 25 health or more, 2 at
+##     0), so a bot at 0 health goes twice as far, not four times.
+##   - Each axis is converted on its own: sideways against ground_brake x push_window_control,
+##     up and down against gravity. Almost every blast has an upward part, so a blast lifts the
+##     bot and the sideways travel that follows is the air figure, not the ground one (a push
+##     of 2.5 at 45 degrees carried a grounded bot 6.2 bot heights sideways), and a diagonal
+##     push is bent toward 45 degrees when the two decelerations are equal.
+##   - In the air the same speed carries further because air braking is weaker ("momentum
+##     carries"): about P x (ground_brake x window control / air_brake) x 1.4, about 5 P today.
+##     The knob is push_window_control (lower it and pushes carry less in the air, at the cost
+##     of a longer window).
+##   - Distances add exactly only on the ground. An airborne bot slows far less between hits
+##     than the ground window's braking the rule measures with, so pushes on separate ticks
+##     still build on each other in the air (30 bolts: about 27 bot heights), bounded, and
+##     tuned by the same knob. See docs/ARCHITECTURE.md D10.
+##   - The window covers the bot's whole sideways speed, so a small sideways push on a running
+##     bot opens a window of the full length for that speed.
+##   - The window (push_window_ticks) is as long as it takes to brake the bot's sideways speed
+##     away after a push or launch with a sideways part; a push with none (straight up, a plate)
+##     opens no window and leaves the bot's steering alone.
 ## - A push (any kind, see Hit) that lands on a dashing bot ends its dash: the velocity first becomes
 ##   the dash exit velocity (dash_dir x dash_exit_speed), then the push is applied, and dash_left goes
 ##   to 0 (the cooldown stays). Otherwise the next dash tick would overwrite the push.
@@ -26,7 +53,8 @@ extends RefCounted
 ## - Of several attackers in one tick, the one with the most combined damage on that victim is the
 ##   last attacker, then the one with the longest combined push, then the lowest peer id.
 ## - A hit with no damage and no push after cleaning (non-finite, negative damage) is not a hit.
-## - The push window runs from the tick after the hit for cfg.push_window_time.
+## - The push window runs from the tick after the hit for as long as the bot's sideways speed takes
+##   to brake away (push_window_ticks), so the full brake never cuts a push short.
 ## - A bot is never moved here: a knocked-out bot stays where it was until its respawn moves it.
 ## - Phase 1 test cycle: a bot knocked out at or after the hazard's start time in a cycle, or whose
 ##   respawn delay would end at or after that time, respawns at the start of the next cycle.
@@ -98,7 +126,8 @@ static func _apply_hits(tick: int, victim: Bot, hits: Array[Hit], cfg: TuningCon
 		return false
 	entries.sort_custom(_entry_less)
 	var damage: float = 0.0
-	var speed: Vector2 = Vector2.ZERO  # velocity change in bh/s from ordinary pushes
+	var distance: Vector2 = Vector2.ZERO  # summed push distances in bh, low-health multiplier applied
+	var speed: Vector2 = Vector2.ZERO  # summed pushes that are already speeds (scale_push false), bh/s
 	var launch_x: float = 0.0
 	var launch_y: float = 0.0
 	var launched: bool = false
@@ -112,7 +141,6 @@ static func _apply_hits(tick: int, victim: Bot, hits: Array[Hit], cfg: TuningCon
 		var own: bool = peer == victim.peer_id
 		if own:
 			hit_damage *= cfg.self_damage_scale
-		var hit_speed: Vector2 = hit_push
 		if flags & FLAG_LAUNCH != 0:
 			launch_x += hit_push.x
 			# Several launches in one tick: the most upward one wins, whatever the order.
@@ -120,35 +148,69 @@ static func _apply_hits(tick: int, victim: Bot, hits: Array[Hit], cfg: TuningCon
 			launched = true
 		else:
 			if flags & FLAG_SCALE != 0:
-				hit_speed = hit_push * cfg.push_speed_scale * multiplier
-			speed += hit_speed
+				hit_push *= multiplier
+				distance += hit_push
+			else:
+				speed += hit_push
 		damage += hit_damage
 		if peer != Bot.NO_PEER and not own:
 			var total: Vector2 = from_peer.get(peer, Vector2.ZERO)
-			from_peer[peer] = total + Vector2(hit_damage, hit_speed.length())
+			from_peer[peer] = total + Vector2(hit_damage, hit_push.length())
 	vitals.hits_taken += 1
 	var launch: Vector2 = Vector2(launch_x, launch_y) if launched else Vector2.ZERO
-	vitals.last_hit_push = speed + launch
+	# Effects read the length and direction only: distance in bh, plus a launch's speed.
+	vitals.last_hit_push = distance + speed + launch
 	vitals.last_hit_damage = damage
 	vitals.health = maxf(vitals.health - damage, 0.0)
-	if launched or speed != Vector2.ZERO:
-		_push(victim, speed, launch, launched, cfg)
-		vitals.push_until_tick = maxi(vitals.push_until_tick, tick + 1 + roundi(cfg.push_window_time * float(cfg.tick_rate)))
+	if launched or distance != Vector2.ZERO or speed != Vector2.ZERO:
+		if _push(victim, distance, speed, launch, launched, cfg):
+			vitals.push_until_tick = maxi(vitals.push_until_tick, tick + 1 + push_window_ticks(victim.velocity.x / cfg.bot_height_px, cfg))
 	# An attack stamped later than this tick (only a bug could leave one) is never replaced.
 	if not from_peer.is_empty() and tick >= vitals.last_attack_tick:
 		vitals.last_attacker = _strongest(from_peer)
 		vitals.last_attack_tick = tick
 	return vitals.health <= 0.0
 
+## The velocity change in bh/s that gives a bot moving at `velocity` (bh/s) a push of `distance`
+## bot heights (the sum of one tick's distance vectors), see THE PUSH RULE in the header. Per
+## axis the new speed is the launch speed for the distance the bot's present speed would still
+## carry it (signed) plus the push, so distances add across ticks; an axis with no push is left
+## alone. Sideways the braking is the window's (ground_brake x push_window_control), up and down
+## it is gravity (a falling bot counts as distance still to fall, so an upward push cancels it
+## first). Pure function of the velocity, the distance and the config: the same on
+## re-simulation and on host and client.
+static func push_change(velocity: Vector2, distance: Vector2, cfg: TuningConfig) -> Vector2:
+	var dt: float = 1.0 / float(cfg.tick_rate)
+	return Vector2(
+		_axis_change(velocity.x, distance.x, cfg.ground_brake * cfg.push_window_control, dt),
+		_axis_change(velocity.y, distance.y, cfg.gravity, dt))
+
+static func _axis_change(speed: float, push: float, decel: float, dt: float) -> float:
+	if push == 0.0:
+		return 0.0
+	var net: float = signf(speed) * CombatMath.travel_distance(absf(speed), decel, dt) + push
+	return signf(net) * CombatMath.launch_speed(absf(net), decel, dt) - speed
+
+## Ticks, counted from the tick after the push, for which braking and steering stay reduced: the
+## time the window's braking needs to take a sideways speed (bh/s) away. Only sideways control is
+## ever reduced, so only the sideways speed sizes it.
+static func push_window_ticks(sideways_speed: float, cfg: TuningConfig) -> int:
+	var dt: float = 1.0 / float(cfg.tick_rate)
+	return ceili(absf(sideways_speed) / (cfg.ground_brake * cfg.push_window_control * dt) - 0.0001)
+
 # A push first ends a dash (the velocity becomes what a dash exit gives), then a launch replaces
-# the vertical velocity and adds its horizontal part, then the ordinary pushes are added.
-static func _push(victim: Bot, speed: Vector2, launch: Vector2, launched: bool, cfg: TuningConfig) -> void:
+# the vertical velocity and adds its horizontal part, then the ordinary pushes are added on top of
+# the velocity the bot has by then. Returns true when the push or launch has a sideways part, which
+# is what opens the push window.
+static func _push(victim: Bot, distance: Vector2, speed: Vector2, launch: Vector2, launched: bool, cfg: TuningConfig) -> bool:
 	var px: float = cfg.bot_height_px
 	if victim.dash_left > 0.0:
 		victim.finish_dash(cfg)
 	if launched:
 		victim.velocity = Vector2(victim.velocity.x + launch.x * px, launch.y * px)
-	victim.velocity += speed * px
+	var change: Vector2 = push_change(victim.velocity / px, distance, cfg) + speed
+	victim.velocity += change * px
+	return change.x != 0.0 or launch.x != 0.0
 
 # The peer with the largest [damage, push] total; ties go to the lowest peer id.
 static func _strongest(from_peer: Dictionary[int, Vector2]) -> int:

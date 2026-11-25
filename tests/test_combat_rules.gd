@@ -173,13 +173,25 @@ func _test_damage_and_knocked_out() -> void:
 
 # ---- push ----
 
+# The velocity change in pixels per second for a push distance in bot heights on a bot at rest.
+func _speed(distance: Vector2) -> Vector2:
+	return CombatRules.push_change(Vector2.ZERO, distance, _cfg) * _px
+
+# The window is as long as it takes the window's braking to take the sideways speed (px/s) away:
+# n ticks of braking remove it, n - 1 do not.
+func _window_fits(until_tick: int, tick: int, sideways_px: float, label: String) -> void:
+	var brake: float = _cfg.ground_brake * _cfg.push_window_control * _px * _dt
+	var ticks: int = until_tick - tick - 1
+	_check(float(ticks) * brake >= absf(sideways_px) - EPS and float(ticks - 1) * brake < absf(sideways_px), "%s (%d ticks)" % [label, ticks])
+
 func _test_push() -> void:
 	var push: Vector2 = Vector2(3.0, -4.0)
-	var base: Vector2 = push * _cfg.push_speed_scale * _px
-	_near_vec(_kick(_cfg.max_health, push), base, "push at full health is push x push_speed_scale bot heights per second")
+	var base: Vector2 = _speed(push)
+	_near_vec(_kick(_cfg.max_health, push), base, "a push is a distance in bot heights: the velocity change is the launch speed for that distance")
 	_near_vec(_kick(_cfg.low_health_threshold, push), base, "multiplier 1 at the threshold health (25)")
-	_near_vec(_kick(_cfg.low_health_threshold / 2.0, push), base * 1.5, "multiplier 1.5 at 12.5 health")
-	_near_vec(_kick(0.0, push), base * _cfg.low_health_push_multiplier, "multiplier 2 at 0 health")
+	_near_vec(_kick(_cfg.low_health_threshold / 2.0, push), _speed(push * 1.5), "multiplier 1.5 on the distance at 12.5 health")
+	_near_vec(_kick(0.0, push), _speed(push * _cfg.low_health_push_multiplier), "multiplier 2 on the distance at 0 health")
+	_check(_kick(0.0, push).length() < base.length() * _cfg.low_health_push_multiplier * 0.9, "the multiplier is on the distance, not the speed (twice the distance is less than twice the speed)")
 	_near_vec(_kick(_cfg.max_health, push, false), push * _px, "an unscaled push is applied as given, already a speed")
 	_near_vec(_kick(0.0, push, false), push * _px, "an unscaled push ignores the low-health multiplier")
 	# The multiplier comes from the health before this tick's damage.
@@ -192,10 +204,17 @@ func _test_push() -> void:
 	# Pushes of one tick add up.
 	victim = _bot(1)
 	_apply(10, _list([victim]), _hits([_hit(victim, 2, 0.0, push), _hit(victim, 3, 0.0, Vector2(1.0, 1.0))]))
-	_near_vec(victim.velocity, (push + Vector2(1.0, 1.0)) * _cfg.push_speed_scale * _px, "two pushes in one tick add up")
-	# The push window.
-	var window_ticks: int = roundi(_cfg.push_window_time * float(_cfg.tick_rate))
-	_check(victim.vitals.push_until_tick == 10 + 1 + window_ticks, "a push sets the push window from the next tick")
+	_near_vec(victim.velocity, _speed(push + Vector2(1.0, 1.0)), "two pushes in one tick: the distance vectors add, then the sum is converted")
+	_check(victim.velocity.distance_to(_speed(push) + _speed(Vector2(1.0, 1.0))) > 1.0, "two pushes in one tick are not the sum of their two speeds")
+	_window_fits(victim.vitals.push_until_tick, 10, victim.velocity.x, "a push sets the push window from the next tick, as long as its sideways speed takes to brake away")
+	victim.free()
+	victim = _bot(1)
+	_apply(10, _list([victim]), _hits([_hit(victim, 2, 0.0, Vector2(3.0, 0.0)), _hit(victim, 3, 0.0, Vector2(-3.0, 0.0))]))
+	_near_vec(victim.velocity, Vector2.ZERO, "pushes of equal distance in opposite directions cancel")
+	victim.free()
+	victim = _bot(1)
+	_apply(10, _list([victim]), _hits([_hit(victim, 2, 0.0, Vector2(3.0, 0.0)), _hit(victim, 3, 0.0, Vector2(-1.0, 0.0))]))
+	_near_vec(victim.velocity, _speed(Vector2(2.0, 0.0)), "opposite pushes: the sum of the distance vectors decides")
 	victim.free()
 	victim = _bot(1)
 	_apply(10, _list([victim]), _hits([_hit(victim, 2, 5.0)]))
@@ -228,7 +247,7 @@ func _test_bookkeeping() -> void:
 	_apply(10, _list([victim]), hits)
 	_check(victim.vitals.hits_taken == 1, "hits_taken rises by exactly 1 however many hits land in a tick")
 	_near(victim.vitals.last_hit_damage, 12.0, "last_hit_damage is the tick's combined damage")
-	_near_vec(victim.vitals.last_hit_push, Vector2(1.0, -2.0) * _cfg.push_speed_scale, "last_hit_push is the tick's combined push in bot heights per second")
+	_near_vec(victim.vitals.last_hit_push, Vector2(1.0, -2.0), "last_hit_push is the tick's combined push distance in bot heights")
 	_apply(11, _list([victim]), _hits([_hit(victim, 2, 1.0)]))
 	_check(victim.vitals.hits_taken == 2, "hits_taken rises again on the next hit tick")
 	_apply(12, _list([victim]), _hits([]))
@@ -242,7 +261,7 @@ func _test_self_damage() -> void:
 	var push: Vector2 = Vector2(0.0, -5.0)
 	_apply(10, _list([bot]), _hits([_hit(bot, 1, 40.0, push)]))
 	_near(bot.vitals.health, _cfg.max_health - 40.0 * _cfg.self_damage_scale, "damage from the bot's own blast is scaled")
-	_near_vec(bot.velocity, push * _cfg.push_speed_scale * _px, "the push from the bot's own blast is not reduced")
+	_near_vec(bot.velocity, _speed(push), "the push from the bot's own blast is not reduced")
 	_check(bot.vitals.last_attacker == NO_ONE and bot.vitals.last_attack_tick == -1, "a bot never becomes its own last attacker")
 	_check(bot.vitals.hits_taken == 1, "self damage counts as a hit")
 	bot.free()
@@ -454,6 +473,21 @@ func _test_hazard() -> void:
 	_apply(start + predicted, _list([bot]), _hits([]))
 	_check(not bot.vitals.knocked_out, "no hazard before a round starts")
 	bot.free()
+	MatchSettings.round_start_tick = -1
+	# Nothing is in the metal before the hazard's start time, wherever it stands (float error from a
+	# fast slide into a wall once left a floor bot 0.0013 px inside the floor); from the start time
+	# on the bare comparison holds.
+	MatchSettings.round_start_tick = 1000
+	var settled: Bot = _floor_bot(1)
+	settled.global_position.y += 0.0013
+	var sunk: Bot = _floor_bot(2)
+	sunk.global_position.y += 2.0
+	var start_ticks: int = roundi(_cfg.hazard_start_time * float(_cfg.tick_rate))
+	_apply(1000 + start_ticks - 1, _list([settled, sunk]), _hits([]))
+	_check(not settled.vitals.knocked_out and not sunk.vitals.knocked_out, "before the hazard's start time a bot at or below the floor line is not knocked out")
+	_apply(1000 + start_ticks, _list([settled, sunk]), _hits([]))
+	_check(settled.vitals.knocked_out and sunk.vitals.knocked_out, "from the start time on, a bot below the floor line is in the metal as before")
+	_free_all([settled, sunk])
 	MatchSettings.round_start_tick = -1
 
 # ---- the dummy ----
@@ -751,7 +785,7 @@ func _test_launch() -> void:
 	faller.velocity = Vector2(0.0, _cfg.fall_speed_limit * _px)
 	_apply(10, _list([faller]), _hits([_launch(faller, up)]))
 	_near_vec(faller.velocity, Vector2(0.0, -speed * _px), "a bot falling at the fall limit leaves a plate at exactly the plate's speed")
-	_check(faller.vitals.push_until_tick == 10 + 1 + roundi(_cfg.push_window_time * float(_cfg.tick_rate)), "a launch sets the push window")
+	_check(faller.vitals.push_until_tick == 0, "a launch straight up opens no push window: there is no sideways speed to protect")
 	_check(faller.vitals.last_attacker == 2 and faller.vitals.last_attack_tick == 10, "a launch credits the plate's owner")
 	faller.free()
 	var runner: Bot = _bot(1)
@@ -804,14 +838,14 @@ func _test_dash_exit_velocity() -> void:
 	var dasher: Bot = _dasher()
 	dasher.velocity = Vector2(_cfg.dash_distance / _cfg.dash_time * _px, 0.0)
 	_apply(10, _list([dasher]), _hits([_hit(dasher, 2, _cfg.melee_damage, Vector2(0.0, -_cfg.melee_push))]))
-	_near_vec(dasher.velocity, Vector2(_cfg.dash_exit_speed * _px, -_cfg.melee_push * _cfg.push_speed_scale * _px), "a melee push on a bot dashing right leaves dash exit speed plus the push")
+	_near_vec(dasher.velocity, Vector2(_cfg.dash_exit_speed * _px, _speed(Vector2(0.0, -_cfg.melee_push)).y), "a melee push on a bot dashing right leaves dash exit speed plus the push")
 	_check(dasher.dash_left == 0.0, "the dash is over")
 	dasher.free()
 	var diagonal: Bot = _dasher()
 	diagonal.dash_dir = Vector2(1.0, -1.0).normalized()
 	diagonal.velocity = diagonal.dash_dir * 999.0
 	_apply(10, _list([diagonal]), _hits([_hit(diagonal, 2, 1.0, Vector2(-1.0, 0.0))]))
-	_near_vec(diagonal.velocity, diagonal.dash_dir * _cfg.dash_exit_speed * _px + Vector2(-1.0, 0.0) * _cfg.push_speed_scale * _px, "the exit velocity follows the dash direction")
+	_near_vec(diagonal.velocity, diagonal.dash_dir * _cfg.dash_exit_speed * _px + CombatRules.push_change(diagonal.dash_dir * _cfg.dash_exit_speed, Vector2(-1.0, 0.0), _cfg) * _px, "the exit velocity follows the dash direction, and the push is added as distance to the exit speed")
 	diagonal.free()
 
 # ---- fractional damage: the order of the input list must not matter ----

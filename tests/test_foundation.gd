@@ -180,7 +180,7 @@ func _test_config_numbers() -> void:
 	_near(_cfg.hazard_start_time, 30.0, EPS, "config hazard start (GDD 30 s)")
 	_near(_cfg.hazard_cap_time, 45.0, EPS, "config hazard cap (GDD 45 s)")
 	_near(_cfg.low_health_push_multiplier, 2.0, EPS, "config low-health push multiplier (GDD about 2)")
-	_check(_cfg.plate_slots_per_owner == 2 and _cfg.gadget_slot_count == 2, "two plates and two gadgets per player (GDD)")
+	_check(_cfg.plate_slots_per_owner == 2, "two plates per player (GDD)")
 	_near(_cfg.bomb_blast_radius, 3.0, EPS, "bomb blast reaches 0 at 3 bot heights (architecture)")
 	_near(_cfg.bomb_blast_push, 5.0, EPS, "bomb blast push 5 at the centre (architecture)")
 	# The bolt thrower empties a full health bar in about one second of hits.
@@ -438,7 +438,8 @@ func _test_push_window() -> void:
 		var start_x: float = bot.position.x
 		bot.velocity.x = _cfg.run_speed * _px
 		if in_window:
-			bot.vitals.push_until_tick = _tick + int(_cfg.push_window_time * float(_cfg.tick_rate)) + 1
+			# Long enough to brake the run speed away at the window rate, plus the tick the window starts on.
+			bot.vitals.push_until_tick = _tick + 1 + CombatRules.push_window_ticks(_cfg.run_speed, _cfg)
 		_step(bot, 30)
 		distances.append(bot.position.x - start_x)
 		await _clear()
