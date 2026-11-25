@@ -2,8 +2,8 @@
 
 For Rahul. This is the GDD's "verify in the first week" check. It is not the phase gate.
 
-Build: `builds/jetpack-brawler-debug.apk`, made from `main` at `e3f6f4f` on 25 Nov 2026,
-23:48. 28.6 MB, package `com.jetpackbrawler.prototype`, 64-bit ARM only, Android target 36,
+Build: `builds/jetpack-brawler-debug.apk`, made from `main` at `1d75eaf` on 26 Nov 2026,
+00:04. 28.6 MB, package `com.jetpackbrawler.prototype`, 64-bit ARM only, Android target 36,
 one permission (internet). The build is not in the repository; it is on this Mac only.
 
 Nothing in this build has run on a phone. Everything below is unverified until you do it.
@@ -85,8 +85,8 @@ Performance
 
 ## Known limits of this build
 
-- If a burst of a player's input packets is late, bots can be shown one step behind for a
-  few frames. The cause is known; the fix is in progress and is not in this build.
+- When a phone's input is lost or late, the host holds that bot still for the other
+  players for up to 0.4 seconds and then it jumps to its place.
 - When the camera reaches the edge of the arena you see a black band. That is deliberate,
   so a bot on the floor is not under your thumbs.
 - A player-to-player test with more than two phones has not been tried.

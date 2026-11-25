@@ -4,15 +4,15 @@ For Rahul. This is the play test behind the phase 1 gate: is flying around and k
 dummy bot into the hazard fun for 10 minutes, and does it stay in sync between two phones.
 It is not the gate itself; you decide that afterwards.
 
-Build: `builds/jetpack-brawler-debug.apk`, made from `main` at `e3f6f4f` on 25 Nov 2026,
-23:48. 28.6 MB, package `com.jetpackbrawler.prototype`, 64-bit ARM only, Android target 36,
+Build: `builds/jetpack-brawler-debug.apk`, made from `main` at `1d75eaf` on 26 Nov 2026,
+00:04. 28.6 MB, package `com.jetpackbrawler.prototype`, 64-bit ARM only, Android target 36,
 one permission (internet). The build is not in the repository; it is on this Mac only. On
-the Mac the full test suite passes on this commit (52 of 52).
+the Mac the full test suite passes on this commit (59 of 59).
 
-The phone checks are still pending. This build has the corrected push distances and the
-fix for a crash that a malformed network packet could cause, so it is fit for the
-10-minute phase 1 playtest. One network fix is still in progress and is not in it; see
-"Known limits".
+The phone checks are still pending. This build has every fix made for phase 1 so far: the
+corrected push distances, the fix for a crash that a malformed network packet could
+cause, and the fix for bots shown a step behind when input arrives late. It is the build
+for the 10-minute phase 1 playtest.
 
 If you have not done device checkpoint 1 (sticks, jetpack and dash), do it first with this
 same build: its checks 6 to 16 still apply and are not repeated here.
@@ -93,9 +93,11 @@ Two phones in sync
     same? Watch one knockout into the metal on both screens.
 16. Have each phone shoot the other. Do hits land when they look like they should on the
     shooter's screen?
-17. While moving on phone B, does your own bot ever jump back a short distance for a moment
-    and then carry on? Say how often. (A known fault under bad Wi-Fi timing, still being
-    worked on.)
+17. Watch the other phone's bot while both of you move. Does it ever stand still for a
+    moment (up to about half a second) and then jump to where it should be? Does your own
+    bot ever jump back a short distance? Say how often for each. (When a phone's input
+    arrives late or is lost, the host now waits up to 0.4 seconds for it and holds that bot
+    still for the other players meanwhile. The 0.4 seconds is a first guess.)
 18. Phone B taps Leave and joins again; then phone A leaves and hosts again and B joins.
     After each, are the pickups present, and are there no leftover bombs or plates from
     before?
@@ -127,10 +129,10 @@ Performance
 - The hit freeze holds the hit bot's picture for a few frames; the game itself never pauses.
 - If the host phone is put in the background, the match breaks. That is not handled yet.
 - More than two phones has not been tried.
-- On poor Wi-Fi timing a bot can be shown one step behind for a few frames (check 17): when
-  a burst of a player's input packets is late, the host sends positions that are one step
-  behind until the input arrives. Measured on the Mac with packets held on purpose: up to
-  about 30 pixels. The cause is known and the fix is in progress; it is not in this build.
+- When a phone's input is lost or late, or a player comes back from a pause, the host
+  holds that bot still for the other players for up to 0.4 seconds and then it jumps to
+  its place (check 17). A phone whose connection is steadily slower than that is frozen
+  for everyone else while it still moves on its own screen; nothing on screen says so yet.
 - The game is hardened for play with friends on one hotspot, not for strangers: a device
   that sets out to disturb the host can no longer crash it, but can still make it stutter.
   That work continues.
