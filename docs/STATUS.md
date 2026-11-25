@@ -39,7 +39,7 @@ Current stage: Prototype, phase 1. Gate not passed.
 - [ ] 1.6 Dabba fight, built last.
 - [ ] Phase review and `docs/reviews/phase-1-handoff.md`.
 
-## Where work stands (25 Nov 2026 09:45)
+## Where work stands (25 Nov 2026, morning)
 
 On `main`, reviewed and pushed: movement, foundation, combat core (B), weapons (C), world
 objects and gadgets (D), input and HUD (F), netfox hardening (patches 1 to 13 and their
