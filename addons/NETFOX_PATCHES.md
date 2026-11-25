@@ -283,7 +283,7 @@ Tests named below (the `run_all.sh` name in brackets):
   subject. This is the same rule the client applies. With diff states off nothing is
   recorded.
 - Cost: bandwidth is unchanged by the receiver part, and a full state is merged exactly
-  as before (the walk back through earlier ticks is for diffs only). The sender part The sender part records less
+  as before (the walk back through earlier ticks is for diffs only). The sender part records less
   than before (only what was sent).
 - What remains incorrect under packet loss: diff packets travel unreliably. If one is
   lost, the client's authoritative state for the properties it carried stays wrong,
@@ -304,12 +304,13 @@ Tests named below (the `run_all.sh` name in brackets):
   inverted when diffs carry a reference.
 - Test that fails without it: `netfox_diffs` (the deterministic case above, in the
   per-object history and the per-tick snapshot, with a guess at the tick and with the
-  carry-forward from a guess at the tick before; a second diff for the same tick; and
-  the same for sync state) and `full_state_coverage` (after a re-simulation the diff
-  for a subject carries every property that differs from what was last sent for it,
-  not from a stale carry), and `netfox_diffs` (a merge not marked as a diff is not
-  completed; the same merge marked as a diff is). Also `netfox_diffs`: after a lost diff the client's value
-  is still wrong, and is right again at the full state one interval later.
+  carry-forward from a guess at the tick before; a second diff for the same tick; the
+  same for sync state; a merge not marked as a diff is not completed while the same
+  merge marked as a diff is, for rollback and sync state; and after a lost diff the
+  client's value is still wrong and is right again at the full state one interval
+  later) and `full_state_coverage` (after a re-simulation the diff for a subject
+  carries every property that differs from what was last sent for it, not from a
+  stale carry).
 
 ## 11. Every subject gets a full state at least once per interval
 
@@ -325,6 +326,8 @@ Tests named below (the `run_all.sh` name in brackets):
   the reference, or when `full_state_interval` ticks (not calls) have passed since its
   last full state; otherwise as a diff. With diff states off every subject is sent in
   full as before; an interval of 0 or less means no periodic full state, as before.
+- Also: when every subject of a snapshot is sent in full, the dense write is called
+  without the per-subject filter (a work saving only; the output is the same).
 - Cost: with diff states on the number of full states per subject is one per interval
   instead of about one per 12 ticks, so bandwidth falls a little.
 - Test that fails without it: `full_state_coverage` (three subjects, one present only
@@ -364,7 +367,9 @@ Tests named below (the `run_all.sh` name in brackets):
 ## 13. A public query for state received from the authority
 
 - File: `addons/netfox/servers/network-history-server.gd`
-- Function: new `has_authoritative_state(subject: Object) -> bool`
+- Function: new `has_authoritative_state(subject: Variant) -> bool` (a Variant, so that a
+  freed node can be passed and gives false; GDScript refuses a freed object for an
+  `Object` parameter before the function body runs)
 - Why: on a client there was no public way to tell state received from the host from
   state the client predicted. The public queries (`get_state_age_for` and the like)
   count predictions, and the authoritative flag is only reachable through the private
@@ -373,12 +378,18 @@ Tests named below (the `run_all.sh` name in brackets):
   always true on the peer that is the authority (`is_multiplayer_authority()`). It is
   recorded in `_merge_rollback_state` and `_merge_synchronizer_state`, which only
   received snapshots go through, cleared by `reset()` (called by `NetworkTime.stop()`)
-  and per node by `deregister()`.
+  and per node by `deregister()`. A change of state authority does not clear it: the
+  synchronizer deregisters properties, not the node. That is harmless while only peer 1
+  owns state.
 - Cost: one set insert per authoritative subject per merged snapshot.
 - Test that fails without it: `netfox_diffs` (client: false with only local
   predictions, true after the first received state, false after `NetworkTime.stop()`,
-  true again after the first state of the next session) and `netfox_host` (true at once
-  for a subject the host owns). The restart is a stop followed by a new state; the test
+  true again after the first state of the next session; a snapshot whose tick is refused
+  leaves it false; a received sync state sets it; `deregister(node)` clears it; a freed
+  subject gives false without an error) and `netfox_host` (true at once for a subject
+  the host owns; state from peer 2 for a subject peer 3 owns leaves it false, from peer
+  3 sets it, which shows sanitising happens before marking; the host owns neither
+  subject, so the authority shortcut does not hide the result). The restart is a stop followed by a new state; the test
   client is never connected, so `NetworkTime.start()` is not run.
 
 ## The diffs
@@ -767,7 +778,7 @@ diff --git a/addons/netfox/servers/network-history-server.gd b/addons/netfox/ser
  
  ## Do not record [param subject]
  ## [br][br]
-@@ -135,6 +142,18 @@
+@@ -135,6 +142,24 @@
  	else:
  		return tick - latest_input
  
@@ -778,7 +789,13 @@ diff --git a/addons/netfox/servers/network-history-server.gd b/addons/netfox/ser
 +## true once any state received from the authority has been merged for
 +## [param subject] in this session, and always true on the authority itself. It
 +## is false again after [method _NetworkTime.stop], which calls [method reset].
-+func has_authoritative_state(subject: Object) -> bool:
++## [br][br]
++## [param subject] is a [Variant] so that a freed node can be passed and gives
++## [code]false[/code]: GDScript refuses a freed object for an [Object] parameter
++## before the function runs.
++func has_authoritative_state(subject: Variant) -> bool:
++	if not is_instance_valid(subject):
++		return false
 +	if subject is Node and (subject as Node).is_multiplayer_authority():
 +		return true
 +	return _authoritative_subjects.has(subject)
@@ -786,7 +803,7 @@ diff --git a/addons/netfox/servers/network-history-server.gd b/addons/netfox/ser
  ## Record currently registered rollback state properties for [param subject] at
  ## [param tick].
  func push_rollback_state(subject: Node, tick: int) -> void:
-@@ -199,18 +218,48 @@
+@@ -199,18 +224,48 @@
  	_merge_snapshot(snapshot, _rb_input_snapshots, true)
  	return _merge_history(snapshot, _rb_input_history, true)
  
@@ -837,7 +854,7 @@ diff --git a/addons/netfox/servers/network-history-server.gd b/addons/netfox/ser
  func _record(tick: int, history: _PerObjectHistory, snapshots: _HistoryBuffer, property_pool: _PropertyPool, only_auth: bool, auth_filter: Callable) -> void:
  	var snapshot := snapshots.get_at(tick, _Snapshot.new(tick)) as _Snapshot
  	if not snapshots.has_at(tick):
-@@ -296,6 +345,26 @@
+@@ -296,6 +351,26 @@
  	return has_updated
  
  func _can_merge_tick(tick: int, history: _PerObjectHistory) -> bool:
@@ -1194,11 +1211,23 @@ the patch restored. "FAIL" means the test exited 1 or printed a SCRIPT ERROR.
 | 8 | the ignore (assert restored) | netfox_host | SCRIPT ERROR (scene exits 0, `run_all.sh` fails) |
 | 9 | range starts at `NetworkTime.tick` (upstream) | slow_frames | FAIL, 43 of 62 ticks never simulated, 230 px instead of 429 px |
 | 9 | same | host_hitch | FAIL, ticks stored but never simulated (2, 0, 20) and lost (15, 22, 0) at 400, 700, 950 ms in that run |
-| 10 | `_complete_diff` for rollback state | netfox_diffs | FAIL, 4 checks (a=2, b=99 where the host has b=1) |
-| 10 | `_complete_diff` for sync state | netfox_diffs | FAIL, sync diff stored without b |
+| 10 | `_handle_diff_state` does not pass `is_diff` (diffs not completed) | netfox_diffs | FAIL, 4 checks (a=2, b=99 where the host has b=1) |
+| 10 | `_handle_diff_sync` does not pass `is_diff` | netfox_diffs | FAIL, sync diff stored without b |
+| 10 | `is_diff` gate removed, rollback state (completion on full states too) | netfox_diffs | FAIL, a merge not marked as a diff was completed |
+| 10 | `is_diff` gate removed, sync state | netfox_diffs | FAIL, a sync merge not marked as a diff was completed (a check added for it; the mutation survived the first version of the test) |
 | 10 | per-subject reference (latest record, not latest record holding the subject) | full_state_coverage | FAIL, the diff after a re-simulation is not what the client needs |
 | 11 | the periodic per-subject full state | full_state_coverage | FAIL, 1 full state in 120 ticks for A and B, longest gap 69 for C |
 | 11 | same | host_diffs | FAIL, the client bot gets 1 full state in 209 ticks |
 | 12 | the unknown-frame cap | netfox_host | FAIL, the frames after the cap are read |
 | 12 | the warning rate limit | netfox_host | FAIL, 6 and 4 warnings (at most 1) |
+| 13 | `_mark_authoritative` removed from the rollback state merge | netfox_diffs | FAIL, not true after the first received state, nor after a restart |
+| 13 | `_mark_authoritative` removed from the sync state merge | netfox_diffs | FAIL, a received synchronized state does not set it |
+| 13 | the clear in `reset()` | netfox_diffs | FAIL, still true after `NetworkTime.stop()` |
+| 13 | the erase in `deregister()` | netfox_diffs | FAIL, still true after `deregister(node)` (check added; the first version of the test had none) |
+| 13 | the authority shortcut | netfox_host | FAIL, false for a subject the host owns |
+| 13 | marking before the `_can_merge_tick` check | netfox_diffs | FAIL, a refused tick set it (check added) |
+| 13 | marking before sanitising (`_ingest_state`) | netfox_host | FAIL, state from peer 2 for a subject peer 3 owns set it (check added) |
+| 13 | the `is_instance_valid` guard | not run | the check for a freed subject exists; the mutation was not run because of the risk that `is` on a freed object hangs |
+| 11 | filter skipped always (also when only some subjects are full) | full_state_coverage | FAIL, 14 full states for A (at most 7; a bound added for this) |
+| 11 | filter never skipped (the optimisation removed) | full_state_coverage | PASSES, by design: the result is the same, only the work differs, so no test can fail |
 

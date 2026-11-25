@@ -128,6 +128,9 @@ func _check_gaps(recorder: Recorder, probe_name: String, first_tick: int) -> voi
 		worst = maxi(worst, tick - previous)
 		previous = tick
 	worst = maxi(worst, FIRST_TICK + TICKS - 1 - previous)
+	# Not sent in full more often than due: the subjects due at one call must not drag the others along.
+	var most: int = TICKS / interval + 2
+	_check(ticks.size() <= most, "subject %s: %d full states, at most %d expected" % [probe_name, ticks.size(), most])
 	_check(not ticks.is_empty() and ticks[0] <= first_tick + interval and worst <= interval, "subject %s: %d full states, first at +%d, longest gap %d ticks (interval %d)" % [probe_name, ticks.size(), (ticks[0] - first_tick) if not ticks.is_empty() else -1, worst, interval])
 
 func _run() -> void:
