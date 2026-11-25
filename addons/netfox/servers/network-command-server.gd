@@ -147,8 +147,8 @@ class _PacketTransport extends _Transport:
 		var buffer := StreamPeerBuffer.new()
 		buffer.data_array = packet
 
-		# Check header
-		if not is_command_packet(packet):
+		# Check header (PATCH geminiceo G-29: also require the 1-byte command index)
+		if not is_command_packet(packet) or packet.size() < _packet_prefix.size() + 1:
 			return
 
 		# Grab data

@@ -426,3 +426,37 @@ Merged `origin/main` (`22dd106..7c2da44`: D-14 `last_shot_weapon` `e5f9fec`, Tas
 ### CEO Review (Iteration 8)
 1. **Clean sweep on Phase 1 combat/object bugs:** Every high/medium bug from Iterations 4–6 (`G-21a/b`, `G-22`, `G-23`, `G-24`, `G-26`, plus `D-13`/`D-14` and the `clear_old_cycle` ordering polish) is now on `main` and in the rebuilt debug APK.
 2. **Hold feature work for phone feedback:** With only netfox patch 15 (`D-10`) and low-severity `G-27` remaining open, the highest-leverage next step is Rahul running Device Checkpoints 1 and 2 on two phones to validate stick/button ergonomics, knockback feel, and hotspot stability before starting Dabba or Phase 2.
+
+
+---
+
+## Iteration 9 Audit Update (25 Nov 2026 18:12 — against `origin/main` `50f7445`)
+
+Merged `origin/main` (`7c2da44..50f7445`: `G-27` landed in `588a572`, phase 1 design-numbers & authority audits in `834d6da`/`024da7d`, netfox patch 15 review in `17aeef5`, and `D-15` in `50f7445`). Aligned `scripts/ui/touch_controls.gd` verbatim with `origin/main`. Audited `NetworkIdentityServer`, `_IdentityPacketSerializer`, `NetworkCommandServer`, and `NetworkSchemas` string/variant/snapshot decoders for remote crash and DoS vectors missed by the authority audit.
+
+### New Confirmed Findings (Most Severe First)
+
+#### 28. Remote 4-byte identity packet immediately crashes the host process with `SIGBUS` (`rc=-10`) + missing identity packet size cap
+- **Severity:** critical
+- **Category:** Denial of service / Crashes and logic bugs
+- **Location:** `addons/netfox/serializers/identity-packet-serializer.gd:28-32`, `addons/netfox/schemas/network-schemas.gd:499-500`, `addons/netfox/servers/network-identity-server.gd:192-193`
+- **What happens and how to trigger it:** `NetworkIdentityServer` registers command `#0` (`_handle_ids`) on `NetworkCommandServer`, accepting reliable RPC or raw packets from any connected peer (including an unaccepted/rejected 5th peer during the 0.5 s notice window). `_IdentityPacketSerializer.deserialize` calls `buffer.get_utf8_string()` (default `-1`), which in Godot 4.7.2 reads a 32-bit signed length and allocates a `Vector<uint8_t>` of that size before checking `get_available_bytes()`. Sending the 4-byte payload `[0xff, 0xff, 0xff, 0x7f]` (`0x7fffffff` = 2 GB) to command `#0` immediately kills the Godot host process with `SIGBUS` (signal 10, exit code `-10`, reproduced directly in headless Godot 4.7.2). The identical `b.get_utf8_string()` call in `NetworkSchemas._StringSerializer.decode` also crashes with `rc=-10` on the same 4 bytes. Additionally, `_handle_ids` has no packet-size cap (unlike `NetworkSynchronizationServer`'s 16,384-byte limit), allowing multi-megabyte identity packets (63 KB of 2-byte names takes ~54 ms and builds 8,100+ dictionary entries).
+- **Suggested fix:** Validate `str_len` (`>= 0` and `<= buffer.get_available_bytes()`) before reading UTF-8 bytes in `_IdentityPacketSerializer.deserialize` and `NetworkSchemas._StringSerializer.decode`, and cap `data.size()` in `NetworkIdentityServer._handle_ids` at `max_incoming_packet_size = 16384`. *(Fixed on `geminiceo`; verified in `tests/test_security_audit.tscn`.)*
+
+#### 29. Truncated 3-byte raw command prefix (`\0nf`) triggers buffer underflow and spuriously dispatches command `#0`
+- **Severity:** low
+- **Category:** Crashes and logic bugs / Untrusted input
+- **Location:** `addons/netfox/servers/network-command-server.gd:137-159`
+- **What happens and how to trigger it:** `_PacketTransport` is always connected to `SceneMultiplayer.peer_packet` (even when `use_raw_commands` is `false`). `is_command_packet(packet)` only checks `packet.size() < _packet_prefix.size()` (3 bytes) without requiring the 1-byte command index. Any peer calling `send_bytes(PackedByteArray([0, 78, 70]))` hits `buffer.get_u8()` at 0 remaining bytes, causing `get_u8()` to return `0` and spuriously dispatch command `#0` (`NetworkIdentityServer._handle_ids`) with an empty payload.
+- **Suggested fix:** Require `packet.size() >= _packet_prefix.size() + 1` in `_PacketTransport._handle_packet` before calling `buffer.get_u8()`. *(Fixed on `geminiceo`; verified in `tests/test_security_audit.tscn`.)*
+
+### Areas With No New Findings (Iteration 9)
+- **`NetworkSchemas.variant()` (`get_var(false)`), `_NetworkIdentityReferenceSerializer` (`c_string()`), and `StreamPeerBuffer.get_partial_data(0x7fffffff)`:** Tested directly in Godot 4.7.2; all safely reject or clamp bogus `0x7fffffff` lengths without crashing or over-allocating.
+- **Network trust, Desync, Purchases/unlocks, Android/privacy, Repository hygiene, Performance:** None found (beyond items already logged in `docs/reviews/phase-1-handoff.md`: past-tick input bound in patch 15, log-flood rate limiting in patch 16, and push-distance correction).
+
+### Could Not Check (Iteration 9)
+- Multi-process loopback UDP suites (`tests/net_*.sh`), `tests/test_fx_client.tscn`, and `tests/test_full_state_coverage.tscn` (loopback UDP blocked in sandbox); real Android device testing (Device Checkpoints 1 & 2).
+
+### CEO Review (Iteration 9)
+1. **Great catch by both the phase 1 audit and this pass:** The design-numbers audit catching push distances vs speeds (0.5 bh vs 2.5 bh on ground) explains why knockback could feel flat on phones, and `D-15` tying the phone playtest to the corrected knockback build is the exact right call.
+2. **Patch `G-28` alongside netfox patch 16:** Because `G-28` is a 4-byte instant host crash (`SIGBUS`) reachable even by a rejected 5th peer on a local hotspot (and later over internet relay), fold the 10-line length check + 16 KB cap into netfox patch 16 before shipping the next APK.

@@ -26,7 +26,22 @@ func deserialize(data: PackedByteArray) -> Dictionary:
 	buffer.data_array = data
 
 	while buffer.get_available_bytes() > 0:
-		var full_name := buffer.get_utf8_string()
+		# PATCH (geminiceo G-28): check the 4-byte length against remaining bytes before
+		# allocating; Godot's StreamPeerBuffer.get_utf8_string(-1) allocates the declared
+		# length first, so a 4-byte 0x7fffffff payload crashes the process with SIGBUS.
+		if buffer.get_available_bytes() < 4:
+			break
+		var str_len := buffer.get_32()
+		if str_len < 0 or str_len > buffer.get_available_bytes():
+			break
+		var full_name := ""
+		if str_len > 0:
+			var raw := buffer.get_data(str_len)
+			if raw[0] != OK:
+				break
+			full_name = (raw[1] as PackedByteArray).get_string_from_utf8()
+		if buffer.get_available_bytes() <= 0:
+			break
 		var id := varuint.decode(buffer) as int
 
 		ids[full_name] = id

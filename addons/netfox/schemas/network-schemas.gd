@@ -497,7 +497,16 @@ class _StringSerializer extends NetworkSchemaSerializer:
 		b.put_utf8_string(str(v))
 
 	func decode(b: StreamPeerBuffer) -> Variant:
-		return b.get_utf8_string()
+		# PATCH (geminiceo G-28): check length against remaining bytes before allocating
+		if b.get_available_bytes() < 4:
+			return ""
+		var str_len := b.get_32()
+		if str_len <= 0 or str_len > b.get_available_bytes():
+			return ""
+		var raw := b.get_data(str_len)
+		if raw[0] != OK:
+			return ""
+		return (raw[1] as PackedByteArray).get_string_from_utf8()
 
 class _CStringSerializer extends NetworkSchemaSerializer:
 	static var instance := _CStringSerializer.new()

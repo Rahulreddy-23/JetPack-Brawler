@@ -39,6 +39,9 @@ static var _logger := NetfoxLogger._for_netfox("NetworkIdentityServer")
 
 const _WARN_QUEUE_SIZE := 128
 
+# PATCH (geminiceo G-28): cap incoming identity packets to bound work and memory
+var max_incoming_packet_size: int = 16384
+
 func _init(p_command_server: _NetworkCommandServer = null) -> void:
 	_command_server = p_command_server
 
@@ -190,6 +193,8 @@ func _erase_from_id_cache(identifier: _NetworkIdentifier) -> void:
 			_identifier_by_id.erase(peer)
 
 func _handle_ids(sender: int, data: PackedByteArray) -> void:
+	if max_incoming_packet_size > 0 and data.size() > max_incoming_packet_size:
+		return
 	var ids := _packet_serializer.deserialize(data)
 
 	for full_name in ids:
