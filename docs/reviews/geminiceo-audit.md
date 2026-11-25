@@ -460,3 +460,28 @@ Merged `origin/main` (`7c2da44..50f7445`: `G-27` landed in `588a572`, phase 1 de
 ### CEO Review (Iteration 9)
 1. **Great catch by both the phase 1 audit and this pass:** The design-numbers audit catching push distances vs speeds (0.5 bh vs 2.5 bh on ground) explains why knockback could feel flat on phones, and `D-15` tying the phone playtest to the corrected knockback build is the exact right call.
 2. **Patch `G-28` alongside netfox patch 16:** Because `G-28` is a 4-byte instant host crash (`SIGBUS`) reachable even by a rejected 5th peer on a local hotspot (and later over internet relay), fold the 10-line length check + 16 KB cap into netfox patch 16 before shipping the next APK.
+
+
+---
+
+## Iteration 10 Audit Update (25 Nov 2026 18:29 — against `origin/main` `dc56a86`)
+
+Merged `origin/main` (`50f7445..dc56a86`: D-16 `melee_dir` in `509e41b` and acceptance of `G-28`/`G-29` for netfox patch 16 in `dc56a86`). Audited `509e41b` (`scenes/bot.tscn`, `scripts/game/bot_arsenal.gd`, `scripts/game/weapon_rules.gd`, `scripts/fx/effects_director.gd`) and swept all remaining binary decoders in `addons/netfox/`.
+
+### Findings (`50f7445..dc56a86`)
+- **Crashes and logic bugs:** none found. (`BotArsenal.melee_dir` is registered rollback state, written deterministically on melee ticks, normalized and zero-guarded in `WeaponRules._collect_melee` and `EffectsDirector._on_swing`.)
+- **Network trust:** none found. (`melee_dir` is host-authoritative rollback state on `Bot/Arsenal`; no new RPCs.)
+- **Desync:** none found.
+- **Denial of service:** none found beyond `G-28`/`G-29` (active on `geminiceo`, accepted for netfox patch 16). Note for patch 16's decoder sweep: `_ArraySerializer` and `_DictionarySerializer` in `addons/netfox/schemas/network-schemas.gd:868-906` read unchecked counts (`array.resize(item_count)`), though neither schema is used by Jetpack Brawler today.
+- **Untrusted input, Purchases/unlocks, Android/privacy, Repository hygiene, Performance bugs:** none found.
+
+### Unmerged `geminiceo` Fixes Still Active (verified 6/6 in `tests/test_security_audit.tscn`)
+- `G-28` (`addons/netfox/serializers/identity-packet-serializer.gd`, `addons/netfox/schemas/network-schemas.gd`, `addons/netfox/servers/network-identity-server.gd`): length-checked UTF-8 decoding (prevents 4-byte `SIGBUS` host crash) + 16 KB incoming identity packet cap. Accepted in `dc56a86` for netfox patch 16.
+- `G-29` (`addons/netfox/servers/network-command-server.gd`): require `packet.size() >= _packet_prefix.size() + 1` in `_PacketTransport._handle_packet`. Accepted in `dc56a86` for netfox patch 16.
+
+### Could Not Check (Iteration 10)
+- Multi-process loopback UDP suites (`tests/net_*.sh`), `tests/test_fx_client.tscn`, and `tests/test_full_state_coverage.tscn` (loopback UDP blocked in sandbox); real Android device testing (Device Checkpoints 1 & 2).
+
+### CEO Review (Iteration 10)
+1. **Clean convergence toward the Phase 1 APK:** `G-28` and `G-29` are accepted into netfox patch 16 alongside log-flood hardening, the push-distance fix is actively in progress (`3a0bafb` on its worktree), and `D-16` closed the last presentation-direction overlap.
+2. **Next gate:** Once push distances, patch 15 (past-tick input bound + D-10), and patch 16 (`G-28`/`G-29` + log limits) merge, cut the fresh debug APK and run Rahul's two-phone playtest immediately before starting Dabba.
