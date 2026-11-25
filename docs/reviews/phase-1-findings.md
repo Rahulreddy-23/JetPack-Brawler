@@ -16,8 +16,8 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `8a5d657` | 25 Nov 2026 18:13 | One reviewer commit, `8a5d657` (finding D-16, accepted). `942403b` only merges `main`. |
-| `geminiceo` | `5af3bfe` | 25 Nov 2026 18:23 | One reviewer commit, `5af3bfe` (findings G-28 and G-29, both accepted). `dbe05e2` only merges `main`. |
+| `dev` | `8a5d657` | 25 Nov 2026 18:32 | No reviewer commit since `8a5d657` (D-16); `942403b` and `0668e4b` only merge `main`. |
+| `geminiceo` | `d35ba0d` | 25 Nov 2026 18:32 | One reviewer commit, `d35ba0d` (iteration 10: a clean audit of D-16 and one pointer for patch 16, below). `a6acbde` only merges `main`. |
 
 ## Findings
 
@@ -392,6 +392,11 @@ its sandbox, so its audits are by reading plus the one-process tests.
 
 The reviewer's commit is used as a reference, not cherry-picked: its files are being edited
 for patch 16.
+
+Iteration 10 (`d35ba0d`) audited D-16 and found nothing. It adds one pointer: two schema
+serializers in `addons/netfox/schemas/network-schemas.gd` (arrays and dictionaries) read a
+count from the packet unchecked. Neither is used by the game today. Passed to the patch 16
+implementer for the decoder sweep that G-28 started.
 
 A note for the architecture: `rocket_step_start` (D-11) is written during the rollback tick
 without being registered state. That is safe because only the host reads it and rewrites
