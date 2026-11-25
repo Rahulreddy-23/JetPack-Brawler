@@ -163,8 +163,9 @@ static func _apply_hits(tick: int, victim: Bot, hits: Array[Hit], cfg: TuningCon
 	vitals.last_hit_damage = damage
 	vitals.health = maxf(vitals.health - damage, 0.0)
 	if launched or distance != Vector2.ZERO or speed != Vector2.ZERO:
+		var previous_speed: float = victim.velocity.x / cfg.bot_height_px
 		if _push(victim, distance, speed, launch, launched, cfg):
-			vitals.push_until_tick = maxi(vitals.push_until_tick, tick + 1 + push_window_ticks(victim.velocity.x / cfg.bot_height_px, cfg))
+			vitals.push_until_tick = push_window_end_tick(tick, vitals.push_until_tick, previous_speed, victim.velocity.x / cfg.bot_height_px, cfg)
 	# An attack stamped later than this tick (only a bug could leave one) is never replaced.
 	if not from_peer.is_empty() and tick >= vitals.last_attack_tick:
 		vitals.last_attacker = _strongest(from_peer)
@@ -197,6 +198,14 @@ static func _axis_change(speed: float, push: float, decel: float, dt: float) -> 
 static func push_window_ticks(sideways_speed: float, cfg: TuningConfig) -> int:
 	var dt: float = 1.0 / float(cfg.tick_rate)
 	return ceili(absf(sideways_speed) / (cfg.ground_brake * cfg.push_window_control * dt) - 0.0001)
+
+## Resize an existing window when a push reduces sideways speed. If speed grows, keep at least
+## the time already left in the window. Both speeds are in bot heights per second.
+static func push_window_end_tick(tick: int, previous_end: int, previous_speed: float, sideways_speed: float, cfg: TuningConfig) -> int:
+	var end: int = tick + 1 + push_window_ticks(sideways_speed, cfg)
+	if absf(sideways_speed) < absf(previous_speed):
+		return end
+	return maxi(previous_end, end)
 
 # A push first ends a dash (the velocity becomes what a dash exit gives), then a launch replaces
 # the vertical velocity and adds its horizontal part, then the ordinary pushes are added on top of

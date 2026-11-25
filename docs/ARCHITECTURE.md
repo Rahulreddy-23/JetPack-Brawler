@@ -138,6 +138,7 @@ whose per-tick braking sums to P, and `CombatMath.travel_distance` is its invers
   upward blast on a bot falling at the limit leaves it falling at about half that speed.
 - The window is as long as it takes to brake the bot's sideways speed away after a push or
   launch with a sideways part; a push with none (straight up, a Spring Plate) opens no window.
+  An opposing push that reduces sideways speed shortens the window to fit the remaining speed.
 - While the window is open, a stick held against the motion brakes at least as hard as a released
   stick, so resisting a push never carries the bot further than letting go.
 `push_speed_scale` is gone: it made every push a speed and let braking decide the distance, so

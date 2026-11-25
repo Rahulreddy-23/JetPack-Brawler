@@ -39,6 +39,7 @@ func _run() -> void:
 	await _test_vertical()
 	await _test_push_during_dash()
 	await _test_window()
+	await _test_opposing_push_window()
 	_test_inverse()
 	await _test_travel_distance_in_play()
 	await _test_accumulation()
@@ -346,6 +347,26 @@ func _test_window() -> void:
 			stopped_at = _tick
 	moving_at_close = stopped_at < 0 or stopped_at > until
 	_check(not moving_at_close and until - stopped_at <= 1, "the push window closes within a tick of the push being braked away (stopped at tick %d, window until %d)" % [stopped_at, until])
+	await _free_bots()
+
+func _test_opposing_push_window() -> void:
+	var hit_bot: Bot = await _spawn(true)
+	_apply(hit_bot, [_push_hit(hit_bot, Vector2.RIGHT * _cfg.melee_push)] as Array[Hit])
+	var original_end: int = hit_bot.vitals.push_until_tick
+	_run_ticks(hit_bot, 1)
+	_apply(hit_bot, [_push_hit(hit_bot, Vector2.LEFT * _cfg.melee_push)] as Array[Hit])
+	var needed_end: int = _tick + CombatRules.push_window_ticks(hit_bot.velocity.x / _px, _cfg)
+	_check(needed_end < original_end and hit_bot.vitals.push_until_tick == needed_end, "an opposing hit shortens the push window to match the remaining sideways speed (end %d, need %d)" % [hit_bot.vitals.push_until_tick, needed_end])
+
+	var shooter: Bot = await _spawn(true)
+	_apply(shooter, [_push_hit(shooter, Vector2.RIGHT * _cfg.melee_push)] as Array[Hit])
+	original_end = shooter.vitals.push_until_tick
+	shooter.arsenal.give_weapon(ItemIds.SCRAP_BLASTER, _cfg)
+	shooter.input.aim = Vector2.RIGHT
+	shooter.input.fire = true
+	_run_ticks(shooter, 1)
+	needed_end = _tick + CombatRules.push_window_ticks(shooter.velocity.x / _px, _cfg)
+	_check(needed_end < original_end and shooter.vitals.push_until_tick == needed_end, "opposing recoil shortens the push window too (end %d, need %d)" % [shooter.vitals.push_until_tick, needed_end])
 	await _free_bots()
 
 # ---- pushes on separate ticks, and the bot's own speed ----
