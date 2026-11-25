@@ -16,7 +16,7 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `f5e09da` | 25 Nov 2026 10:03 | One reviewer commit, `f5e09da` (finding D-12, accepted in part). `0614ad1` only merges `main`. |
+| `dev` | `af6d2c8` | 25 Nov 2026 16:14 | One reviewer commit, `af6d2c8` (finding D-13, accepted). `4a54e6a` only merges `main`. |
 | `geminiceo` | `5dc5155` | 25 Nov 2026 10:03 | One reviewer commit, `5dc5155` (iteration 5: finding G-25, the same fault as D-10; the rest brings the branch in line with the decisions on G-18 and G-19). `2275445` only merges `main`. |
 
 ## Findings
@@ -199,6 +199,23 @@ these.
   does not shake the shooter's screen.
 - Outcome: accepted in part. The lead's draft was wrong on checks 1 and 2 and is corrected;
   the shake is asked about where it really happens (a knockout, a rocket at your own feet).
+
+### D-13 (dev, `af6d2c8`): the aim line pointed one way and the action went another
+
+- Change: one shared `Bot.input_aim_direction` gives the direction for the aim line, shots,
+  melee and gadget throws: along the right stick while it is held past the dead zone,
+  otherwise along the bot's facing. The arsenal and gadget code use it instead of their own
+  copies, and the aim line no longer keeps the last aimed direction after the stick is
+  released. One new check in `tests/test_movement.gd`, one changed in
+  `tests/test_touch_net.gd`, and the phone test script asks about it.
+- Verified: yes. Before the change the line kept the last aim while melee and gadgets fell
+  back to the facing, so with the stick released a bomb could leave at right angles to the
+  line. With the reviewer's test and the scripts from before, the new check fails; with the
+  change the movement, weapons, world objects, combat rules, effects, touch and HUD tests
+  and the two-process fire and smoke tests pass.
+- Outcome: accepted and cherry-picked onto `main`. Where actions go is unchanged; only the
+  line now tells the truth. Whether actions should instead keep the last aimed direction is
+  a feel question for the phone test.
 
 ## geminiceo audit (`e66eee1`)
 

@@ -43,8 +43,7 @@ func _rollback_tick(_delta: float, tick: int, _is_fresh: bool) -> void:
 	if picked_weapon != ItemIds.NONE and picked_ammo <= 0:
 		picked_weapon = ItemIds.NONE
 		active_slot = 0
-	var aim: Vector2 = Bot.clean_vector(bot.input.aim)
-	var dir: Vector2 = aim.normalized() if aim.length() > cfg.stick_deadzone else Vector2(bot.facing, 0)
+	var dir: Vector2 = bot.input_aim_direction(cfg)
 	if Bot.clean_bool(bot.input.swap) and picked_weapon != ItemIds.NONE:
 		active_slot = 1 - active_slot
 	# There is no separate melee direction in the state: the swing uses shot_dir, which a shot

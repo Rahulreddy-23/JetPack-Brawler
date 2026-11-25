@@ -33,8 +33,9 @@ One grey-box arena (the Smelter), up to 4 players, joined by typing the host's I
 
 - Left stick: run; push up for the steam pack; push down on a yellow platform to drop.
 - Right stick: aim. Push it past the ring to fire. A quick tap on it swings a melee hit.
-- Buttons around the right stick: DASH, MELEE, GADGET (throws the Cooker Bomb or the Spring
-  Plate in the aim direction), SWAP (rivet gun or the picked-up weapon).
+- Buttons around the right stick: DASH, MELEE, GADGET (throw the Cooker Bomb or Spring Plate),
+  SWAP (rivet gun or the picked-up weapon). With the right stick released, the white aim line,
+  melee swings and gadget throws follow the direction your bot faces.
 
 ## Install and connect
 
@@ -74,7 +75,8 @@ Weapons and gadgets
     knockout; it does not shake when you hit someone else.)
 11. Punch a rocket that is flying at you (needs the second phone to fire it). Does it turn
     around?
-12. Throw the Cooker Bomb. Does it bounce, and explode about 3 seconds later?
+12. Aim upward, let go of the stick, then tap GADGET. Does the Cooker Bomb follow the white
+    aim line as it returns to horizontal? Does the bomb bounce and explode about 3 seconds later?
 13. Pick up the Spring Plate, throw it on the floor, and walk the other phone's bot over
     it. Is that bot launched upward? Is the plate drawn in your bot's colour?
 14. Throw a second bomb from a new life right after the first one exploded. Does the new

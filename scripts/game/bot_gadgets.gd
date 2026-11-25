@@ -34,10 +34,9 @@ func _rollback_tick(_delta: float, tick: int, _is_fresh: bool) -> void:
 	if gadget_a == ItemIds.NONE or tick < gadget_ready_tick:
 		return
 	var cfg: TuningConfig = MatchSettings.tuning_at(tick)
-	var aim: Vector2 = Bot.clean_vector(bot.input.aim)
 	last_gadget_id = gadget_a
 	last_gadget_tick = tick
-	gadget_dir = aim.normalized() if aim.length() > cfg.stick_deadzone else Vector2(bot.facing, 0.0)
+	gadget_dir = bot.input_aim_direction(cfg)
 	gadget_serial += 1
 	gadget_ready_tick = tick + WorldObjects.seconds_to_ticks(cfg.gadget_cooldown, cfg)
 	gadget_a = gadget_b

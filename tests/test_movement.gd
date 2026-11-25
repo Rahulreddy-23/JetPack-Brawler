@@ -45,6 +45,7 @@ func _run() -> void:
 	await _test_wall_climb_gains_nothing()
 	await _test_proportional_run()
 	await _test_wrong_input_types()
+	await _test_aim_direction()
 	await _test_thin_platform()
 	await _test_input_sanitising()
 	print("%d checks, %d failures" % [_checks, _failures])
@@ -472,4 +473,15 @@ func _test_wrong_input_types() -> void:
 	bot.input.dash = false
 	_step(bot, 30)
 	_check(bot.position.x > start.x + _px, "input works again once it is valid")
+	await _clear()
+
+func _test_aim_direction() -> void:
+	var bot: Bot = await _spawn_bot(Vector2(0.0, AIR_Y))
+	bot.input.aim = Vector2.UP
+	_step(bot)
+	_check(bot.aim_dir == Vector2.UP, "the aim line follows the held stick")
+	bot.input.aim = Vector2.ZERO
+	bot.input.move = Vector2.LEFT
+	_step(bot)
+	_check(bot.aim_dir == Vector2.LEFT, "the aim line follows the new facing on the tick the aim stick is released")
 	await _clear()
