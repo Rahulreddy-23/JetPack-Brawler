@@ -47,16 +47,16 @@ Answer each with yes, no, or what you saw. Play at least 10 minutes in total.
 
 Shooting and knockback (the main point)
 
-1. Shoot the dummy with the rivet gun. Does it lose health, and does each hit feel like a
-   hit (a short freeze of the dummy, a small screen shake)?
+1. Shoot the dummy with the rivet gun. Does it lose health and flash on each hit?
 2. Pick up the scrap blaster and fire at the dummy from close range. Does the dummy fly
-   back clearly, and do you feel the recoil push you the other way?
+   back clearly after a brief hit freeze (its picture holds for a few frames)? Do you feel
+   the recoil push you the other way?
 3. Stand in the air and fire the scrap blaster straight down. Do you get an extra hop?
 4. Wear the dummy down until the bar that appears above it on each hit changes colour (25
    health or less), then hit it again. Is it pushed visibly further than at full health? Is
    the bar easy to read, and does it stay long enough to read (about 1.5 seconds)?
-5. Knock the dummy into the molten metal after it has risen. Is it knocked out at once, and
-   does that moment feel good?
+5. Knock the dummy into the molten metal after it has risen. Is it knocked out at once,
+   with a strong screen shake, and does that moment feel good?
 6. Melee the dummy (tap the right stick, and also the MELEE button). Does it get pushed?
    Which of the two do you reach for?
 7. Do the four buttons sit where your right thumb finds them without looking? Do you ever
@@ -69,7 +69,9 @@ Weapons and gadgets
 9. Bolt thrower: does holding fire feel like a stream, and does it run out of ammo and
    switch back to the rivet gun?
 10. Rocket tube: does the rocket fly straight, explode on the dummy or a wall, and push
-    things near the blast? Fire one at your own feet: are you hurt and thrown?
+    things near the blast? Fire one at your own feet: are you hurt and thrown, and does the
+    screen shake? (The screen shakes when your own bot is hit, near a blast and on any
+    knockout; it does not shake when you hit someone else.)
 11. Punch a rocket that is flying at you (needs the second phone to fire it). Does it turn
     around?
 12. Throw the Cooker Bomb. Does it bounce, and explode about 3 seconds later?

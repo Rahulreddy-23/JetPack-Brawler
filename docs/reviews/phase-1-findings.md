@@ -16,8 +16,8 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `782da7b` | 25 Nov 2026 09:19 | Two reviewer commits: `2ce67fc` (finding D-10, cause found, fix in progress) and `782da7b` (finding D-11, accepted). `521903f` and later merge commits only merge `main`. |
-| `geminiceo` | `2afecfe` | 25 Nov 2026 09:31 | Two reviewer commits, `ba1904c` and `2afecfe` (findings G-15 to G-24, decided below). `6d966de` and `880200a` only merge `main`. Neither commit is taken whole: `ba1904c` carries netfox hunks `main` already has in another form and a session change already rejected, and the object hunks of `2afecfe` conflict with D-11. |
+| `dev` | `f5e09da` | 25 Nov 2026 10:03 | One reviewer commit, `f5e09da` (finding D-12, accepted in part). `0614ad1` only merges `main`. |
+| `geminiceo` | `5dc5155` | 25 Nov 2026 10:03 | One reviewer commit, `5dc5155` (iteration 5: finding G-25, the same fault as D-10; the rest brings the branch in line with the decisions on G-18 and G-19). `2275445` only merges `main`. |
 
 ## Findings
 
@@ -187,6 +187,19 @@ these.
   re-simulated ones included, before the rule reads it.
 - Outcome: accepted and cherry-picked onto `main`.
 
+### D-12 (dev, `f5e09da`): the phone test script described the hit effects wrongly
+
+- Change: in `docs/reviews/device-checkpoint-2.md`, a rivet hit is described as a flash
+  only, and the hit freeze and screen shake are moved to the scrap blaster check.
+- Verified against the effects code (task E, `scripts/fx/effects_director.gd`): every hit
+  flashes the bot; the hit freeze needs a push of 1.5 or more, which the rivet gun (0.15)
+  never reaches and a close scrap blast (6 pellets of 0.25) does; the screen shakes only
+  when the player's own bot is hit, near a blast, and on a knockout. So the flash and the
+  freeze are right as the reviewer wrote them, and the shake is not: shooting the dummy
+  does not shake the shooter's screen.
+- Outcome: accepted in part. The lead's draft was wrong on checks 1 and 2 and is corrected;
+  the shake is asked about where it really happens (a knockout, a rocket at your own feet).
+
 ## geminiceo audit (`e66eee1`)
 
 Status at 18:50: every finding was checked against the current code by an independent Opus
@@ -268,6 +281,18 @@ failures of 19 on `main`.
 The reviewer's `tests/test_security_audit.gd` is not taken as it is: several of its checks
 pass on `main` without the fix they name, and two error out instead of failing. Each
 accepted fix gets its own test that fails without it.
+
+### geminiceo iteration 5 (`5dc5155`)
+
+| Id | Finding | Verified | Outcome |
+|---|---|---|---|
+| G-25 | Root cause of D-10: the host marks a state authoritative although it was built on a carried-over start, and a reordered older version can overwrite the corrected one on the client | Agrees with our own investigation, which reproduced it on demand. Two details differ from what we measured: the redundancy is 4 ticks, not 3, and the snap is not one tick of about 10 px but 4 to 8 stale states and up to 28.6 px per gap | Accepted; it is D-10, and the fix in progress (netfox patch 15, bounded by the redundancy window) is the reviewer's first suggestion. The second, a per-peer send sequence so an older version of a tick cannot overwrite a newer one, is deferred to the work on diff states before online rooms |
+
+The same commit reverts the reviewer's own HUD change (G-18, rejected) and reworks its flick
+fix (G-19) so the aim is refreshed only while a crossing is still waiting for a tick. That
+is the same condition our independent review asked for in our version; no change follows
+for `main`. The reviewer advises not letting D-10 hold up the phone test: agreed, patch 15
+runs alongside the build and does not block it.
 
 A note for the architecture: `rocket_step_start` (D-11) is written during the rollback tick
 without being registered state. That is safe because only the host reads it and rewrites
