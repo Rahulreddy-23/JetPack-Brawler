@@ -557,14 +557,29 @@ class _CStringSerializer extends NetworkSchemaSerializer:
 		b.put_data(str(v).to_utf8_buffer())
 		b.put_u8(0)
 
+	# PATCH (see addons/NETFOX_PATCHES.md): the engine prints an error line for every
+	# invalid UTF-8 byte it decodes, and this decoder reads the name of a subject that a
+	# peer sends at the start of every frame of a snapshot (id 0 means "named by full
+	# name"), before anyone checks who the sender is. A name is now read up to its NUL
+	# in full, so the frame stays aligned, and used only if it is at most
+	# _IdentityPacketSerializer.MAX_NAME_BYTES long and ASCII, judged on the raw bytes
+	# before they are decoded. Otherwise, and when there is no NUL before the end of
+	# the buffer, the name is empty, which no subject has: the frame is skipped.
 	func decode(b: StreamPeerBuffer) -> Variant:
-		var data := PackedByteArray()
-		while b.get_available_bytes() > 0:
-			var c := b.get_u8()
-			if c == 0: break
-			data.append(c)
-
-		return data.get_string_from_utf8()
+		var raw := b.data_array
+		var start := b.get_position()
+		var end := raw.find(0, start)
+		if end < 0:
+			b.seek(raw.size())
+			return ""
+		b.seek(end + 1)
+		if end - start > _IdentityPacketSerializer.MAX_NAME_BYTES:
+			return ""
+		var name_bytes := raw.slice(start, end)
+		for byte in name_bytes:
+			if byte >= 0x80:
+				return ""
+		return name_bytes.get_string_from_ascii()
 
 class _BoolSerializer extends NetworkSchemaSerializer:
 	func encode(v: Variant, b: StreamPeerBuffer) -> void:
