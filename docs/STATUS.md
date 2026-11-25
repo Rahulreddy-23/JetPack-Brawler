@@ -51,7 +51,7 @@ Current stage: Prototype, phase 1. Gate not passed.
       packet rate limit and the engine's own network layer unexamined, the game is not yet
       fit for strangers. Builds up to 21:01 on 25 Nov have the crash.
 - [ ] Device checkpoint 1 (Rahul): sticks, jetpack and dash on two phones over a hotspot.
-      Script `docs/reviews/device-checkpoint-1.md`; build of 25 Nov at `24f0224`; not yet run.
+      Script `docs/reviews/device-checkpoint-1.md`; build of 25 Nov at `4f4ea2d`; not yet run.
 - [x] B Combat core, hazard wiring, dummy, push window. Reviewed, merged (`a170e4b`).
 - [x] C Weapons, melee, pickups. Reviewed, merged (`2ad983e`).
 - [x] D World objects and gadgets. Reviewed twice, merged with its follow-ups and the
@@ -64,7 +64,7 @@ Current stage: Prototype, phase 1. Gate not passed.
       the push-distance correction; and again with netfox patch 16: 52 of 52 each time (Mac,
       headless; nothing on a phone).
 - [ ] Device checkpoint 2 (Rahul): the knockback sandbox, 10 minutes of play. The build of
-      25 Nov at `24f0224` has the corrected push distances. Script
+      25 Nov at `4f4ea2d` has the corrected push distances and the packet crash fix. Script
       `docs/reviews/device-checkpoint-2.md`; not yet run.
 - [ ] 1.6 Dabba fight, built last.
 - [ ] Phase review and `docs/reviews/phase-1-handoff.md` (started: both audits
