@@ -14,8 +14,8 @@ This script was written for the first, movement-only build. The current build is
 knockback sandbox (weapons, melee, gadgets, a dummy, the rising metal and effects), described
 in `docs/reviews/device-checkpoint-2.md`. The checks below are still the ones to do first:
 they are about the sticks, the steam pack, the dash and the connection, and they do not need
-the weapons. There are four more buttons on screen now (MELEE, GADGET, SWAP around the right
-stick, as well as DASH); for check 6, say also whether they get in the way.
+the weapons. There are three more buttons on screen now (MELEE, GADGET and SWAP, around the
+right stick with DASH); for check 6, say also whether they get in the way.
 
 ## Install
 
