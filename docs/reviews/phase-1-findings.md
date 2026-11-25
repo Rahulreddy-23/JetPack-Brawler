@@ -16,8 +16,8 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `09018a2` | 25 Nov 2026 21:31 | No reviewer commit since `09018a2` (D-17); `e1c33ab` only merges `main`. |
-| `geminiceo` | `8fe0e0e` | 25 Nov 2026 21:31 | One reviewer commit, `8fe0e0e` (iteration 13: a clean audit of D-17, no findings). `a664529` only merges `main`. |
+| `dev` | `09018a2` | 25 Nov 2026 22:22 | No reviewer commit since `09018a2` (D-17); later commits up to `1c4cf2e` only merge `main`. |
+| `geminiceo` | `2ee2aba` | 25 Nov 2026 22:22 | One reviewer commit, `2ee2aba` (iteration 14: finding G-31, accepted). `cb00be4` only merges `main`. |
 
 ## Findings
 
@@ -427,6 +427,12 @@ and config. Noted; no change.
 Iteration 13 (`8fe0e0e`) audited D-17 and found nothing: the window's new end is a pure
 function of the tick, the restored speeds and the config, used the same way for hits and
 for recoil. Noted; no change.
+
+### geminiceo iteration 14 (`2ee2aba`)
+
+| Id | Finding | Verified | Outcome |
+|---|---|---|---|
+| G-31 | One more decoder turns a peer's bytes into text unchecked: a subject named by full name (id 0) in any snapshot frame is read as a null-terminated string and decoded as UTF-8, at one engine error line per invalid byte, before the sender's ownership is checked | Path confirmed by reading: `_NetworkIdentityReferenceSerializer.decode` calls `_CStringSerializer.decode` for id 0, and the dense, sparse and redundant serializers decode a reference at the start of every frame. Patch 16's sweep had marked it "bounded by the bytes left", which is true of its length and not of its log lines, and the security review passed it. The reviewer measured 15,000 lines and 100 ms for a 15 KB packet under its own size cap; ours is smaller | Accepted. With the patch 16 implementer: the fix, tests through the real handlers, and a second sweep for every place a peer's bytes become text or a node path |
 
 A note for the architecture: `rocket_step_start` (D-11) is written during the rollback tick
 without being registered state. That is safe because only the host reads it and rewrites
