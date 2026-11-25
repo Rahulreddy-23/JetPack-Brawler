@@ -28,6 +28,7 @@ func _on_after_process_tick(tick: int) -> void:
 func resolve(tick: int, bots: Array[Bot]) -> void:
 	var cfg: TuningConfig = MatchSettings.tuning_at(tick)
 	var hits: Array[Hit] = []
+	GadgetRules.clear_old_cycle(tick, objects)
 	WeaponRules.collect(tick, bots, objects, _solids, cfg, hits)
 	GadgetRules.collect(tick, bots, objects, _solids, cfg, hits)
 	pickups.resolve(tick, bots, cfg)

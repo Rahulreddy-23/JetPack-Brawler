@@ -295,14 +295,16 @@ func reset() -> void:
 
 # The tick at which a rocket launched or deflected at this tick with this velocity has flown the
 # rocket tube's range, never later than a rocket at the tube's own speed would. Every rocket has
-# a finite lifetime: one that does not move, or is too slow, lives as long as a normal one.
+# a finite lifetime: one that does not move, or is too slow, lives as long as a rocket at the
+# tube's own speed (see below for a tube with no speed).
 # A deflection starts the range again from where the rocket is.
 static func _rocket_range_tick(velocity_px: Vector2, tick: int, cfg: TuningConfig) -> int:
 	var stats: WeaponStats = cfg.weapon_stats(ItemIds.ROCKET_TUBE)
 	var range_px: float = stats.range_bh * cfg.bot_height_px
 	var normal_step: float = stats.projectile_speed * cfg.bot_height_px / float(cfg.tick_rate)
-	# A tube speed of 0 (a card could set it) has no flight time to take: such a rocket lives as long
-	# as a bomb's fuse instead of dividing by zero.
+	# The lifetime of a rocket at the tube's own speed. When that speed is 0 (a card could set it) there
+	# is no flight time to take it from, so the fallback is a bomb's fuse time (an existing config
+	# number of the same size, about 3 s) instead of a division by zero.
 	var lifetime: int = seconds_to_ticks(cfg.bomb_fuse_time, cfg)
 	if normal_step > 0.0 and is_finite(normal_step):
 		lifetime = maxi(ceili(range_px / normal_step), 1)

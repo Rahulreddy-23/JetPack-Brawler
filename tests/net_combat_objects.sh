@@ -66,9 +66,11 @@ grep -h "^COMBAT_RESULT" "$TMP/host.log" "$TMP/client.log"
 # A tick the client has only guessed (a lost state packet) is not compared; the host's state for a
 # group of values must show up within MAX_LAG ticks after the explosion (none without loss). With
 # 5 percent loss a group's packet is missing for k ticks in a row with probability 0.05^k, so a
-# bound of 4 fails by chance about once in three million runs per group.
+# bound of 4 fails by chance about once in three million runs per group. The host's own rows must
+# always show 0.
 MAX_LAG=0
-[ -n "${SIM_LOSS:-}" ] && MAX_LAG=4
+# A loss of 0 (or nothing) is no loss.
+if [ -n "${SIM_LOSS:-}" ] && [ "${SIM_LOSS}" != "0" ]; then MAX_LAG=4; fi
 if ! python3 -I "$ROOT/tests/check_combat_objects.py" "$TMP/host.log" "$TMP/client.log" "$WEAPON" "$MAX_LAG"; then
 	grep -h "^DIAG" "$TMP/host.log" "$TMP/client.log"
 	fail "see above"

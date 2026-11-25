@@ -56,6 +56,7 @@ func _run() -> void:
 	await _test_deflect_and_destroy()
 	await _test_gadgets()
 	await _test_cycle_reset()
+	await _test_cycle_order_in_resolver()
 	await _test_rerun_idempotent()
 	print("%d checks, %d failures" % [_checks, _failures])
 	get_tree().quit(1 if _failures > 0 else 0)
@@ -112,6 +113,8 @@ func _tick(tick: int) -> Array[Hit]:
 	for bot: Bot in _bots:
 		bot.gadgets._rollback_tick(_dt, tick, true)
 	var hits: Array[Hit] = []
+	# As the resolver does, the cycle clean-up comes first.
+	GadgetRules.clear_old_cycle(tick, _pool)
 	GadgetRules.collect(tick, _sorted_bots(), _pool, _pool.solids, _cfg, hits)
 	return hits
 
@@ -1027,6 +1030,63 @@ func _test_cycle_reset() -> void:
 	var snapshot: Dictionary = _snapshot()
 	_tick(start + cycle + 5)
 	_check(_snapshot() == snapshot, "running that tick again changes nothing")
+	MatchSettings.round_start_tick = saved
+
+# The real resolver, on the boundary tick of the test cycle: a shot at a bot behind a plate of the old
+# cycle must hit the bot, because the plate is already gone when the weapon rules look (with the
+# clean-up after them the bullet is used up on the plate, which then disappears, and nobody is hit).
+func _test_cycle_order_in_resolver() -> void:
+	var layout: ArenaLayout = load("res://config/smelter.tres") as ArenaLayout
+	var cycle: int = roundi(_cfg.hazard_cycle_time * float(_cfg.tick_rate))
+	var start: int = 100
+	var saved: int = MatchSettings.round_start_tick
+	await _begin(layout.solid_rects_px(_px))
+	MatchSettings.round_start_tick = start
+	var pickups: Pickups = Pickups.new()
+	pickups.layout = layout
+	add_child(pickups)
+	_nodes.append(pickups)
+	var resolver: CombatResolver = CombatResolver.new()
+	resolver.objects = _pool
+	resolver.pickups = pickups
+	resolver.layout = layout
+	add_child(resolver)
+	_nodes.append(resolver)
+	await get_tree().process_frame
+	var y: float = 15.5 * _px
+	var shooter: Bot = _add_bot(10, 0, Vector2(13.0 * _px, y))
+	var victim: Bot = _add_bot(11, 1, Vector2(18.0 * _px, y))
+	var plate: WorldObject = _pool.launch(ItemIds.OBJECT_PLATE, 1, 11, Vector2(15.0 * _px, y), Vector2.ZERO, start + 50, _cfg)
+	plate.landed = true
+	plate.arm_tick = start + 60
+	var boundary: int = start + cycle
+	shooter.arsenal.last_shot_tick = boundary
+	shooter.arsenal.shot_dir = Vector2.RIGHT
+	var health: float = victim.vitals.health
+	resolver.resolve(boundary, _sorted_bots())
+	_check(not plate.active, "on the boundary tick the old plate is gone")
+	_check(victim.vitals.health < health, "and a shot on that tick at the bot behind it hits the bot (health %.1f of %.1f)" % [victim.vitals.health, health])
+	# A rocket fired on the boundary tick is launched after the clean-up and survives it.
+	await _begin(layout.solid_rects_px(_px))
+	MatchSettings.round_start_tick = start
+	var rocket_pickups: Pickups = Pickups.new()
+	rocket_pickups.layout = layout
+	add_child(rocket_pickups)
+	_nodes.append(rocket_pickups)
+	var rocket_resolver: CombatResolver = CombatResolver.new()
+	rocket_resolver.objects = _pool
+	rocket_resolver.pickups = rocket_pickups
+	rocket_resolver.layout = layout
+	add_child(rocket_resolver)
+	_nodes.append(rocket_resolver)
+	await get_tree().process_frame
+	var gunner: Bot = _add_bot(10, 0, Vector2(13.0 * _px, y))
+	gunner.arsenal.give_weapon(ItemIds.ROCKET_TUBE, _cfg)
+	gunner.arsenal.last_shot_tick = boundary
+	gunner.arsenal.shot_dir = Vector2.RIGHT
+	rocket_resolver.resolve(boundary, _sorted_bots())
+	var fired: WorldObject = _slot_of(ItemIds.OBJECT_ROCKET, 0, 0)
+	_check(fired.active and fired.spawn_tick == boundary, "a rocket fired on the boundary tick is launched after the clean-up and survives it")
 	MatchSettings.round_start_tick = saved
 
 # ---- idempotence ----

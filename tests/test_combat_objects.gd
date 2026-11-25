@@ -228,6 +228,8 @@ func _dump() -> void:
 	var dummy_tick: int = _first_from_host(explode + 1, "dummy_vit_auth")
 	var client_tick: int = _first_from_host(explode + 1, "client_vit_auth")
 	var before: Dictionary = _rows[explode]
+	# Safe only while the dummy and the pinned client stand still before the blast: the row after the
+	# explosion may be this peer's own guess, and a guess is right only for a bot that is not moving.
 	var positions: Dictionary = _rows[explode + 1]
 	var slot_row: Dictionary = _rows.get(slot_tick, positions) as Dictionary
 	var dummy_row: Dictionary = _rows.get(dummy_tick, positions) as Dictionary

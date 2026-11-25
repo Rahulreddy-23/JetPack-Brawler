@@ -308,7 +308,7 @@ failures of 19 on `main`.
 | G-20 | Reapply the 1.1b-N netfox hardening | Already on `main` as patches 1 to 13 | Already fixed |
 | G-21a, b | A rocket that passes a bot and reaches a wall or its range in the same tick explodes past the bot | Confirmed by run; the blast lands at most one tick of travel past the bot (about 5 to 10 of 40 damage) | Accepted with a smaller fix on top of D-11. The independent review of task D found the same fault. Merged |
 | G-21c | A deflected rocket is swept along its new velocity | Was real | Already fixed (D-11, the same code) |
-| G-22 | The gadget cycle reset runs after blasts, plates and throws, and misses skipped ticks | Confirmed by run: a plate on a spawn point launches the fresh bot, a gadget thrown on the boundary tick is wiped, a stall leaves old plates | Accepted. Merged; one ordering detail from its review is in progress (the clean-up should also run before that tick's shots) |
+| G-22 | The gadget cycle reset runs after blasts, plates and throws, and misses skipped ticks | Confirmed by run: a plate on a spawn point launches the fresh bot, a gadget thrown on the boundary tick is wiped, a stall leaves old plates | Accepted. Merged, with the ordering detail from its review (the clean-up also runs before that tick's shots) |
 | G-23 | Pickups never reset between sessions | Confirmed by reading: after Leave then Host a spot can stay empty up to 45 s | Accepted, needed before the phone test. Merged (`4bd6e34`) |
 | G-24 | The oversized-packet warning is not rate limited | Confirmed by run: 1000 packets printed 8003 log lines in 45 ms on the Mac; any device on the hotspot can do it | Accepted, as a new recorded netfox patch. Merged (`a73b845`, patch 14) |
 

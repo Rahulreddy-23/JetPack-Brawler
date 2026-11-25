@@ -34,8 +34,8 @@ Current stage: Prototype, phase 1. Gate not passed.
       Script `docs/reviews/device-checkpoint-1.md`; build of 25 Nov at `b90d525`; not yet run.
 - [x] B Combat core, hazard wiring, dummy, push window. Reviewed, merged (`a170e4b`).
 - [x] C Weapons, melee, pickups. Reviewed, merged (`2ad983e`).
-- [x] D World objects and gadgets. Reviewed twice, merged with its follow-ups. One ordering
-      fix from the last review is in progress (the cycle clean-up should run before shots).
+- [x] D World objects and gadgets. Reviewed twice, merged with its follow-ups and the
+      ordering fix from the last review (the cycle clean-up runs before that tick's shots).
 - [x] E Presentation: effects from state counters, first sight from the host's real state,
       and a health bar that shows only while a bot's health changes. Reviewed, merged.
       Nothing in it can be judged without a phone.
@@ -58,8 +58,8 @@ since.
 In progress, each on its own branch, none on `main`:
 
 1. Done and on `main`: task D's follow-ups (a bot in front of a wall is hit before the wall,
-   the object cycle clean-up, tighter end-to-end tests). One ordering fix from their review
-   is in progress on `worktree-agent-aaec92fe475a64453`.
+   the object cycle clean-up, tighter end-to-end tests) and the ordering fix from their
+   review.
 2. Done and on `main` (`4bd6e34`): pickup session and cycle resets, rocket muzzle, curved
    flick (geminiceo G-15, G-17, G-19, G-23).
 3. Done and on `main` (`a73b845`): rate limit on netfox's oversized-packet warning, patch

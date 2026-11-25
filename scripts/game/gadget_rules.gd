@@ -13,23 +13,28 @@ extends RefCounted
 
 const CombatMath: GDScript = preload("res://combat/combat_math.gd")
 
-## Collect this tick's hits from bombs, blasts and plates, in this order: phase 1 cycle clean-up
-## of objects from an earlier cycle, gadget use, rocket contact, blasts, plate launches. bots are
-## sorted by peer id. The slots take the arena's solid rectangles from WorldObjects.solids, so the
-## solids passed in are not needed here.
-static func collect(tick: int, bots: Array[Bot], objects: WorldObjects, _solids: Array[Rect2], cfg: TuningConfig, hits: Array[Hit]) -> void:
-	# Phase 1 test cycle: every object launched before the start of the current cycle goes, before
-	# anything else runs this tick. Keyed on the object's own spawn tick, not on hitting the boundary
-	# tick exactly, so a stalled host that skipped it still clears the field (like BotVitals' cycle
-	# index), and an object thrown on the boundary tick itself (by a bot that has just respawned)
-	# survives. It reads only state and the tick, so a re-run of the tick gives the same result.
+## Phase 1 test cycle: remove every object launched before the start of the current cycle. The
+## resolver calls this first in a pass, before the weapon rules, so a shot or a swing on the boundary
+## tick no longer finds an object of the old cycle to be used up on. Keyed on the object's own spawn
+## tick, not on hitting the boundary tick exactly, so a stalled host that skipped it still clears the
+## field (like BotVitals' cycle index), and an object launched on the boundary tick itself survives.
+## It reads only state and the tick, so a re-run of the tick gives the same result.
+static func clear_old_cycle(tick: int, objects: WorldObjects) -> void:
 	var into_cycle: int = MatchSettings.hazard_ticks(tick)
-	if into_cycle >= 0:
-		var cycle_start: int = tick - into_cycle
-		if cycle_start > MatchSettings.round_start_tick:
-			for slot: WorldObject in objects.slots():
-				if slot.active and slot.spawn_tick < cycle_start:
-					slot.active = false
+	if into_cycle < 0:
+		return
+	var cycle_start: int = tick - into_cycle
+	if cycle_start <= MatchSettings.round_start_tick:
+		return
+	for slot: WorldObject in objects.slots():
+		if slot.active and slot.spawn_tick < cycle_start:
+			slot.active = false
+
+## Collect this tick's hits from bombs, blasts and plates, in this order: gadget use, rocket contact,
+## blasts, plate launches. bots are sorted by peer id. The cycle clean-up (clear_old_cycle) has
+## already run for this tick. The slots take the arena's solid rectangles from WorldObjects.solids,
+## so the solids passed in are not needed here.
+static func collect(tick: int, bots: Array[Bot], objects: WorldObjects, _solids: Array[Rect2], cfg: TuningConfig, hits: Array[Hit]) -> void:
 	_use_gadgets(tick, bots, objects, cfg)
 	_rocket_contacts(tick, bots, objects, cfg)
 	_blasts(tick, bots, objects, cfg, hits)

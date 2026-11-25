@@ -56,11 +56,12 @@ def main():
         # never on the host, and in a run without loss never at all; under loss a short bound.
         for group in ("slot", "dummy", "client"):
             lag = int(r["lag_" + group])
-            check(lag <= max_lag, "%s: the %s state from the host took %d ticks after the explosion to show up (allowed %d)" % (role, group, lag, max_lag))
+            allowed = 0 if role == "host" else max_lag
+            check(lag <= allowed, "%s: the %s state from the host took %d ticks after the explosion to show up (allowed %d)" % (role, group, lag, allowed))
         # The live nodes at the end of the run hold the same health as the history (-1: bot gone).
         for live, final in (("live_client_hp", "client_hp"), ("live_dummy_hp", "dummy_hp")):
             if float(r[live]) >= 0.0:
-                check(abs(float(r[live]) - float(r[final])) <= DAMAGE_TOLERANCE, "%s: %s is %s but the history ends at %s" % (role, live, r[live], r[final]))
+                check(abs(float(r[live]) - float(r[final])) <= DAMAGE_TOLERANCE, "%s: %s is %s but the history row read after the explosion holds %s" % (role, live, r[live], r[final]))
         expect_dummy, drop_dummy = float(r["expect_dummy"]), float(r["drop_dummy"])
         check(expect_dummy > 0.0, "%s: the dummy is not inside the blast (distance %s bh)" % (role, r["d_dummy"]))
         check(abs(expect_dummy - drop_dummy) <= DAMAGE_TOLERANCE, "%s: the dummy lost %.4f health, the config gives %.4f for %s bh" % (role, drop_dummy, expect_dummy, r["d_dummy"]))
