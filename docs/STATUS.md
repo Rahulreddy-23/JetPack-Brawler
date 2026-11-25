@@ -77,6 +77,36 @@ Current stage: Prototype, phase 1. Gate not passed.
 - [ ] Phase review and `docs/reviews/phase-1-handoff.md` (started: both audits
       are in; their fixes are in progress).
 
+## Resume here (26 Nov 2026, after the 00:55 branch check; usage limit reached)
+
+`main` is clean at `8bccd39` and pushed. The APK in `builds/` is from `1d75eaf` (26 Nov,
+00:04). Reviewer branches last reviewed: `dev` up to `076b37a` (last reviewer commit
+`09018a2`), `geminiceo` at `6bd7477`; nothing new at 00:55. No agent is running. The
+10-minute branch check was stopped; set it up again on resume.
+
+Not merged: the patch 15 follow-up, branch `worktree-agent-abdc8cb18a9ad9d79` at `37e21bf`.
+It contains `main` and changes 7 files (`addons/NETFOX_PATCHES.md`,
+`addons/netfox/servers/rollback-simulation-server.gd`, `scripts/dev/smoke_probe.gd`,
+`tests/net_late_input.sh`, `tests/net_smoke.sh`, `tests/test_hole_rule.gd`,
+`tests/test_host_late_input.gd`). What it does, by the implementer's report, not yet
+verified by me or the reviewer:
+
+- fixes G-32 (earliest expired gap across all remote players);
+- fixes a defect in the merged patch 15: with 75 ms latency the host refused an honest
+  client's first input in 2 of 3 runs, because a just-spawned bot's seeded state looked
+  like a carry-over. The build of 00:04 has this defect;
+- honest test runs now assert zero refused inputs;
+- implementer's suite: 59 pass.
+
+Known and not fixed in it: under 150 ms jitter a join whose first input is 7 ticks late
+can send one state and replace it (3.2 px), about 1 or 2 of 36 runs, cause not found;
+`late_input` fails about 1 run in 5 with "the hold made no hole" (test design).
+
+Order to resume: (1) send `git diff main 37e21bf -- addons scripts tests` with the task
+statement to the code reviewer; (2) verify its findings; (3) merge onto `main`, run the
+full suite; (4) commit, push, mark G-32 merged here and in the findings file; (5) rebuild
+the APK and update the build lines in both device-checkpoint scripts.
+
 ## Where work stands (25 Nov 2026, morning)
 
 On `main`, reviewed and pushed: movement, foundation, combat core (B), weapons (C), world
