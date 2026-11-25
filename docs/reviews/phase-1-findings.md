@@ -16,8 +16,8 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `09018a2` | 25 Nov 2026 22:22 | No reviewer commit since `09018a2` (D-17); later commits up to `1c4cf2e` only merge `main`. |
-| `geminiceo` | `2ee2aba` | 25 Nov 2026 22:22 | One reviewer commit, `2ee2aba` (iteration 14: finding G-31, accepted). `cb00be4` only merges `main`. |
+| `dev` | `09018a2` | 25 Nov 2026 23:51 | No reviewer commit since `09018a2` (D-17); later commits up to `3438439` only merge `main`. |
+| `geminiceo` | `39a4a86` | 25 Nov 2026 23:51 | One reviewer commit, `39a4a86` (iteration 15: a clean audit of the G-31 fix; the reviewer reports no open findings left on its side and removes its own test file). `63ef1e2` and `9f0e422` only merge `main`. |
 
 ## Findings
 
@@ -433,6 +433,10 @@ for recoil. Noted; no change.
 | Id | Finding | Verified | Outcome |
 |---|---|---|---|
 | G-31 | One more decoder turns a peer's bytes into text unchecked: a subject named by full name (id 0) in any snapshot frame is read as a null-terminated string and decoded as UTF-8, at one engine error line per invalid byte, before the sender's ownership is checked | Path confirmed by reading: `_NetworkIdentityReferenceSerializer.decode` calls `_CStringSerializer.decode` for id 0, and the dense, sparse and redundant serializers decode a reference at the start of every frame. Patch 16's sweep had marked it "bounded by the bytes left", which is true of its length and not of its log lines, and the security review passed it. The reviewer measured 15,000 lines and 100 ms for a 15 KB packet under its own size cap; ours is smaller | Accepted and merged. Measured on `main` before the fix: 4,051 lines and 36 ms for a full input packet, 1,011 lines for a state packet; after it, 0 lines. A second sweep, of every place a peer's bytes become text or a node path, is in the patch notes (section 16, part E) and found no other reachable site inside netfox |
+
+Iteration 15 (`39a4a86`) audited the G-31 fix as merged and found nothing. The reviewer
+states that every finding of its that was accepted, G-1 to G-31, is now on `main`, and it
+removed its own test file from its branch. Noted; no change.
 
 A note for the architecture: `rocket_step_start` (D-11) is written during the rollback tick
 without being registered state. That is safe because only the host reads it and rewrites
