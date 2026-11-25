@@ -210,6 +210,21 @@ func _test_flick_curve_and_pull_back() -> void:
 	_frames(30, 0.5)
 	_check(_true_ticks("fire").size() == 1, "pulling the thumb back inside the ring and lifting gives no extra shot at the old aim (%d fire ticks)" % _true_ticks("fire").size())
 
+	# Cross the ring, curve while still outside it, pull back inside and lift, all between two
+	# ticks: the shot goes where the thumb last was outside the ring, not where it first crossed.
+	_fresh()
+	_touch(0, _aim_start(), true)
+	_drag(0, _aim_start() + Vector2(radius, 0.0))
+	_drag(0, up)
+	var inside: Vector2 = _aim_start() + Vector2(0.0, -radius * _cfg.fire_ring_fraction * 0.5)
+	_drag(0, inside)
+	_touch(0, inside, false)
+	_frame(30)
+	aim = _input.aim as Vector2
+	_check(_input.fire == true and aim.y < -0.9 and absf(aim.x) < 0.3, "a flick that curves and is pulled back inside the ring before a tick fires along the curve (aim %s)" % aim)
+	_frames(30, 0.5)
+	_check(_true_ticks("fire").size() == 1, "and gives one shot")
+
 # A hold past the ring across several ticks, a swing of the thumb and a lift outside the ring:
 # one fire tick per tick the thumb was down past the ring, none after the lift.
 func _test_hold_then_lift_outside_ring() -> void:
