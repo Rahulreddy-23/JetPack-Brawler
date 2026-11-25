@@ -16,7 +16,7 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `782da7b` | 25 Nov 2026 09:25 | Two reviewer commits: `2ce67fc` (finding D-10, open, being reproduced) and `782da7b` (finding D-11, accepted). `521903f` and later merge commits only merge `main`. |
+| `dev` | `782da7b` | 25 Nov 2026 09:19 | Two reviewer commits: `2ce67fc` (finding D-10, open, being reproduced) and `782da7b` (finding D-11, accepted). `521903f` and later merge commits only merge `main`. |
 | `geminiceo` | `60fabd3` | 24 Nov 2026 23:26 | One reviewer commit, `60fabd3` (follow-up check: findings G-13 and G-14, decided below; its one code change only brings the branch's future-tick bound in line with `main`). `290ac58` only merges `main`. |
 
 ## Findings
