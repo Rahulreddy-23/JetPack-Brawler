@@ -25,7 +25,9 @@ Current stage: Prototype, phase 1. Gate not passed.
       game still plays as movement only.
 - [ ] When a burst of a client's input packets is late, the host sends states for that bot
       that are one step behind, for every player (dev finding D-10). It is upstream netfox
-      behaviour. Cause found and reproduced on demand; fix in progress as netfox patch 15.
+      behaviour. Cause found and reproduced on demand. Netfox patch 15: the first version
+      was rejected in review (it replayed a paused player's last input); a second version
+      that never invents input is in progress.
 - [x] `net_blast_bomb_loss` failed about 3 runs in 16. Cause: the test read the one tick
       after the blast, and under loss the client can hold its own guess for that tick until
       the next state arrives. The game was right. The check now reads the first tick whose

@@ -165,11 +165,22 @@ these.
 - Options measured: an input delay of 2 ticks made no difference. Letting the host predict
   with the last known input removed it but would repeat one-tick button presses (melee,
   swap, dash, gadget). Not building on a carried-over start state removed it in a prototype.
-- Outcome: accepted. Fix in progress as netfox patch 15: the host does not simulate a bot
-  from a carried-over start state while the gap is open, and fills a gap that can no longer
-  be filled (older than the redundancy window) with the last known input so the bot cannot
-  freeze. The smoke test's comparison rule is corrected in the same change: it compared a
-  tick whenever that tick's own input matched, which is not enough.
+- Outcome: accepted. Fix in progress as netfox patch 15. First version (25 Nov): the host
+  does not simulate a bot from a carried-over start state while the gap is open, and fills
+  a gap that can no longer be filled with the last known input. Measured: no wrong states
+  for inputs 1 to 6 ticks late, and the smoke test at 300 ms jitter went from 9 failures
+  in 10 to none.
+- That version was not merged. Its independent review found the fill wrong (the lead's
+  design): a player who stops sending input for a second, for example with the app in the
+  background, is treated like a lost packet, and on return the host replays the last input
+  for the whole pause; the bot was driven about 390 px and burned a second of fuel. A
+  one-tick press before a lost input was applied twice, a joining bot started 5 to 6 ticks
+  late, and the fill could fire before a late input arrived.
+- Second version, in progress: no input is ever invented. A gap the host has waited on for
+  twice the redundancy window (8 ticks) is accepted as a tick on which the bot did not
+  act, which is what netfox itself ends up with, and play continues from there. A tick
+  before a bot's first input is not a gap. The smoke test's comparison rule is corrected
+  in the same change.
 
 ### D-11 (dev, `782da7b`): a deflected rocket was checked against a path it never flew
 
