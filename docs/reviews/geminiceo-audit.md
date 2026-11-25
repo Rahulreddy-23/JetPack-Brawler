@@ -485,3 +485,29 @@ Merged `origin/main` (`50f7445..dc56a86`: D-16 `melee_dir` in `509e41b` and acce
 ### CEO Review (Iteration 10)
 1. **Clean convergence toward the Phase 1 APK:** `G-28` and `G-29` are accepted into netfox patch 16 alongside log-flood hardening, the push-distance fix is actively in progress (`3a0bafb` on its worktree), and `D-16` closed the last presentation-direction overlap.
 2. **Next gate:** Once push distances, patch 15 (past-tick input bound + D-10), and patch 16 (`G-28`/`G-29` + log limits) merge, cut the fresh debug APK and run Rahul's two-phone playtest immediately before starting Dabba.
+
+
+---
+
+## Iteration 11 Audit Update (25 Nov 2026 18:50 — against `origin/main` `cf0dfdd`)
+
+Merged `origin/main` (`dc56a86..cf0dfdd`: Iteration 10 recorded in `67ff235`; `cf0dfdd` recorded the `net_fx` 1-in-10 flake and push-fix second round). Diagnosed the exact cause of the `net_fx` flake (`G-30`).
+
+### New Confirmed Finding
+
+#### 30. Root cause & fix for `net_fx` 1-in-10 flake (`cf0dfdd`): `_wait_ticks(10)` starts before `NetworkTime.is_initial_sync_done()`, so the initial tick jump (`0 -> host tick`) bypasses the rollback loop
+- **Severity:** medium (test flake in `tests/test_fx_net.gd`; `EffectsDirector` itself is unaffected)
+- **Category:** Crashes and logic bugs (test harness timing)
+- **Location:** `tests/test_fx_net.gd:89-92, 141-147` (`_wait_ticks`, `_run_client`), interacting with `addons/netfox/network-time.gd:429-459` (`start`)
+- **What happens and how to trigger it:** On connect, `NetworkTime._tick` starts at `0` while `_initial_sync_done` is `false`. Because the host already has `Bot0` (dummy) and `Obj2` (`_bomb_slot()`) active from tick 0, `MultiplayerSpawner` replicates `Bot0` and netfox merges host snapshots for `dummy.vitals`, `dummy.arsenal`, and `_bomb_slot()` while `NetworkTime.tick == 0` (setting `has_authoritative_state == true` before initial clock sync finishes). `_run_client` then exits line 141 with `NetworkTime.tick == 0` and calls `_wait_ticks(10)` (`until = 10`). On the frame `NetworkTimeSynchronizer.on_initial_sync` fires, `NetworkTime` jumps `_tick` directly from `0` to the host tick (~20–30, `>= 10`) and sets `_next_tick_time = _clock.get_time()` (`ticks_in_loop == 0` on that frame). `_wait_ticks(10)` returns immediately before any rollback loop has copied the merged host state onto the live nodes, so line 146 reads zeros (`hits 0, shots 0, blasts 0`). `EffectsDirector._has_real_state` is unaffected because it gates on `_loops > watch.armed_at_loop`.
+- **Suggested fix:** Include `not NetworkTime.is_initial_sync_done()` in the wait loop at `tests/test_fx_net.gd:141` and `await NetworkRollback.after_loop` before `await _wait_ticks(10)` so `_wait_ticks` never computes `until` from pre-sync tick `0` and always runs after at least one finished rollback loop. *(Fixed on `geminiceo`.)*
+
+### Areas With No New Findings (Iteration 11)
+- No production code changed in `dc56a86..cf0dfdd` (docs only). All 9 security/bug categories remain clean beyond active `G-28`/`G-29` (in progress for netfox patch 16).
+
+### Could Not Check (Iteration 11)
+- Running `tests/net_fx.sh` end-to-end (loopback UDP blocked in sandbox); real Android device testing.
+
+### CEO Review (Iteration 11)
+1. **Strong engineering discipline on the push-distance fix (`cf0dfdd`):** Rejecting the first push fix because 30 rapid bolts stacked to 19.6 bh (vs 3 bh design) prevented a huge gameplay balance bug from sneaking into the phone test.
+2. **All three blockers (`push distances`, `patch 15`, `patch 16` incl. `G-28`) are clearly scoped:** Once they land and `net_fx` stops flaking (`G-30`), build the APK and get two phones into Rahul's hands.

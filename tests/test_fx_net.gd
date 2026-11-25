@@ -137,10 +137,13 @@ func _describe_events() -> String:
 	return ", ".join(parts)
 
 func _run_client() -> void:
-	# Bots can be replaced while the session settles, so look them up each time.
-	while _dummy() == null or not (NetworkHistoryServer.has_authoritative_state(_dummy().vitals) and NetworkHistoryServer.has_authoritative_state(_dummy().arsenal) and NetworkHistoryServer.has_authoritative_state(_bomb_slot())):
+	# Wait for initial clock sync as well as host state: state packets can merge while NetworkTime.tick
+	# is still 0, and the initial sync jump (0 -> host tick) would otherwise satisfy _wait_ticks(10)
+	# immediately before any rollback loop has copied merged state onto the live nodes.
+	while not NetworkTime.is_initial_sync_done() or _dummy() == null or not (NetworkHistoryServer.has_authoritative_state(_dummy().vitals) and NetworkHistoryServer.has_authoritative_state(_dummy().arsenal) and NetworkHistoryServer.has_authoritative_state(_bomb_slot())):
 		await get_tree().process_frame
-	# Let the display state catch up with the host's state, then look at what the director showed.
+	# Let the display state catch up with the host's state (after at least one finished rollback loop).
+	await NetworkRollback.after_loop
 	await _wait_ticks(10)
 	var dummy: Bot = _dummy()
 	_check(dummy.vitals.hits_taken == OLD_HITS and dummy.arsenal.shots_fired == OLD_SHOTS and _bomb_slot().launches == 1 and _bomb_slot().blasts == 1, "the client holds the host's old state (hits %d, shots %d, bomb launches %d, blasts %d)" % [dummy.vitals.hits_taken, dummy.arsenal.shots_fired, _bomb_slot().launches, _bomb_slot().blasts])
