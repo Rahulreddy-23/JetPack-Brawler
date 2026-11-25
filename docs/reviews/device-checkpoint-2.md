@@ -4,11 +4,10 @@ For Rahul. This is the play test behind the phase 1 gate: is flying around and k
 dummy bot into the hazard fun for 10 minutes, and does it stay in sync between two phones.
 It is not the gate itself; you decide that afterwards.
 
-Build: `builds/jetpack-brawler-debug.apk`, made from `main` at `8ccb4b7` on 25 Nov 2026,
-16:14. 28.6 MB, package `com.jetpackbrawler.prototype`, 64-bit ARM only, Android target 36,
+Build: `builds/jetpack-brawler-debug.apk`, made from `main` at `e5f9fec` on 25 Nov 2026,
+16:47. 28.6 MB, package `com.jetpackbrawler.prototype`, 64-bit ARM only, Android target 36,
 one permission (internet). The build is not in the repository; it is on this Mac only. On
-the Mac the full test suite passes on this commit's parent (51 of 51) and the tests the
-last change touches pass on this commit.
+the Mac the full test suite passes on this commit (51 of 51).
 
 Nothing in this build has run on a phone. Everything below is unverified until you do it.
 Two fixes are still in progress and are not in this build; see "Known limits".

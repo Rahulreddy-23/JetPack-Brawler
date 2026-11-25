@@ -31,7 +31,7 @@ Current stage: Prototype, phase 1. Gate not passed.
       state packet was lost and which the check should not read; not yet proven. With the
       task D implementer.
 - [ ] Device checkpoint 1 (Rahul): sticks, jetpack and dash on two phones over a hotspot.
-      Script `docs/reviews/device-checkpoint-1.md`; build of 25 Nov at `8ccb4b7`; not yet run.
+      Script `docs/reviews/device-checkpoint-1.md`; build of 25 Nov at `e5f9fec`; not yet run.
 - [x] B Combat core, hazard wiring, dummy, push window. Reviewed, merged (`a170e4b`).
 - [x] C Weapons, melee, pickups. Reviewed, merged (`2ad983e`).
 - [ ] D World objects and gadgets. Merged; the fix round still needs its independent review.
