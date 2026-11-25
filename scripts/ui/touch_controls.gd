@@ -191,10 +191,11 @@ func _drag(index: int, pos: Vector2) -> void:
 	queue_redraw()
 
 func _update_aim(pos: Vector2) -> void:
+	var was_firing: bool = _is_fire_held()
 	_aim.position = pos
 	_aim_max_px = maxf(_aim_max_px, pos.distance_to(_aim.origin))
-	if _is_fire_held():
-		# Keep the latest aim past the fire ring in case the finger lifts before the next tick.
+	if _is_fire_held() and (not was_firing or InputActions.pending_touch_fire_aim != Vector2.ZERO):
+		# Arm on crossing, and keep updating the angle until BotInput samples it on the next tick.
 		InputActions.pending_touch_fire_aim = _aim.value(_cfg.stick_radius_px)
 
 func _press(button: TouchButton, index: int) -> void:

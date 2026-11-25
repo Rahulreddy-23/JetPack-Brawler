@@ -295,3 +295,36 @@ Merged `origin/main` (`8ec8146..f479130`: `1.1b-N` netfox hardening patches 1..1
 1. **Huge technical milestone landed:** Netfox hardening (`c69179c`, patches 1..13), the ENet throttle fix (`242e7b4`), and Task D (`f479130`: Cooker Bomb, Spring Plate, rockets, deflection, idle-slot send throttling) are all on `main` with 48/48 passing on the lead's machine. Throttling idle world-object slots (`object_idle_send_interval = 1.0 s`) directly addresses the bandwidth spike from Iteration 2/3!
 2. **Finish Task E and get onto two phones immediately:** Task E (presentation/effects) is the only remaining piece before Device Checkpoints 1 & 2. Do NOT start Task 1.6 (Dabba) until Rahul plays the 10-minute knockback sandbox on two real Android phones over a hotspot — especially to validate ENet `throttle_deceleration = 0` on real Wi-Fi/hotspot packet loss and test the aim-ring flick + melee/gadget thumb ergonomics on actual screens.
 3. **Bandwidth & diff-states decision:** Keeping `enable_diff_states = false` for Phase 1 is the right pragmatic call (avoiding lost-diff stale state without a custom packet reference tick), provided idle-slot throttling keeps 4-player hotspot bandwidth comfortably inside budget during Device Checkpoint 2. Measure host upload KB/s with 4 bots firing/throwing during the phone test.
+
+
+---
+
+## Iteration 5 Audit Update (25 Nov 2026 09:50 — against `origin/main` `0c8e6a4`)
+
+Merged `origin/main` (`f479130..0c8e6a4`: `D-11` deflected rocket swept path `39339bc`, netfox `has_authoritative_state(subject: Variant)` freed-object guard & mutation tests `d13f90d`, open jitter finding `D-10` `4c28880`, and `G-15..G-24` decisions `2787aaf`). Aligned `geminiceo` with `2787aaf`:
+- Reverted `scripts/ui/hud.gd` to `origin/main` (`G-18` rejected).
+- Tightened `scripts/ui/touch_controls.gd` (`G-19`) so `_update_aim` only updates `pending_touch_fire_aim` on initial crossing (`not was_firing`) or while an unsampled crossing is still pending (`pending_touch_fire_aim != Vector2.ZERO`), eliminating the extra shot when a thumb is pulled back inside the fire ring after a sampled tick.
+- Trimmed `tests/test_security_audit.gd` so every check strictly tests an active `geminiceo` fix (`G-15, G-17, G-19, G-21a/b, G-22, G-23, G-24`) and fails on unpatched `main`.
+
+### Audit of New Commits (`39339bc..0c8e6a4`) & Root-Cause Proof for Open Finding `D-10`
+
+#### 25. Root-cause mechanism & combat impact of open finding `D-10` (two-tick stale authoritative state under UDP jitter)
+- **Severity:** medium (visual snap on own bot under jitter; also affects re-simulated combat hits under jitter)
+- **Category:** Desync
+- **Location:** `addons/netfox/servers/network-history-server.gd:181-190` (`_record_rollback_state`) and `addons/netfox/servers/network-history-server.gd:221-229, 321-345` (`_merge_rollback_state` / `_merge_history`)
+- **What happens and how to trigger it:** Under `SIM_JITTER_MS=150` (0% packet loss, independent 0..150 ms per-packet delay, so packets reorder), two netfox behaviours combine to produce the exact 2-tick, 1-step-behind settled trace mismatch recorded in `D-10`:
+  1. **Out-of-order input hole stamped `is_auth = true` on the host:** With `input_redundancy = 3` and `enable_prediction = false`, suppose client packets `P(u), P(u+1), P(u+2)` (the three packets carrying `input[u]`, e.g. `u = 194`) draw high jitter delays while `P(u+3)` (carrying `[197, 196, 195]`) draws a small delay and arrives first. On Host Pass 1, tick `194` is not simulated (`state[195]` holds `pos(194)` with `is_auth = false`), **but** `input[195]` and `input[196]` are present, so `RollbackSimulationServer.simulate` runs ticks `195` and `196` starting from `pos(194)` (one step behind!). `_record_rollback_state(196)` and `(197)` check only `RollbackSimulationServer._is_predicting(input_snapshot, subject)` (which checks `input` at `tick - 1` alone, ignoring that `state[tick - 1]` was not authoritative) and stamp `@196_wrong` and `@197_wrong` as `is_auth = true`, sending both to the client.
+  2. **Out-of-order state delivery overwrites Pass 2's repair on the client:** One frame later, `P(u+2)` arrives with `input[194]`. Host Pass 2 re-simulates `194..197` and sends `@195_right, @196_right, @197_right, @198_right`. If Pass 2's packets arrive *after* Pass 1's, `_merge_rollback_state` repairs the client's history cleanly. However, when `NetSim` delays Pass 1's `@196_wrong`/`@197_wrong` *past* Pass 2's `@196_right`/`@197_right`, `_merge_history` has no per-peer send sequence number and overwrites the newer authoritative state for ticks `196` and `197` with the older Pass-1 state, while `@198_right` (never sent in Pass 1) leaves tick `198` onward exact. Note that Step 2 also applies to multi-player combat without any input reordering: if Host Pass 1 sends `Victim @(T+1)` before Shooter's tick-`T` shot arrives and Host Pass 2 sends `Victim @(T+1)` with damage/push, UDP reordering of those two state packets overwrites the hit at `T+1` until `T+2` arrives.
+- **Suggested fix:** First, in `_record_rollback_state(tick)`, do not mark `subject` authoritative when `not _rb_state_history.is_auth(tick - 1, subject)` and an earlier authoritative input exists within a bounded reorder window (e.g., `2 * input_redundancy` ticks, so genuine 3-packet loss bursts under `SIM_LOSS` still resume sending promptly instead of stalling for `history_limit` ticks). Second, if full elimination of reordered re-sent states (including combat hits) is desired, attach a monotonic per-peer packet sequence `u32` so `_merge_history` ignores an authoritative state for `(subject, tick)` from an older packet than one already merged for `(subject, tick)`. *(Documented for the active `D-10` investigation rather than altering netfox wire format mid-round.)*
+
+### Areas With No New Findings (Iteration 5)
+- **`d13f90d` (`has_authoritative_state(subject: Variant)`):** Cleanly handles freed objects, `null`, non-`Object` `Variant`s, refused ticks, unauthorized senders, and `deregister()`.
+- **`39339bc` (`D-11` deflected rocket swept path):** Clean and deterministic.
+- **Crashes/logic bugs, Network trust, DoS, Untrusted input, Purchases/unlocks, Android/privacy, Repository hygiene, Performance:** None found in `39339bc..0c8e6a4`.
+
+### Could Not Check (Iteration 5)
+- Multi-process loopback UDP tests (`net_*.sh`) and `test_full_state_coverage.tscn` (loopback UDP blocked in sandbox); real Android hotspot play.
+
+### CEO Review (Iteration 5)
+1. **Tight review-to-architecture loop:** Seven `geminiceo` findings (`G-15, G-17, G-19, G-21a/b, G-22, G-23, G-24`) and `D-11` are now locked into `docs/ARCHITECTURE.md` and entering `main`'s fix rounds.
+2. **Pragmatic call on `D-10` for Phase 1:** `D-10` is a 1-tick (~10 px, 33 ms) transient snap under heavy 150 ms packet-reordering jitter that self-heals on the very next tick (`enable_diff_states = false`). Fixing the host input-hole `is_auth` check (bounded by a small reorder window so 5% packet loss never starves state updates) is cheap and worthwhile; do **not** let `D-10` block finishing Task E and getting the build onto two real Android phones for Device Checkpoints 1 & 2.
