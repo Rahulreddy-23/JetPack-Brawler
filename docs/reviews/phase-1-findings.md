@@ -16,7 +16,7 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `6642a86` | 25 Nov 2026 18:07 | One reviewer commit, `6642a86` (finding D-15, accepted). `91ed3de` only merges `main`. |
+| `dev` | `8a5d657` | 25 Nov 2026 18:13 | One reviewer commit, `8a5d657` (finding D-16, accepted). `942403b` only merges `main`. |
 | `geminiceo` | `59afd33` | 25 Nov 2026 17:41 | One reviewer commit, `59afd33` (iteration 8: a clean audit of D-14 and task D's follow-ups, no findings). `b6b4bab` only merges `main`. |
 
 ## Findings
@@ -256,6 +256,23 @@ these.
   the script, and it is more exact about which checks are affected (the rocket's push in
   check 10 was missing from the warning).
 - Outcome: accepted and cherry-picked onto `main`.
+
+### D-16 (dev, `8a5d657`): a swing and a shot shared one direction
+
+- Change: the arsenal records the direction of a melee swing in its own state property,
+  `melee_dir`, instead of writing it into `shot_dir`. The swing's hits and its arc use
+  `melee_dir`; the muzzle flash and tracer keep `shot_dir`. Two new checks in
+  `tests/test_fx_director.gd`; the state lists in three tests and the architecture's state
+  table are updated.
+- Verified: yes. A swing on one tick and a shot on the next, aimed differently, left one
+  direction for both by the time the frame was drawn, so the swing's arc was drawn along
+  the shot, or the flash along the swing. On the tick itself the hits were right, because
+  both were written on the same tick. With the change the effects, weapons, foundation and
+  combat rules tests pass (116, 197, 122 and 150 checks) and the two-process fire, effects,
+  smoke and combat tests pass; with the swing drawn from `shot_dir` again the two new
+  checks fail.
+- Outcome: accepted and cherry-picked onto `main`. It adds one direction per bot to the
+  state sent each tick.
 
 ## geminiceo audit (`e66eee1`)
 

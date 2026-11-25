@@ -114,7 +114,7 @@ static func _cast(shooter: Bot, a: Vector2, b: Vector2, bots: Array[Bot], object
 # A swing: bots in the arc get a hit pushed away from the swinger; bombs and rockets in it
 # are sent back along the swing. Walls stop a swing: a target behind one is not reached.
 static func _collect_melee(tick: int, shooter: Bot, bots: Array[Bot], objects: WorldObjects, solids: Array[Rect2], cfg: TuningConfig, hits: Array[Hit]) -> void:
-	var dir: Vector2 = shooter.arsenal.shot_dir.normalized()
+	var dir: Vector2 = shooter.arsenal.melee_dir.normalized()
 	if dir == Vector2.ZERO:
 		return
 	var apex: Vector2 = shooter.center()
