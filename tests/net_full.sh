@@ -45,6 +45,9 @@ BOTS=$(grep "^FINAL" "$TMP/host.log" | grep -vc " peer=0 ")
 echo "host saw $BOTS bots"
 grep -h "SESSION_ENDED" "$TMP/c4.log" "$TMP/c1.log" "$TMP/c2.log" "$TMP/c3.log" | sed 's/^/client message: /'
 if grep -q "SCRIPT ERROR\|^ERROR" "$TMP"/*.log; then echo "FAIL: script errors"; grep -H -B3 "SCRIPT ERROR\|^ERROR" "$TMP"/*.log | head -20; exit 1; fi
+if grep -q "Refusing identity packet" "$TMP"/*.log; then
+	echo "FAIL: an identity packet was refused"; grep -h "Refusing identity packet" "$TMP"/*.log | head -3; exit 1
+fi
 [ "$BOTS" -eq 4 ] || { echo "FAIL: expected exactly 4 bots"; exit 1; }
 grep -q "SESSION_ENDED Match full" "$TMP/c4.log" || { echo "FAIL: fifth player was not told the match is full within 8 s"; exit 1; }
 for n in 1 2 3; do grep -q "SESSION_ENDED" "$TMP/c$n.log" && { echo "FAIL: client $n was dropped"; exit 1; }; done

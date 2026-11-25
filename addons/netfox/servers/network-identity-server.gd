@@ -39,8 +39,23 @@ static var _logger := NetfoxLogger._for_netfox("NetworkIdentityServer")
 
 const _WARN_QUEUE_SIZE := 128
 
-# PATCH (geminiceo G-28): cap incoming identity packets to bound work and memory
-var max_incoming_packet_size: int = 16384
+# PATCH (see addons/NETFOX_PATCHES.md): how big an identity packet may be. A peer
+# sends the identities of the nodes it has registered, and an honest client
+# registers a small, known number: 4 pickup spots, 24 world object slots, and for
+# each of up to 5 bots the bot, its Vitals, Arsenal, Gadgets and Input nodes.
+# That is 4 + 24 + 5 * 5 = 53 entries in total, and the largest packet seen in
+# the project's sessions (4 players, late joiners) had 26 entries in 893 bytes,
+# the longest name 37 bytes. The limits are twice the total count, and a name of
+# up to 128 bytes, so they are about 4 and 16 times what a real session sends.
+const _HONEST_ID_COUNT := 4 + 24 + 5 * 5
+const _ID_COUNT_HEADROOM := 2
+const _MAX_ID_ENTRIES := _HONEST_ID_COUNT * _ID_COUNT_HEADROOM
+# 4 bytes of string length, the name, and a varuint of at most 5 bytes
+const _MAX_ID_NAME_BYTES := _IdentityPacketSerializer.MAX_NAME_BYTES
+const _MAX_ID_ENTRY_BYTES := 4 + _MAX_ID_NAME_BYTES + 5
+const _MAX_ID_PACKET_BYTES := _MAX_ID_ENTRIES * _MAX_ID_ENTRY_BYTES
+
+var _refusal_limit := _PeerRateLimit.new() # PATCH: peer to the time of its last refusal warning
 
 func _init(p_command_server: _NetworkCommandServer = null) -> void:
 	_command_server = p_command_server
@@ -87,9 +102,14 @@ func erase_peer(peer: int) -> void:
 	_logger.debug("Erasing data for peer #%d", [peer])
 
 	_push_queue.erase(peer)
+	_refusal_limit.erase_peer(peer)
 	_identifier_by_id.erase(peer)
 	for identifier in _identifiers.values():
 		(identifier as _NetworkIdentifier).erase_id_for(peer)
+
+## Forget what is kept about peers, called by [method _NetworkTime.stop]
+func reset() -> void:
+	_refusal_limit.clear()
 
 ## Clear all identities
 func clear() -> void:
@@ -97,6 +117,7 @@ func clear() -> void:
 	_identifier_by_name.clear()
 	_identifier_by_id.clear()
 	_identifier_by_local_id.clear()
+	_refusal_limit.clear()
 	_next_id = 0
 
 ## Queue sending the numeric ID of [param node] to [param peer]
@@ -193,13 +214,25 @@ func _erase_from_id_cache(identifier: _NetworkIdentifier) -> void:
 			_identifier_by_id.erase(peer)
 
 func _handle_ids(sender: int, data: PackedByteArray) -> void:
-	if max_incoming_packet_size > 0 and data.size() > max_incoming_packet_size:
+	# PATCH: a packet over the limits is refused before it is read, or after, if
+	# it is small but made of many short names; logged at most once per second per peer
+	# A packet that is cut, has a name over _MAX_ID_NAME_BYTES or a byte of 0x80 or more in
+	# a name reads as no entries at all
+	var ids := {}
+	if data.size() <= _MAX_ID_PACKET_BYTES:
+		ids = _packet_serializer.deserialize(data, _MAX_ID_ENTRIES + 1)
+	if data.size() > _MAX_ID_PACKET_BYTES or ids.size() > _MAX_ID_ENTRIES or (ids.is_empty() and not data.is_empty()):
+		if _refusal_limit.allow(sender):
+			_logger.warning("Refusing identity packet of %d bytes from #%d, over the limit of %d bytes or %d entries, or malformed, or a name over %d bytes or not ASCII", [data.size(), sender, _MAX_ID_PACKET_BYTES, _MAX_ID_ENTRIES, _MAX_ID_NAME_BYTES])
 		return
-	var ids := _packet_serializer.deserialize(data)
+
+	# PATCH: one line per packet, and one per entry only at trace level (it was
+	# one INFO line per entry), so the cost of a packet is bounded by the limits above
+	_logger.debug("Received %d IDs from #%d", [ids.size(), sender])
 
 	for full_name in ids:
 		var id := ids[full_name] as int
-		_logger.info("Received ID #%d for %s from #%d", [id, full_name, sender])
+		_logger.trace("Received ID #%d for %s from #%d", [id, full_name, sender])
 		var identifier := _get_identifier_by_name(full_name)
 		if not identifier:
 			# Deleted since then

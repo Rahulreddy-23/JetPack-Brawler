@@ -75,9 +75,15 @@ host reads a client's input.
   input, then send it with hindsight (hits land late, hits on it are undone), and by
   staying behind could make the host replay 64 ticks every frame. The bound is being added
   with netfox patch 15, using the same allowance as its gap rule.
-- Not validated, being corrected: three more log lines any connected device can trigger
-  without limit, one of them before it is accepted (identity packets: 10,000 lines from
-  one packet; unknown command index; tick rate mismatch). Netfox patch 16.
+- Was not validated, corrected in netfox patch 16: three log lines any connected device
+  could trigger without limit, one of them before it is accepted.
+- Found by the external reviewer and corrected in the same patch: one 4-byte packet crashed
+  the host, because the engine allocates a length taken from the packet before checking
+  the bytes left. Every read that takes a length or count from a packet is now checked
+  first, join packets are bounded and must be plain ASCII, clock messages must have their
+  exact size and type, and only fixed-size values are decoded.
+- Still open, before strangers can join: there is no limit on how fast a device may send
+  packets, and the engine's own network layer below netfox has not been examined.
 - Noted for phase 2: leaving and rejoining gives a fresh bot at full health with no
   respawn wait, which matters once there is scoring. A modified client can aim perfectly;
   the host cannot tell.

@@ -40,16 +40,18 @@ Current stage: Prototype, phase 1. Gate not passed.
       heights); to be judged on phones. Builds up to 16:59 on 25 Nov have the old weak
       pushes.
 - [ ] From the authority audit: the host accepts input up to 2 seconds late and replays the
-      match from there (being bounded with netfox patch 15), and three more log lines can
-      be flooded by any connected device (netfox patch 16, in progress).
-- [x] `net_fx` failed about 1 run in 10 under load: the test's wait began before the client's
-      first clock sync, so its ten-tick wait ended before any state was copied onto the
-      nodes (geminiceo G-30, confirmed). The test waits correctly now: 0 failures in 120.
-      The effects were not at fault.
-- [ ] One 4-byte identity packet crashes the host (geminiceo G-28, confirmed). Fix in
-      progress in netfox patch 16. Every build so far has it.
+      match from there. Being bounded with netfox patch 15 (second version under review).
+      Its other finding, three log lines any device could flood, is fixed in patch 16.
+- [x] One 4-byte packet crashed the host (geminiceo G-28, confirmed): the engine allocated a
+      length taken from the packet before checking the bytes left, and every synchronised
+      value went through the same call. Fixed in netfox patch 16 with a sweep of every read
+      that takes a length from a packet, bounds on join packets, and limits on three log
+      floods. Reviewed twice; approved for play with friends. The last stall the review
+      named (malformed fixed-size values, about 1,000 log lines per packet) is fixed too.
+      With no per-peer packet rate limit and the engine's own network layer unexamined,
+      the game is not yet fit for strangers. Builds up to 21:01 on 25 Nov have the crash.
 - [ ] Device checkpoint 1 (Rahul): sticks, jetpack and dash on two phones over a hotspot.
-      Script `docs/reviews/device-checkpoint-1.md`; build of 25 Nov at `24f0224`; not yet run.
+      Script `docs/reviews/device-checkpoint-1.md`; build of 25 Nov at `4f4ea2d`; not yet run.
 - [x] B Combat core, hazard wiring, dummy, push window. Reviewed, merged (`a170e4b`).
 - [x] C Weapons, melee, pickups. Reviewed, merged (`2ad983e`).
 - [x] D World objects and gadgets. Reviewed twice, merged with its follow-ups and the
@@ -59,9 +61,10 @@ Current stage: Prototype, phase 1. Gate not passed.
       Nothing in it can be judged without a phone.
 - [x] F Input and HUD for fire, melee, gadget, swap. Reviewed, merged (`5f92739`).
 - [x] Full test suite on `main` with A to F, netfox patches 1 to 14, the reviewer fixes and
-      the push-distance correction: 52 of 52 (Mac, headless; nothing on a phone).
+      the push-distance correction; and again with netfox patch 16: 52 of 52 each time (Mac,
+      headless; nothing on a phone).
 - [ ] Device checkpoint 2 (Rahul): the knockback sandbox, 10 minutes of play. The build of
-      25 Nov at `24f0224` has the corrected push distances. Script
+      25 Nov at `4f4ea2d` has the corrected push distances and the packet crash fix. Script
       `docs/reviews/device-checkpoint-2.md`; not yet run.
 - [ ] 1.6 Dabba fight, built last.
 - [ ] Phase review and `docs/reviews/phase-1-handoff.md` (started: both audits

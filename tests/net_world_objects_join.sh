@@ -57,6 +57,9 @@ grep -h "^JOINRESULT" "$TMP/host.log" "$TMP/joiner.log"
 if grep -q "SCRIPT ERROR\|^ERROR\|^FAIL" "$TMP/host.log" "$TMP/joiner.log"; then
 	echo "FAIL: errors in logs"; grep -h "SCRIPT ERROR\|^ERROR\|^FAIL" "$TMP/host.log" "$TMP/joiner.log" | head; keep_logs; exit 1
 fi
+if grep -q "Refusing identity packet" "$TMP/host.log" "$TMP/joiner.log"; then
+	echo "FAIL: an identity packet was refused"; grep -h "Refusing identity packet" "$TMP/host.log" "$TMP/joiner.log" | head -3; keep_logs; exit 1
+fi
 HOST_LINE="$(grep -h "^JOINRESULT" "$TMP/host.log")"
 JOINER_LINE="$(grep -h "^JOINRESULT" "$TMP/joiner.log")"
 if [ -z "$HOST_LINE" ] || [ -z "$JOINER_LINE" ]; then echo "FAIL: a side printed no result"; keep_logs; exit 1; fi
