@@ -35,11 +35,12 @@ Current stage: Prototype, phase 1. Gate not passed.
 - [x] B Combat core, hazard wiring, dummy, push window. Reviewed, merged (`a170e4b`).
 - [x] C Weapons, melee, pickups. Reviewed, merged (`2ad983e`).
 - [ ] D World objects and gadgets. Merged; the fix round still needs its independent review.
-- [ ] E Presentation: effects wired to state counters. Reviewed and fixed; waits on the
-      netfox branch for its client-side first-sight check.
+- [x] E Presentation: effects from state counters, first sight from the host's real state,
+      and a health bar that shows only while a bot's health changes. Reviewed, merged.
+      Nothing in it can be judged without a phone.
 - [x] F Input and HUD for fire, melee, gadget, swap. Reviewed, merged (`5f92739`).
-- [x] Full test suite on `main` with B, C and F together: 48 of 48 pass with the netfox, throttle and task D changes
-      (Mac, headless; nothing on a phone).
+- [x] Full test suite on `main` with A to F, netfox patches 1 to 14 and the reviewer fixes:
+      51 of 51 (Mac, headless; nothing on a phone).
 - [ ] Device checkpoint 2 (Rahul): the knockback sandbox, 10 minutes of play.
 - [ ] 1.6 Dabba fight, built last.
 - [ ] Phase review and `docs/reviews/phase-1-handoff.md`.
@@ -57,12 +58,12 @@ In progress, each on its own branch, none on `main`:
 1. Task D follow-ups (`worktree-agent-aaec92fe475a64453`): a bot in front of a wall is
    tested before the wall, the gadget cycle reset moves before the tick's blasts, two tests
    tightened. From the independent review of D's fix round and geminiceo G-21, G-22.
-2. Pickup session and cycle resets, rocket muzzle, curved flick (a new implementer branch):
-   geminiceo G-15, G-17, G-19, G-23.
+2. Done and on `main` (`4bd6e34`): pickup session and cycle resets, rocket muzzle, curved
+   flick (geminiceo G-15, G-17, G-19, G-23).
 3. Done and on `main` (`a73b845`): rate limit on netfox's oversized-packet warning, patch
    14 (geminiceo G-24).
-4. Task E (effects), branch `worktree-agent-a0ba5c0a664836773`: last step, plus a health bar
-   above every bot (product owner decision, see `docs/DECISIONS.md`).
+4. Done and on `main`: task E (effects) with the health bar that shows only while a bot's
+   health changes (Rahul's decision, see `docs/DECISIONS.md`).
 5. Dev finding D-10 (`worktree-agent-abdc8cb18a9ad9d79`): cause found, fix in progress as
    netfox patch 15.
 

@@ -306,3 +306,35 @@ func weapon_stats(id: int) -> WeaponStats:
 	if id < 0 or id >= weapons.size():
 		return null
 	return weapons[id]
+
+# --- task E ---
+@export_group("Presentation (task E)")
+## Heaviest hit that still gets no hit freeze: a hit whose vitals.last_hit_push is at least this
+## long (bh/s, after scaling) freezes the bot's picture. Light rapid fire stays below it (first guess).
+@export var hit_freeze_min_push: float = 0.0
+## Seconds a tracer line takes to fade out (first guess).
+@export var tracer_seconds: float = 0.0
+## Tracer line thickness in pixels (first guess).
+@export var tracer_width_px: float = 0.0
+## Seconds a muzzle flash is visible (first guess).
+@export var muzzle_flash_seconds: float = 0.0
+## Muzzle flash radius in pixels (first guess).
+@export var muzzle_flash_radius_px: float = 0.0
+## Distance from the bot centre to the muzzle, in bot heights (first guess).
+@export var muzzle_offset_bh: float = 0.0
+## Seconds a melee arc is visible (first guess).
+@export var melee_arc_seconds: float = 0.0
+## Melee arc line thickness in pixels (first guess).
+@export var melee_arc_width_px: float = 0.0
+## Distance in bot heights beyond which a blast no longer shakes the screen; the shake is
+## shake_strength_knockout_px at the local bot and falls in a straight line to zero here (first guess).
+@export var blast_shake_range_bh: float = 0.0
+## Tracers, muzzle flashes and melee arcs that can be on screen at once, each (first guess).
+@export var fx_pool_size: int = 0
+## Size of the health bar above a bot, in pixels (first guess).
+@export var health_bar_size_px: Vector2 = Vector2.ZERO
+## Gap between the top of a bot and its health bar, in pixels (first guess).
+@export var health_bar_offset_px: float = 0.0
+## Seconds the health bar stays on screen after the bot's health changes (first guess).
+@export var health_bar_hold_seconds: float = 0.0
+@export_group("")
