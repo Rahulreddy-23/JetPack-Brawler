@@ -137,10 +137,17 @@ func _describe_events() -> String:
 	return ", ".join(parts)
 
 func _run_client() -> void:
-	# Bots can be replaced while the session settles, so look them up each time.
-	while _dummy() == null or not (NetworkHistoryServer.has_authoritative_state(_dummy().vitals) and NetworkHistoryServer.has_authoritative_state(_dummy().arsenal) and NetworkHistoryServer.has_authoritative_state(_bomb_slot())):
+	# Bots can be replaced while the session settles, so look them up each time. Wait for the initial
+	# clock sync as well as the host's state: a state packet can be merged while NetworkTime.tick is
+	# still 0, and the initial sync then jumps the tick from 0 to the host's tick. That jump would
+	# satisfy _wait_ticks(10) at once, before any rollback loop has copied the merged state onto the
+	# live nodes, and the check below would read the predicted zeros (seen in 4 of 120 runs under load:
+	# at the query tick 0, sync not done, no loop; at the check tick 29 to 41, still no loop).
+	while not NetworkTime.is_initial_sync_done() or _dummy() == null or not (NetworkHistoryServer.has_authoritative_state(_dummy().vitals) and NetworkHistoryServer.has_authoritative_state(_dummy().arsenal) and NetworkHistoryServer.has_authoritative_state(_bomb_slot())):
 		await get_tree().process_frame
-	# Let the display state catch up with the host's state, then look at what the director showed.
+	# Let the display state catch up with the host's state (after at least one finished rollback loop,
+	# which is when netfox puts merged state on the live nodes), then look at what the director showed.
+	await NetworkRollback.after_loop
 	await _wait_ticks(10)
 	var dummy: Bot = _dummy()
 	_check(dummy.vitals.hits_taken == OLD_HITS and dummy.arsenal.shots_fired == OLD_SHOTS and _bomb_slot().launches == 1 and _bomb_slot().blasts == 1, "the client holds the host's old state (hits %d, shots %d, bomb launches %d, blasts %d)" % [dummy.vitals.hits_taken, dummy.arsenal.shots_fired, _bomb_slot().launches, _bomb_slot().blasts])

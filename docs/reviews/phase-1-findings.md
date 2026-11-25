@@ -17,7 +17,7 @@ these.
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
 | `dev` | `8a5d657` | 25 Nov 2026 18:32 | No reviewer commit since `8a5d657` (D-16); `942403b` and `0668e4b` only merge `main`. |
-| `geminiceo` | `85d2eb0` | 25 Nov 2026 20:52 | One reviewer commit, `85d2eb0` (iteration 11: finding G-30, a cause for the `net_fx` flake; being verified). `8eb9b2c` only merges `main`. |
+| `geminiceo` | `85d2eb0` | 25 Nov 2026 20:52 | One reviewer commit, `85d2eb0` (iteration 11: finding G-30, the cause of the `net_fx` flake; accepted). `8eb9b2c` only merges `main`. |
 
 ## Findings
 
@@ -402,7 +402,7 @@ implementer for the decoder sweep that G-28 started.
 
 | Id | Finding | Verified | Outcome |
 |---|---|---|---|
-| G-30 | The `net_fx` test fails about 1 run in 10 because its wait starts before the client's first clock sync: host state can merge while the client's tick is still 0, the sync then jumps the tick to the host's, and the test's ten-tick wait is satisfied before any rollback loop has copied the state onto the nodes | Fits what we saw (1 failure in 14 runs on clean `main`, always the one check that reads the client's nodes, every effects check passing). Not yet confirmed from a failing run's timing | Accepted as the likely cause; the effects implementer is confirming it from a failing run, applying the three-line fix to the test and measuring 30 runs before and after. The same implementer is answering whether that tick jump can also mislead the effects themselves on a late join |
+| G-30 | The `net_fx` test fails about 1 run in 10 because its wait starts before the client's first clock sync: host state can merge while the client's tick is still 0, the sync then jumps the tick to the host's, and the test's ten-tick wait is satisfied before any rollback loop has copied the state onto the nodes | Confirmed from failing runs: in 4 failures of 120 under load the query was already true at tick 0 with the sync not done, and the wait ended at tick 29 to 41 with no rollback loop finished. With the fix, 0 failures in 120 at the same load | Accepted; the reviewer's three-line change to the test is on `main`. The check still fails when the client really lacks the host's state (shown by a mutation). The effects themselves are not affected: their gate counts finished rollback loops, not ticks |
 
 A note for the architecture: `rocket_step_start` (D-11) is written during the rollback tick
 without being registered state. That is safe because only the host reads it and rewrites
