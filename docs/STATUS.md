@@ -31,7 +31,7 @@ Current stage: Prototype, phase 1. Gate not passed.
       the next state arrives. The game was right. The check now reads the first tick whose
       value came from the host and fails if that takes more than 4 ticks; 0 failures in 80.
 - [ ] Device checkpoint 1 (Rahul): sticks, jetpack and dash on two phones over a hotspot.
-      Script `docs/reviews/device-checkpoint-1.md`; build of 25 Nov at `e5f9fec`; not yet run.
+      Script `docs/reviews/device-checkpoint-1.md`; build of 25 Nov at `b90d525`; not yet run.
 - [x] B Combat core, hazard wiring, dummy, push window. Reviewed, merged (`a170e4b`).
 - [x] C Weapons, melee, pickups. Reviewed, merged (`2ad983e`).
 - [x] D World objects and gadgets. Reviewed twice, merged with its follow-ups. One ordering
