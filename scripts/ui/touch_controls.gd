@@ -171,6 +171,10 @@ func _touch(index: int, pos: Vector2, pressed: bool, canceled: bool = false) -> 
 		if index == _aim.finger:
 			if not canceled:
 				_update_aim(pos)
+				# A crossing no tick has taken yet fires where the thumb lifted, so a flick that
+				# curves keeps its aim. After a tick took it, a lift must not fire again.
+				if _is_fire_held() and InputActions.pending_touch_fire_aim != Vector2.ZERO:
+					InputActions.pending_touch_fire_aim = _aim.value(_cfg.stick_radius_px)
 			elif _aim_max_px >= _cfg.stick_radius_px * _cfg.fire_ring_fraction:
 				InputActions.pending_touch_fire_aim = Vector2.ZERO
 			var is_tap: bool = not canceled and float(_now_msec() - _aim_down_msec) / 1000.0 <= _cfg.tap_time and _aim_max_px <= _cfg.tap_distance_px

@@ -130,6 +130,8 @@ func _run() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	_test_fire_ring()
+	_test_flick_curve_and_pull_back()
+	_test_hold_then_lift_outside_ring()
 	_test_tap_and_melee_button()
 	_test_edge_latching()
 	_test_consecutive_presses()
@@ -180,6 +182,52 @@ func _test_fire_ring() -> void:
 		_check(_input.fire == true and (_input.aim as Vector2).x > 0.5, "a flick between ticks carries fire and aim (drag event %s)" % reports_drag)
 		_frames(30, 0.5)
 		_check(_true_ticks("fire").size() == 1 and _true_ticks("melee").is_empty(), "a flick gives one fire tick and no melee (drag event %s)" % reports_drag)
+
+# A flick that crosses the ring, curves and lifts between two ticks fires where the thumb
+# lifted, and a thumb pulled back inside the ring before it lifts does not fire again.
+func _test_flick_curve_and_pull_back() -> void:
+	var radius: float = _cfg.stick_radius_px
+	_fresh()
+	_touch(0, _aim_start(), true)
+	_drag(0, _aim_start() + Vector2(radius, 0.0))
+	var up: Vector2 = _aim_start() + Vector2(0.0, -radius)
+	_drag(0, up)
+	_touch(0, up, false)
+	_frame(30)
+	var aim: Vector2 = _input.aim as Vector2
+	_check(_input.fire == true and aim.y < -0.9 and absf(aim.x) < 0.3, "a flick that curves after crossing the ring fires where the thumb lifted (aim %s)" % aim)
+	_frames(30, 0.5)
+	_check(_true_ticks("fire").size() == 1, "and gives one shot")
+
+	_fresh()
+	_touch(0, _aim_start(), true)
+	_drag(0, _aim_start() + Vector2(radius, 0.0))
+	_frame(30)
+	_check(_input.fire == true, "holding past the ring fires on the next tick")
+	_drag(0, up)
+	_drag(0, _aim_start() + Vector2(radius * _cfg.fire_ring_fraction * 0.5, 0.0))
+	_touch(0, _aim_start() + Vector2(radius * _cfg.fire_ring_fraction * 0.5, 0.0), false)
+	_frames(30, 0.5)
+	_check(_true_ticks("fire").size() == 1, "pulling the thumb back inside the ring and lifting gives no extra shot at the old aim (%d fire ticks)" % _true_ticks("fire").size())
+
+# A hold past the ring across several ticks, a swing of the thumb and a lift outside the ring:
+# one fire tick per tick the thumb was down past the ring, none after the lift.
+func _test_hold_then_lift_outside_ring() -> void:
+	var radius: float = _cfg.stick_radius_px
+	for fps: int in FRAME_RATES:
+		_fresh()
+		_touch(0, _aim_start(), true)
+		_drag(0, _aim_start() + Vector2(radius, 0.0))
+		_frames(fps, 0.2)
+		var up: Vector2 = _aim_start() + Vector2(0.0, -radius)
+		_drag(0, up)
+		_frames(fps, 0.1)
+		var held: int = _true_ticks("fire").size()
+		var last_held: int = _tick
+		_touch(0, up, false)
+		_frames(fps, 0.5)
+		var fire: Array[int] = _true_ticks("fire")
+		_check(held > 3 and fire.size() == held and (fire.back() as int) < last_held + 1, "a lift outside the ring after a long hold adds no fire tick at %d fps (%d held, %d total)" % [fps, held, fire.size()])
 
 func _test_tap_and_melee_button() -> void:
 	for fps: int in FRAME_RATES:
