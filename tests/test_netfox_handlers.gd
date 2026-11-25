@@ -23,13 +23,19 @@ const OTHER_PEER: int = 2
 const THIRD_PEER: int = 3
 const SERVER_PEER: int = 1
 
-## Counts the warnings the engine reports that mention unknown identities.
+## Counts the warnings the engine reports that mention unknown identities
+## (count) and those that report a dropped oversized packet (dropped).
 class WarningCounter extends Logger:
 	var count: int = 0
+	var dropped: int = 0
 
 	func _log_error(_function: String, _file: String, _line: int, code: String, rationale: String, _editor_notify: bool, error_type: int, _script_backtraces: Array[ScriptBacktrace]) -> void:
-		if error_type == Logger.ERROR_TYPE_WARNING and ("unknown identity" in code or "unknown identity" in rationale):
+		if error_type != Logger.ERROR_TYPE_WARNING:
+			return
+		if "unknown identity" in code or "unknown identity" in rationale:
 			count += 1
+		if "Dropping" in code or "Dropping" in rationale:
+			dropped += 1
 
 	func _log_message(_message: String, _error: bool) -> void:
 		pass
@@ -101,6 +107,7 @@ func _run() -> void:
 		_host_checks()
 		_unknown_identity_checks()
 		_no_limit_checks()
+		await _size_warning_checks()
 	else:
 		await get_tree().process_frame
 		_check(not multiplayer.is_server(), "running as a client")
@@ -231,6 +238,36 @@ func _no_limit_checks() -> void:
 	_sync._handle_full_state(OTHER_PEER, _probe.full_state_packet(tick, 3))
 	_check(_has_state(tick), "with max_sync_packet_size 0 (no limit) a state packet is not dropped for size")
 	_sync._max_packet_size = saved
+
+# Oversized packets are dropped, and the warning about them is logged once per
+# peer per second, so a peer cannot fill the log. Peers 7 and 8 sent nothing before.
+func _size_warning_checks() -> void:
+	var big: PackedByteArray = Probe.filled(_sync._max_packet_size * 2 + 1, 0)
+	var tick: int = NetworkTime.tick + 1
+	var untouched: bool = not _has_state(tick)
+	_warnings.dropped = 0
+	for i: int in 1000:
+		_sync._handle_full_state(7, big)
+	_check(_warnings.dropped == 1, "1000 oversized packets from one peer: %d warnings (exactly 1)" % _warnings.dropped)
+	_sync._handle_full_state(8, big)
+	_check(_warnings.dropped == 2, "a second peer still gets its own first warning (%d warnings, expected 2)" % _warnings.dropped)
+	_probe.set_multiplayer_authority(7)
+	_sync._handle_full_state(7, _probe.full_state_packet(tick, 5) + big)
+	_check(untouched and not _has_state(tick), "an oversized packet that starts with a valid state is still dropped while its warning is suppressed")
+	await get_tree().create_timer(1.1).timeout
+	_sync._handle_full_state(7, big)
+	_check(_warnings.dropped == 3, "after the interval the next one is logged again (%d warnings, expected 3)" % _warnings.dropped)
+	_sync._handle_full_state(7, big)
+	_sync.erase_peer(7)
+	_sync._handle_full_state(7, big)
+	_check(_warnings.dropped == 4, "after the peer is erased its next oversized packet is logged (%d warnings, expected 4)" % _warnings.dropped)
+	_sync._handle_full_state(8, big)
+	_check(_warnings.dropped == 5, "the interval is kept per peer: peer 8 logs again after its own second (%d warnings, expected 5)" % _warnings.dropped)
+	_sync._handle_full_state(8, big)
+	_sync.reset()
+	_sync._handle_full_state(8, big)
+	_check(_warnings.dropped == 6, "after a reset the next oversized packet is logged (%d warnings, expected 6)" % _warnings.dropped)
+	_check(_sync._last_size_warning_msec.size() == 1, "the bookkeeping holds only the peers warned since the reset (%d)" % _sync._last_size_warning_msec.size())
 
 # A frame whose identity no registered subject has, with an empty body.
 func _unknown_frame(buffer: StreamPeerBuffer, number: int) -> void:

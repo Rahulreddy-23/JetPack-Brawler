@@ -41,6 +41,7 @@ var _input_redundancy := NetworkRollback.input_redundancy
 
 var _rb_sent_state_history := {} # peer to _HistoryBuffer of _Snapshot
 var _rb_last_full_tick := {} # PATCH: peer to (subject to tick of the last full state sent)
+var _last_size_warning_msec := {} # PATCH: peer to the time (msec) of its last oversized-packet warning
 
 var _last_sync_state_sent := _Snapshot.new(0)
 var _sync_enable_diffs := ProjectSettings.get_setting("netfox/state_synchronizer/enable_diff_states", true) as bool
@@ -154,6 +155,7 @@ func deregister(node: Node) -> void:
 func erase_peer(peer: int) -> void:
 	_rb_sent_state_history.erase(peer)
 	_rb_last_full_tick.erase(peer)
+	_last_size_warning_msec.erase(peer)
 
 ## Forget what was sent to other peers, while keeping the registered properties
 ## [br][br]
@@ -163,6 +165,7 @@ func erase_peer(peer: int) -> void:
 func reset() -> void:
 	_rb_sent_state_history.clear()
 	_rb_last_full_tick.clear()
+	_last_size_warning_msec.clear()
 	_last_sync_state_sent = _Snapshot.new(0)
 
 func _get_peer_rb_sent_history(peer: int) -> _HistoryBuffer:
@@ -445,6 +448,7 @@ func _ready() -> void:
 # over the headroom below, per snapshot it may carry, is not honest.
 const _SERVER_PEER_ID := 1
 const _PACKET_SIZE_HEADROOM := 2
+const _SIZE_WARNING_INTERVAL_MSEC := 1000
 
 func _is_acceptable(sender: int, data: PackedByteArray, snapshots_per_packet: int) -> bool:
 	if not multiplayer.is_server() and sender != _SERVER_PEER_ID:
@@ -454,7 +458,11 @@ func _is_acceptable(sender: int, data: PackedByteArray, snapshots_per_packet: in
 	# A size of zero or less means no limit, as in PacketBuffer
 	var limit := _max_packet_size * _PACKET_SIZE_HEADROOM * snapshots_per_packet
 	if _max_packet_size > 0 and data.size() > limit:
-		_logger.warning("Dropping %d byte packet from #%d, over the limit of %d bytes (netfox/general/max_sync_packet_size)", [data.size(), sender, limit])
+		# At most one warning per peer per interval, so a peer cannot fill the log
+		var now := Time.get_ticks_msec()
+		if now - (_last_size_warning_msec.get(sender, -_SIZE_WARNING_INTERVAL_MSEC) as int) >= _SIZE_WARNING_INTERVAL_MSEC:
+			_last_size_warning_msec[sender] = now
+			_logger.warning("Dropping %d byte packet from #%d, over the limit of %d bytes (netfox/general/max_sync_packet_size)", [data.size(), sender, limit])
 		return false
 	return true
 
