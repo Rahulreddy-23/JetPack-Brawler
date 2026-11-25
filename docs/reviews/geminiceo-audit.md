@@ -587,3 +587,21 @@ Merged `origin/main` (`2326514..cf9c87a`: netfox patch 16 landing `G-28`, `G-29`
 ### CEO Review (Iteration 14)
 1. **Major security milestone landed (`4f4ea2d`, `cf9c87a`, `cd8ad46`):** The 4-byte `SIGBUS` crash (`G-28`), truncated prefix bug (`G-29`), variant/clock malformed-header floods, and log rate limits are all on `main` and baked into the rebuilt debug APK (`cd8ad46`).
 2. **One quick follow-up (`G-31`), then phones first:** Folding `_CStringSerializer`'s 10-line ASCII/length check into patch 16 closes the last per-byte Unicode log-flood path; meanwhile the `cd8ad46` APK is already solid for Rahul's two-phone hotspot playtest.
+
+
+---
+
+## Iteration 16 Audit Update (25 Nov 2026 23:47 — against `origin/main` `e3f6f4f`)
+
+Merged `origin/main` (`486e5dd..e3f6f4f`: `G-31` landed in `e3f6f4f` using `PackedByteArray.find(0, start)` + ASCII/length guard + missing-NUL rejection, with 123 checks in `tests/test_netfox_handlers.gd` and full second byte-to-text sweep in `addons/NETFOX_PATCHES.md`). Aligned `addons/netfox/schemas/network-schemas.gd` verbatim with `origin/main` and removed the superseded `tests/test_security_audit.*` so `geminiceo` now has zero code drift against `origin/main` (`e3f6f4f`).
+
+### Findings (`486e5dd..e3f6f4f`)
+- **Crashes and logic bugs:** none found. (`_CStringSerializer.decode` uses `raw.find(0, start)`, seeks to `raw.size()` when NUL is missing and `end + 1` otherwise, rejects `end - start > MAX_NAME_BYTES` and any byte `>= 0x80`, and decodes valid ASCII via `get_string_from_ascii()`.)
+- **Network trust, Desync, Denial of service, Untrusted input, Purchases/unlocks, Android/privacy, Repository hygiene, Performance bugs:** none found.
+
+### Could Not Check (Iteration 16)
+- Multi-process loopback UDP suites (`tests/net_*.sh`), `tests/test_fx_client.tscn`, and `tests/test_full_state_coverage.tscn` (loopback UDP blocked in sandbox); real Android device testing.
+
+### CEO Review (Iteration 16)
+1. **Every accepted `geminiceo` finding (G-1 through G-31) is now landed on `main`:** Zero open findings remain on `geminiceo`, and netfox patch 16 is completely buttoned up (123/123 handler checks green).
+2. **Final Phase 1 netcode item:** Netfox patch 15 (`D-10` + past-tick input bound) is actively wrapping up on its worktree (`94f7575`). Once patch 15 lands, cut the final Phase 1 debug APK so Rahul's two-phone playtest validates the complete Phase 1 build before starting Dabba.
