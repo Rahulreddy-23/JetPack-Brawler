@@ -22,7 +22,8 @@ static var _cached: TuningConfig = null
 @export var run_speed: float = 0.0
 ## Ground acceleration toward the stick speed, bh/s^2 (first guess).
 @export var ground_accel: float = 0.0
-## Ground braking with the stick released, bh/s^2 (first guess).
+## Ground braking with the stick released, bh/s^2 (first guess). Also fixes how fast a push
+## is launched: see the push window group.
 @export var ground_brake: float = 0.0
 ## Air steering acceleration, bh/s^2 (first guess).
 @export var air_accel: float = 0.0
@@ -137,12 +138,9 @@ static var _cached: TuningConfig = null
 ## Lead's reading of the GDD: the push multiplier is 1 at this health or more and
 ## rises in a straight line to low_health_push_multiplier at 0 (first guess for the 25).
 @export var low_health_threshold: float = 0.0
-## GDD: a bot at low health flies about twice as far from the same hit.
+## GDD: a bot at low health flies about twice as far from the same hit. This multiplies the push
+## DISTANCE (a bot at 0 health goes twice as far), never the speed.
 @export var low_health_push_multiplier: float = 0.0
-## Architecture D10: every push (weapon hit, melee, blast, recoil) becomes a velocity change of
-## P * this in bh/s, then the low-health multiplier applies to pushes on the victim (first guess).
-## plate_launch_speed is a speed, not a GDD push, and is not scaled.
-@export var push_speed_scale: float = 0.0
 ## Seconds after the last hit or push during which a knockout is credited to the
 ## attacker (lead's call, first guess).
 @export var credit_window: float = 0.0
@@ -154,9 +152,11 @@ static var _cached: TuningConfig = null
 @export_range(0.0, 1.0) var self_damage_scale: float = 0.0
 
 @export_group("Push window")
-## Product decision: seconds after a push during which braking and steering are
-## reduced so the push reads (first guess).
-@export var push_window_time: float = 0.0
+## After a push, braking and steering are reduced so the push reads. The window lasts exactly
+## until the push is braked away at the reduced rate (CombatRules.push_window_ticks), so it has no
+## time of its own. Every push number in this file is a DISTANCE in bot heights (GDD); the launch
+## speed that covers it follows from ground_brake x push_window_control and from gravity
+## (CombatRules.push_change), so retuning either one keeps the distances.
 ## Fraction (0 to 1) of normal braking and steering left while the push window is
 ## open (first guess).
 @export_range(0.0, 1.0) var push_window_control: float = 0.0
@@ -166,15 +166,11 @@ static var _cached: TuningConfig = null
 ## tube. The bolt thrower is set so a full health bar empties in about one second of
 ## hits (GDD starting values). Everything else is a first guess.
 @export var weapons: Array[WeaponStats] = []
-## Weapon slots per bot: the rivet gun and one picked-up weapon (architecture).
-@export var weapon_slot_count: int = 0
-## Gadget slots per bot (GDD: two gadgets).
-@export var gadget_slot_count: int = 0
 
 @export_group("Melee")
 ## Damage of a melee hit (first guess).
 @export var melee_damage: float = 0.0
-## GDD: push from melee 2.5, before push_speed_scale.
+## GDD: push from melee 2.5 (a distance in bot heights, before the low-health multiplier).
 @export var melee_push: float = 0.0
 ## Reach from the bot centre in bh (first guess).
 @export var melee_range: float = 0.0
@@ -194,8 +190,12 @@ static var _cached: TuningConfig = null
 @export var bomb_fuse_time: float = 0.0
 ## Architecture ruling: blast push is 0 at 3 bot heights.
 @export var bomb_blast_radius: float = 0.0
-## GDD: push at the centre of a bomb blast is 5, before push_speed_scale.
+## GDD: push at the centre of a bomb blast is 5 (a distance in bot heights, before the low-health multiplier).
 @export var bomb_blast_push: float = 0.0
+## Loose bombs and rockets kicked by a blast get a speed of the blast's push at their distance
+## times this, in bh/s per bh of push. Not the bot rule: a loose object is not pushed a distance
+## (first guess, the factor the project used for every push before pushes became distances).
+@export var blast_object_speed_scale: float = 0.0
 ## Damage of the bomb blast at the centre (first guess).
 @export var bomb_blast_damage: float = 0.0
 ## Throw speed in bh/s (first guess).
@@ -310,7 +310,9 @@ func weapon_stats(id: int) -> WeaponStats:
 # --- task E ---
 @export_group("Presentation (task E)")
 ## Heaviest hit that still gets no hit freeze: a hit whose vitals.last_hit_push is at least this
-## long (bh/s, after scaling) freezes the bot's picture. Light rapid fire stays below it (first guess).
+## long (bh, the push distance after the low-health multiplier) freezes the bot's picture. Light
+## rapid fire stays below it (first guess; 0.75 bh freezes the same hits that 1.5 bh/s did when
+## pushes were speeds of twice their number).
 @export var hit_freeze_min_push: float = 0.0
 ## Seconds a tracer line takes to fade out (first guess).
 @export var tracer_seconds: float = 0.0

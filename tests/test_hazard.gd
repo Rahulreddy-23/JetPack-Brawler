@@ -53,6 +53,11 @@ func _test_levels() -> void:
 	_check(_level(1351) == TOP_Y, "after cap stays at top")
 	_check(_level(100000) == TOP_Y, "long after cap stays at top")
 	_check(_level(1000) >= _level(1100) and _level(1100) >= _level(1300), "monotonic rise")
+	# Nothing is in the metal before the start time, not even a body below the floor line; from the
+	# start time on a body below the floor line is.
+	_check(not _in_metal(FLOOR_Y + 0.0013, 0) and not _in_metal(FLOOR_Y + 50.0, 899), "before the start time a body at or below the floor line is not in the metal")
+	_check(not _in_metal(FLOOR_Y + 50.0, -1), "with no round (negative ticks) nothing is in the metal")
+	_check(_in_metal(FLOOR_Y + 0.0013, 900) and not _in_metal(FLOOR_Y, 900), "at the start time the bare comparison holds: below the floor line is in the metal, on it is not")
 
 
 ## Expected level for a tick on a straight line from the floor at START_S to the top at CAP_S.

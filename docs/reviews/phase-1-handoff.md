@@ -17,8 +17,13 @@ match or are recorded first guesses. The mismatches:
    them as speeds. On the ground a melee hit moved a bot about 0.5 bot heights (design
    2.5), a close scrap blast 0.2 (1.5), scrap recoil 0.1 (1), a blast at its centre 2.3
    (5). At 0 health a bot went three to four times as far, where the design says twice.
-   Status: being corrected (see `docs/DECISIONS.md`, lead's calls). The debug builds made
-   on 25 Nov up to 16:59 have the weak pushes.
+   Status: corrected and merged after two review rounds. Measured in the game with the
+   real movement code: melee 2.50, close scrap blast 1.50, bolt 0.10, blast at its centre
+   5.00, recoil 1.00, twice those at 0 health, 30 bolts in a row 3.08. Left open on
+   purpose and written into `docs/ARCHITECTURE.md` D10: in the air a push carries about
+   five times as far, repeated hits in the air still build up, and a blast lifts a bot so
+   its sideways travel follows the air figures. The debug builds made on 25 Nov up to 16:59
+   have the old weak pushes.
 2. The Smelter's shape. The GDD calls it "tall and vertical"; it was built 40 by 16 bot
    heights, following the GDD's general arena size (about two screens wide, one and a half
    tall). The two lines of the GDD disagree. Status: open, Rahul to decide.
@@ -29,14 +34,14 @@ match or are recorded first guesses. The mismatches:
 5. Dash bullet immunity is 4 ticks (0.133 s) against 0.15 s, because it follows the dash
    time and the tick rate. Status: accepted for the prototype; logged.
 6. The health bar turned red at exactly 25 health while the extra push starts just below
-   it. Status: being corrected with item 1.
+   it. Status: corrected with item 1.
 7. No sound of any kind (the hit clank, the empty steam pack's whistle). Status: grey-box
    prototype, as recorded; not a phase 1 item.
 
 ### Is every tuning number in the config resource?
 
 Yes. No gameplay script holds a tuning literal. Two config entries (`weapon_slot_count`,
-`gadget_slot_count`) were read nowhere and are being removed.
+`gadget_slot_count`) were read nowhere and have been removed.
 
 ### Is anything in the build that phase 1 does not list?
 

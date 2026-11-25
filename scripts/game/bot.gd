@@ -231,11 +231,16 @@ func _tick_free_movement(cfg: TuningConfig, delta: float, move: Vector2, on_floo
 	if absf(move.x) > cfg.stick_deadzone:
 		var deflection: float = (absf(move.x) - cfg.stick_deadzone) / (1.0 - cfg.stick_deadzone)
 		target_x = signf(move.x) * clampf(deflection, 0.0, 1.0) * cfg.run_speed * px
+	var brake: float = cfg.ground_brake if on_floor else cfg.air_brake
 	var accel: float
 	if target_x != 0.0:
 		accel = cfg.ground_accel if on_floor else cfg.air_accel
+		# In the push window a stick held against the motion brakes at least as hard as a released
+		# stick, so resisting a push never carries the bot further than letting go of the stick.
+		if control < 1.0 and signf(target_x) != signf(velocity.x) and velocity.x != 0.0:
+			accel = maxf(accel, brake)
 	else:
-		accel = cfg.ground_brake if on_floor else cfg.air_brake
+		accel = brake
 	velocity.x = move_toward(velocity.x, target_x, accel * control * px * delta)
 
 	# Vertical: gravity, thrust up to the climb speed, then the fall limit.

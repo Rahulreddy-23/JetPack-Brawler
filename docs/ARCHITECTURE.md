@@ -101,9 +101,50 @@ that can no longer be re-run.
 
 D9. New timers are absolute ticks (`*_ready_tick: int`), not counting-down floats.
 
-D10. A GDD push number becomes a velocity change of `push x push_speed_scale` bot heights
-per second, scaled by the low-health multiplier computed from health before that tick's
-damage. `push_speed_scale` is a first guess to tune.
+D10 (replaced 25 Nov 2026, revised the same day). A GDD push number is a DISTANCE in bot heights,
+as the GDD says, and distances ADD. The rule, written in the header of `combat_rules.gd`: on flat
+ground with a neutral stick a push of P bot heights moves the bot P bot heights; a tick's hits on
+one victim are summed as distance vectors (after the low-health multiplier, 1 at 25 health or more
+and 2 at 0, which multiplies the distance, so a bot at 0 health goes twice as far); and across
+ticks `CombatRules.push_change` gives the bot, per axis, the launch speed for (the signed distance
+its present speed would still carry it under the push window's braking) + (the new push). The
+conversion is `CombatMath.launch_speed`, `v = a dt / 2 + sqrt(2 a P + (a dt / 2)^2)`, the speed
+whose per-tick braking sums to P, and `CombatMath.travel_distance` is its inverse. Sideways
+`a = ground_brake x push_window_control`; up and down `a = gravity`. Consequences:
+- The bot's own speed, whatever gave it, counts as distance still to travel: a bot running into a
+  push is slowed, one running away from it goes a little further than P, a push against an
+  earlier push's motion takes its distance off, and 30 bolts of 0.1 move a bot 3.0. Adding
+  speeds instead would build up without limit, because the conversion is a square root.
+- Because each axis is converted on its own and almost every blast has an upward part, a blast
+  lifts the bot and its sideways travel follows the air figures, not the ground ones (a push of
+  2.5 at 45 degrees moved a grounded bot 6.2 bot heights sideways, and the direction is bent
+  toward 45 degrees when the two decelerations are equal).
+- In the air the same speed carries further, because air braking is weaker ("momentum carries"):
+  about P x (ground_brake x push_window_control / air_brake) x 1.4, about 5 P today. The knob
+  is `push_window_control`: lower it and pushes carry less in the air, at the cost of a longer
+  window.
+- Distances add exactly only on the ground. The rule measures what a bot would still travel
+  with the ground window's braking, and an airborne bot slows far less between hits, so in
+  the air separate pushes still build on each other: 30 bolts moved a hovering bot 26.9 bot
+  heights where one push of 3.0 gives about 15, and two melee hits 8 ticks apart 26.8 where
+  one push of 5.0 gives 24.9. It is bounded (under endless bolt fire the speed levels off at
+  about 13.4 bh/s) and the same knob tunes it. Whether the air needs its own rule is open,
+  to be judged after the phone test.
+- The window covers the bot's whole sideways speed, so a small sideways push on a running
+  bot opens a window of the full length for that speed (0.01 on a bot at 6 bh/s: 10 ticks),
+  during which turning back is about three times slower. Dodging under fire is stiffer for
+  it.
+- A bot's own speed counts as distance still to travel on each axis, falling included: an
+  upward blast on a bot falling at the limit leaves it falling at about half that speed.
+- The window is as long as it takes to brake the bot's sideways speed away after a push or
+  launch with a sideways part; a push with none (straight up, a Spring Plate) opens no window.
+- While the window is open, a stick held against the motion brakes at least as hard as a released
+  stick, so resisting a push never carries the bot further than letting go.
+`push_speed_scale` is gone: it made every push a speed and let braking decide the distance, so
+melee moved a grounded bot 0.54 bot heights, not 2.5. Retuning a brake or gravity keeps every
+distance. Recoil is a push on the shooter under the same rule and is not multiplied by the
+shooter's health. Loose bombs and rockets kicked by a blast are not bots: their speed is the
+blast's push at their distance times `blast_object_speed_scale` (2, as before).
 
 ## State
 
@@ -247,7 +288,7 @@ parallel, each in its own files against A's stubs.
 - A Spring Plate launches: a hit flagged as a launch replaces the victim's vertical speed
   with the plate's and adds the horizontal part, so a falling bot leaves at the plate's
   speed and a running bot keeps its run.
-- A push that ends a dash first gives the bot its normal dash-exit speed, then adds the push.
+- A push that ends a dash first gives the bot its normal dash-exit speed, then adds the push as a distance on top of what that speed still carries (D10).
 - A tick's hits on one victim are summed in a fixed sorted order, so the result does not
   depend on the order they were collected.
 - In the phase 1 test cycle a bot knocked out once the metal has started rising waits for
@@ -261,9 +302,16 @@ parallel, each in its own files against A's stubs.
   simulated on a repeated input; when AI bots write inputs directly (phase 2), add
   previous-input state for both.
 - The push window uses one control factor for braking and steering, on the ground and in
-  the air. Jetpack thrust is not reduced.
-- Pushes in the config are the GDD's numbers; `push_speed_scale` converts every push,
-  recoil included, into speed.
+  the air. Jetpack thrust is not reduced. Its length is not a setting: it lasts exactly until
+  the push's speed is braked away at the window's rate (`CombatRules.push_window_ticks`), so
+  the full brake never cuts a push short.
+- Pushes in the config are the GDD's numbers, distances in bot heights; D10 converts every push,
+  recoil included, into a speed. In the air the same speed carries further, because air braking
+  is weaker ("momentum carries").
+- Nothing is in the metal before the hazard's start time (`HazardMath.is_in_metal`), so float error
+  in a bot's resting position on the floor can never knock it out before the hazard starts.
+- `Vitals.last_hit_push` is the tick's summed push distance in bot heights (a plate launch adds
+  its speed); the hit freeze threshold is in the same unit.
 - Pool and pickup synchronizers re-register on server start, so a phone that was a client
   and then hosts sends their state.
 

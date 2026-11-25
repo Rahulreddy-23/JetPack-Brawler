@@ -46,6 +46,7 @@ static func fraction(health: float, max_health: float) -> float:
 		return 0.0
 	return clampf(health / max_health, 0.0, 1.0)
 
-## True at or below the health where the extra push starts, so the bar changes colour there.
+## True below the health where the extra push starts (the push multiplier is 1 at the threshold
+## itself, see CombatMath.push_multiplier), so the bar changes colour exactly where the push grows.
 static func is_low(health: float, low_health_threshold: float) -> bool:
-	return health <= low_health_threshold
+	return health < low_health_threshold

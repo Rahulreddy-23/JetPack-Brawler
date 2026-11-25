@@ -70,13 +70,17 @@ func _fire(bot: Bot, dir: Vector2, tick: int, cfg: TuningConfig) -> void:
 	fire_ready_tick = tick + WeaponRules.seconds_to_ticks(stats.fire_interval, cfg)
 	if not stats.infinite_ammo:
 		picked_ammo -= 1
-	# Recoil is the shooter's own predicted movement, like every other push, so it also opens
-	# the push window (otherwise ground braking removes it before the bot has moved).
+	# Recoil is a push of `recoil` bot heights on the shooter, opposite the shot, under the same
+	# rule as every other push (CombatRules.push_change). It is the shooter's own predicted
+	# movement, so it also opens the push window (otherwise ground braking removes it early).
 	if stats.recoil > 0.0:
 		if bot.dash_left > 0.0:
 			bot.finish_dash(cfg)
-		bot.velocity -= dir * stats.recoil * cfg.push_speed_scale * cfg.bot_height_px
-		bot.vitals.push_until_tick = maxi(bot.vitals.push_until_tick, tick + 1 + WeaponRules.seconds_to_ticks(cfg.push_window_time, cfg))
+		var px: float = cfg.bot_height_px
+		var kick: Vector2 = CombatRules.push_change(bot.velocity / px, -dir * stats.recoil, cfg)
+		bot.velocity += kick * px
+		if kick.x != 0.0:
+			bot.vitals.push_until_tick = maxi(bot.vitals.push_until_tick, tick + 1 + CombatRules.push_window_ticks(bot.velocity.x / px, cfg))
 
 ## True if the bot fired at this tick.
 func fired_at(tick: int) -> bool:

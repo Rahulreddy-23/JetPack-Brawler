@@ -9,6 +9,7 @@ extends Node
 const BOT_SCENE: PackedScene = preload("res://scenes/bot.tscn")
 const MAIN_SCENE: PackedScene = preload("res://scenes/main.tscn")
 const HazardMath: GDScript = preload("res://hazard/hazard_math.gd")
+const CombatMath: GDScript = preload("res://combat/combat_math.gd")
 const TIMEOUT_SECONDS: float = 90.0
 const SUSTAINED_SECONDS: float = 3.0
 const WARM_UP_SECONDS: float = 1.0
@@ -568,7 +569,12 @@ func _test_health_bar() -> void:
 	# A value that moves and comes back between two frames is never seen by the frame comparison.
 	_check(is_equal_approx(HealthBarState.fraction(100.0, 100.0), 1.0) and is_equal_approx(HealthBarState.fraction(50.0, 100.0), 0.5) and HealthBarState.fraction(0.0, 100.0) == 0.0 and HealthBarState.fraction(150.0, 100.0) == 1.0 and HealthBarState.fraction(-5.0, 100.0) == 0.0, "health bar: fill fraction at full, half, zero and out of range")
 	var low: float = _cfg.low_health_threshold
-	_check(not HealthBarState.is_low(low + 0.01, _cfg.low_health_threshold) and HealthBarState.is_low(low, _cfg.low_health_threshold) and HealthBarState.is_low(0.0, _cfg.low_health_threshold) and not HealthBarState.is_low(_cfg.max_health, _cfg.low_health_threshold), "health bar: low-health colour at the threshold and below, not above")
+	_check(not HealthBarState.is_low(low + 0.01, _cfg.low_health_threshold) and not HealthBarState.is_low(low, _cfg.low_health_threshold) and HealthBarState.is_low(low - 0.01, _cfg.low_health_threshold) and HealthBarState.is_low(0.0, _cfg.low_health_threshold) and not HealthBarState.is_low(_cfg.max_health, _cfg.low_health_threshold), "health bar: low-health colour strictly below the threshold, not at it or above")
+	var colour_matches_push: bool = true
+	for health: float in [0.0, 1.0, low - 0.01, low, low + 0.01, 60.0, _cfg.max_health]:
+		var grows: bool = CombatMath.push_multiplier(health, _cfg.low_health_threshold, _cfg.low_health_push_multiplier) > 1.0
+		colour_matches_push = colour_matches_push and HealthBarState.is_low(health, _cfg.low_health_threshold) == grows
+	_check(colour_matches_push, "health bar: the colour changes exactly where the push multiplier rises above 1")
 
 	# Through the director: first sight, change, knocked out, session reset, and every bot alike.
 	var bot: Bot = await _add_bot(2, 1, Vector2(900.0, 300.0))
