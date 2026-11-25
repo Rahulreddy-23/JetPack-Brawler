@@ -16,8 +16,8 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `09018a2` | 25 Nov 2026 21:14 | One reviewer commit, `09018a2` (finding D-17, accepted). `fd9ec26` and `02271aa` only merge `main`. |
-| `geminiceo` | `c9f2384` | 25 Nov 2026 21:14 | One reviewer commit, `c9f2384` (iteration 12: a clean audit of the push-distance change, no findings). `dfe23d6` only merges `main`. |
+| `dev` | `09018a2` | 25 Nov 2026 21:31 | No reviewer commit since `09018a2` (D-17); `e1c33ab` only merges `main`. |
+| `geminiceo` | `8fe0e0e` | 25 Nov 2026 21:31 | One reviewer commit, `8fe0e0e` (iteration 13: a clean audit of D-17, no findings). `a664529` only merges `main`. |
 
 ## Findings
 
@@ -423,6 +423,10 @@ implementer for the decoder sweep that G-28 started.
 Iteration 12 (`c9f2384`) audited the push-distance change and found nothing: the maths is
 guarded against non-finite and non-positive inputs and is a pure function of restored state
 and config. Noted; no change.
+
+Iteration 13 (`8fe0e0e`) audited D-17 and found nothing: the window's new end is a pure
+function of the tick, the restored speeds and the config, used the same way for hits and
+for recoil. Noted; no change.
 
 A note for the architecture: `rocket_step_start` (D-11) is written during the rollback tick
 without being registered state. That is safe because only the host reads it and rewrites
