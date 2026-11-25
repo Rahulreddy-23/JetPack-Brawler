@@ -42,9 +42,10 @@ Current stage: Prototype, phase 1. Gate not passed.
 - [ ] From the authority audit: the host accepts input up to 2 seconds late and replays the
       match from there (being bounded with netfox patch 15), and three more log lines can
       be flooded by any connected device (netfox patch 16, in progress).
-- [ ] `net_fx` fails about 1 run in 10 on `main`: one check reads the client's nodes a loop
-      before the host's state is copied onto them. Probably the test's wait, not the
-      effects; with the effects implementer.
+- [x] `net_fx` failed about 1 run in 10 under load: the test's wait began before the client's
+      first clock sync, so its ten-tick wait ended before any state was copied onto the
+      nodes (geminiceo G-30, confirmed). The test waits correctly now: 0 failures in 120.
+      The effects were not at fault.
 - [ ] One 4-byte identity packet crashes the host (geminiceo G-28, confirmed). Fix in
       progress in netfox patch 16. Every build so far has it.
 - [ ] Device checkpoint 1 (Rahul): sticks, jetpack and dash on two phones over a hotspot.

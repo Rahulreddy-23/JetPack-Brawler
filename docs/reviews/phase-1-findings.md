@@ -16,8 +16,8 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `8a5d657` | 25 Nov 2026 18:32 | No reviewer commit since `8a5d657` (D-16); `942403b` and `0668e4b` only merge `main`. |
-| `geminiceo` | `85d2eb0` | 25 Nov 2026 20:52 | One reviewer commit, `85d2eb0` (iteration 11: finding G-30, a cause for the `net_fx` flake; being verified). `8eb9b2c` only merges `main`. |
+| `dev` | `09018a2` | 25 Nov 2026 21:14 | One reviewer commit, `09018a2` (finding D-17, accepted). `fd9ec26` and `02271aa` only merge `main`. |
+| `geminiceo` | `c9f2384` | 25 Nov 2026 21:14 | One reviewer commit, `c9f2384` (iteration 12: a clean audit of the push-distance change, no findings). `dfe23d6` only merges `main`. |
 
 ## Findings
 
@@ -274,6 +274,22 @@ these.
 - Outcome: accepted and cherry-picked onto `main`. It adds one direction per bot to the
   state sent each tick.
 
+### D-17 (dev, `09018a2`): the push window stayed long after a push was countered
+
+- Change: a new `CombatRules.push_window_end_tick` sets the window's end. When a push or a
+  recoil reduces the bot's sideways speed, the window is shortened to what the remaining
+  speed needs; when the speed grows, the window keeps at least the time it had left. Two
+  new checks in `tests/test_push_distance.gd` and one line in the architecture note.
+- Verified: yes. The window's end only ever moved later, so a bot pushed right and then
+  pushed back left kept the first push's long window although it had almost stopped, and
+  its steering stayed reduced for no reason. With the reviewer's test and the scripts from
+  before the change both new checks fail (the window ended 9 and 4 ticks later than
+  needed); with the change the push distance, combat rules, weapons, world objects and
+  movement tests pass (118, 156, 201, 276 and 59 checks), and so do four two-process
+  combat tests.
+- Outcome: accepted and cherry-picked onto `main`. The debug APK of 21:01 does not have
+  it.
+
 ## geminiceo audit (`e66eee1`)
 
 Status at 18:50: every finding was checked against the current code by an independent Opus
@@ -402,7 +418,11 @@ implementer for the decoder sweep that G-28 started.
 
 | Id | Finding | Verified | Outcome |
 |---|---|---|---|
-| G-30 | The `net_fx` test fails about 1 run in 10 because its wait starts before the client's first clock sync: host state can merge while the client's tick is still 0, the sync then jumps the tick to the host's, and the test's ten-tick wait is satisfied before any rollback loop has copied the state onto the nodes | Fits what we saw (1 failure in 14 runs on clean `main`, always the one check that reads the client's nodes, every effects check passing). Not yet confirmed from a failing run's timing | Accepted as the likely cause; the effects implementer is confirming it from a failing run, applying the three-line fix to the test and measuring 30 runs before and after. The same implementer is answering whether that tick jump can also mislead the effects themselves on a late join |
+| G-30 | The `net_fx` test fails about 1 run in 10 because its wait starts before the client's first clock sync: host state can merge while the client's tick is still 0, the sync then jumps the tick to the host's, and the test's ten-tick wait is satisfied before any rollback loop has copied the state onto the nodes | Confirmed from failing runs: in 4 failures of 120 under load the query was already true at tick 0 with the sync not done, and the wait ended at tick 29 to 41 with no rollback loop finished. With the fix, 0 failures in 120 at the same load | Accepted; the reviewer's three-line change to the test is on `main`. The check still fails when the client really lacks the host's state (shown by a mutation). The effects themselves are not affected: their gate counts finished rollback loops, not ticks |
+
+Iteration 12 (`c9f2384`) audited the push-distance change and found nothing: the maths is
+guarded against non-finite and non-positive inputs and is a pure function of restored state
+and config. Noted; no change.
 
 A note for the architecture: `rocket_step_start` (D-11) is written during the rollback tick
 without being registered state. That is safe because only the host reads it and rewrites
