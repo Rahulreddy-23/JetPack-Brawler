@@ -289,10 +289,13 @@ func _is_start_decided(snapshot: _Snapshot) -> bool:
 func _get_earliest_expired_hole() -> int:
 	var now := NetworkTime.tick
 	var oldest := maxi(NetworkRollback.history_start, 0)
+	var earliest := -1
 	for input: Node in _input_graph._links_from:
 		if input.is_multiplayer_authority():
 			continue
 		var nodes := _input_graph.get_linked_from(input)
+		if nodes.is_empty():
+			continue
 		var node := nodes[0] as Node
 		if not node.is_multiplayer_authority():
 			continue
@@ -309,8 +312,9 @@ func _get_earliest_expired_hole() -> int:
 		for tick in range(first, now):
 			var input_snapshot := NetworkHistoryServer._get_rollback_input_snapshot(tick)
 			if (input_snapshot == null or not input_snapshot.has_subject(input, true)) and _is_hole_accepted(node, inputs, tick) and _liveness_server.is_alive(node, tick):
-				return tick
-	return -1
+				earliest = tick if earliest < 0 else mini(earliest, tick)
+				break
+	return earliest
 
 func _is_tick_fresh_for(node: Node, tick: int) -> bool:
 	if not _simulated_ticks.has(node):

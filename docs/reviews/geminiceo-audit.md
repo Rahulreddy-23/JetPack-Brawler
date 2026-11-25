@@ -605,3 +605,30 @@ Merged `origin/main` (`486e5dd..e3f6f4f`: `G-31` landed in `e3f6f4f` using `Pack
 ### CEO Review (Iteration 16)
 1. **Every accepted `geminiceo` finding (G-1 through G-31) is now landed on `main`:** Zero open findings remain on `geminiceo`, and netfox patch 16 is completely buttoned up (123/123 handler checks green).
 2. **Final Phase 1 netcode item:** Netfox patch 15 (`D-10` + past-tick input bound) is actively wrapping up on its worktree (`94f7575`). Once patch 15 lands, cut the final Phase 1 debug APK so Rahul's two-phone playtest validates the complete Phase 1 build before starting Dabba.
+
+
+---
+
+## Iteration 17 Audit Update (26 Nov 2026 00:10 — against `origin/main` `c05420e`)
+
+Merged `origin/main` (`e3f6f4f..c05420e`: netfox patch 15 landing `D-10` + past-tick input bound in `1d75eaf`, and rebuilt Phase 1 debug APK in `c05420e`). Audited every line of `1d75eaf` (`addons/netfox/rollback/network-rollback.gd`, `addons/netfox/servers/network-history-server.gd`, `addons/netfox/servers/network-synchronization-server.gd`, `addons/netfox/servers/rollback-simulation-server.gd`, `scripts/dev/autopilot_script.gd`, `scripts/dev/net_sim.gd`, `scripts/net/launch_args.gd`, `scripts/game/main.gd`).
+
+### New Confirmed Finding
+
+#### 32. `RollbackSimulationServer._get_earliest_expired_hole()` returns the first peer's accepted hole instead of the earliest tick across all peers (`G-32`)
+- **Severity:** medium
+- **Category:** Desync / Crashes and logic bugs
+- **Location:** `addons/netfox/servers/rollback-simulation-server.gd:341-365` (`_get_earliest_expired_hole`)
+- **What happens and how to trigger it:** Inside the outer `for input: Node in _input_graph._links_from` loop, line 364 executes `return tick` as soon as the first remote input node has an accepted hole or pre-start tick, never inspecting subsequent remote peers. Trigger in a 3+ player match: Peer A (first in `_input_graph._links_from`) has an accepted pre-start tick at `now - 2`, while Peer B (second) has an expired input hole at tick `11` (`now - 14`, past the 12-tick allowance). `_get_earliest_expired_hole()` returns `now - 2` instead of `11`. On that rollback loop, the host only rolls back to `now - 2` and sends authoritative states for Peer A at `now - 1..now` while leaving Peer B's expired hole unresolved until the next frame; on the next loop, the host rolls back to `11`, re-simulating and potentially replacing Peer A's already-sent authoritative states if Peer B interacted with Peer A during `11..now`.
+- **Suggested fix:** Track `var earliest := -1` across all remote input nodes, update `earliest = tick if earliest < 0 else mini(earliest, tick)` and `break` out of the inner `for tick` loop instead of returning early, then `return earliest` (and guard `if nodes.is_empty(): continue` before `nodes[0]`). *(Fixed on `geminiceo`; verified failing on `c05420e` and passing after fix in `tests/test_security_audit.tscn`.)*
+
+### Areas With No New Findings (`e3f6f4f..c05420e`)
+- **Patch 15 (`_merge_rollback_input`, `_note_refused_input`, `_is_hole_accepted`, `_is_start_decided`, `_starts_from_carry_over`):** Input age refusal (> 12 ticks), per-peer rate-limited warnings, 1-second sliding window refusal counts (erased on `erase_peer` and `reset`), and dev-only `--sim-hold-*`/`--sim-drop-ms`/`--autopilot-wiggle` release guards in `launch_args.gd` are all clean.
+- **Network trust, Denial of service, Untrusted input, Purchases/unlocks, Android/privacy, Repository hygiene, Performance bugs:** none found.
+
+### Could Not Check (Iteration 17)
+- Multi-process loopback UDP suites (`tests/net_*.sh`, including new `tests/net_late_input.sh` and `tests/net_lost_input.sh`), `tests/test_fx_client.tscn`, and `tests/test_full_state_coverage.tscn` (loopback UDP blocked in sandbox); real Android device testing (`c05420e` APK).
+
+### CEO Review (Iteration 17)
+1. **All major Phase 1 items are now in the `c05420e` APK:** Push distances, Task E effects + changing health bar, netfox patch 15 (`D-10` + past-tick input refusal), and netfox patch 16 (`G-28`, `G-29`, `G-31`, log rate limits) are all merged on `main` (59/59 suite) and built into the APK.
+2. **Playtest right now, fold `G-32` cleanly alongside any phone-test polish:** `G-32` only triggers in 3+ player matches (2-phone hotspot tests have 1 client), so it does not block Rahul's Device Checkpoints 1 & 2 playtest — ship the 4-line fix into patch 15's follow-up while Rahul tests the APK on phones.
