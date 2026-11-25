@@ -16,7 +16,7 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `782da7b` | 25 Nov 2026 09:19 | Two reviewer commits: `2ce67fc` (finding D-10, open, being reproduced) and `782da7b` (finding D-11, accepted). `521903f` and later merge commits only merge `main`. |
+| `dev` | `782da7b` | 25 Nov 2026 09:19 | Two reviewer commits: `2ce67fc` (finding D-10, reproduced, open) and `782da7b` (finding D-11, accepted). `521903f` and later merge commits only merge `main`. |
 | `geminiceo` | `60fabd3` | 24 Nov 2026 23:26 | One reviewer commit, `60fabd3` (follow-up check: findings G-13 and G-14, decided below; its one code change only brings the branch's future-tick bound in line with `main`). `290ac58` only merges `main`. |
 
 ## Findings
@@ -136,6 +136,24 @@ these.
 - Outcome: accepted and cherry-picked onto `main`. It follows the existing ruling that a
   push ends a dash and that recoil is a push on the shooter. Consequence to know: firing the
   scrap blaster mid-dash cuts the dash short, so its bullet immunity ends on that tick.
+
+### D-10 (dev, `2ce67fc`): an intermittent position mismatch under simulated jitter
+
+- Report: one `SIM_JITTER_MS=150 tests/net_smoke.sh` run showed the client's bot 14.93 px
+  from the host's on two ticks, with matching inputs and no stall; three reruns passed.
+- Verified: yes, reproduced. 14 runs on `main` at `39339bc`: 13 passed with no difference,
+  1 failed with 9.96 px at ticks 196 and 197. In that run the client's value for each of
+  the two ticks is exactly one simulation step from the host's value two ticks earlier,
+  and it is right again from the next tick. So the client was sent, and applied, two states
+  for its own bot that were one tick behind the host's final history. No input was lost,
+  no stall was logged and the throttle stayed at its maximum.
+- Reading (not yet proven): the client's input for one tick reached the host late; the
+  host sent the bot's state for that tick without having simulated it, then repaired its
+  own history when the input arrived. If so, a late input packet on real Wi-Fi shows the
+  player a small snap of their own bot.
+- Outcome: accepted as a real fault, open. An investigation is assigned: the mechanism in
+  netfox, a reproduction on demand, and the options (an input delay, not sending a state
+  that was not simulated, or the client keeping its own prediction).
 
 ### D-11 (dev, `782da7b`): a deflected rocket was checked against a path it never flew
 
