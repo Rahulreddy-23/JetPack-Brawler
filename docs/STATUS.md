@@ -34,11 +34,18 @@ Current stage: Prototype, phase 1. Gate not passed.
       value came from the host and fails if that takes more than 4 ticks; 0 failures in 80.
 - [ ] Pushes travel about a fifth of the design's distance on the ground and far too much
       extra at low health (the design's numbers are distances; the code read them as
-      speeds). Found by the phase audit; correction in progress. Builds up to 16:59 on
-      25 Nov have it.
+      speeds). First correction measured right for single pushes but was rejected in
+      review: hits on separate ticks built on each other (30 bolts moved a bot 19.6 bot
+      heights, design 3). Second round in progress. Builds up to 16:59 on 25 Nov have the
+      weak pushes.
 - [ ] From the authority audit: the host accepts input up to 2 seconds late and replays the
       match from there (being bounded with netfox patch 15), and three more log lines can
       be flooded by any connected device (netfox patch 16, in progress).
+- [ ] `net_fx` fails about 1 run in 10 on `main`: one check reads the client's nodes a loop
+      before the host's state is copied onto them. Probably the test's wait, not the
+      effects; with the effects implementer.
+- [ ] One 4-byte identity packet crashes the host (geminiceo G-28, confirmed). Fix in
+      progress in netfox patch 16. Every build so far has it.
 - [ ] Device checkpoint 1 (Rahul): sticks, jetpack and dash on two phones over a hotspot.
       Script `docs/reviews/device-checkpoint-1.md`; build of 25 Nov at `b90d525`; not yet run.
 - [x] B Combat core, hazard wiring, dummy, push window. Reviewed, merged (`a170e4b`).
