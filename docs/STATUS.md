@@ -51,8 +51,8 @@ Current stage: Prototype, phase 1. Gate not passed.
 - [x] F Input and HUD for fire, melee, gadget, swap. Reviewed, merged (`5f92739`).
 - [x] Full test suite on `main` with A to F, netfox patches 1 to 14 and the reviewer fixes:
       51 of 51, last at the task D follow-ups (Mac, headless; nothing on a phone).
-- [ ] Device checkpoint 2 (Rahul): the knockback sandbox, 10 minutes of play. Script
-      `docs/reviews/device-checkpoint-2.md`; the same build; not yet run.
+- [ ] Device checkpoint 2 (Rahul): the knockback sandbox, 10 minutes of play on a build with
+      corrected push distances. Script `docs/reviews/device-checkpoint-2.md`; not yet run.
 - [ ] 1.6 Dabba fight, built last.
 - [ ] Phase review and `docs/reviews/phase-1-handoff.md` (started: both audits
       are in; their fixes are in progress).

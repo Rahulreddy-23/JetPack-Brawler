@@ -16,7 +16,7 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `6bbcd11` | 25 Nov 2026 17:34 | No reviewer commit since `6bbcd11` (D-14); `b23193b`, `754b470`, `339632f` and `2cb1595` only merge `main`. |
+| `dev` | `6642a86` | 25 Nov 2026 18:07 | One reviewer commit, `6642a86` (finding D-15, accepted). `91ed3de` only merges `main`. |
 | `geminiceo` | `59afd33` | 25 Nov 2026 17:41 | One reviewer commit, `59afd33` (iteration 8: a clean audit of D-14 and task D's follow-ups, no findings). `b6b4bab` only merges `main`. |
 
 ## Findings
@@ -244,6 +244,18 @@ these.
   the extra state property.
 - Outcome: accepted and cherry-picked onto `main`. It adds one integer per bot to the state
   sent each tick. The debug APK of 16:14 does not have it.
+
+### D-15 (dev, `6642a86`): the phone playtest should wait for the corrected knockback
+
+- Change: documents only. `docs/reviews/device-checkpoint-2.md` and `docs/STATUS.md` now
+  say that the current build is for the controls, sync and basic weapon and gadget checks,
+  that the knockback and recoil parts of checks 2 to 6 and 10 need the push-distance
+  correction, and that the 10-minute playtest behind the gate is to be run on a build that
+  has it. The script also asks for the build's commit with the answers.
+- Verified: it agrees with the phase audit's finding and with the lead's own warning in
+  the script, and it is more exact about which checks are affected (the rocket's push in
+  check 10 was missing from the warning).
+- Outcome: accepted and cherry-picked onto `main`.
 
 ## geminiceo audit (`e66eee1`)
 
