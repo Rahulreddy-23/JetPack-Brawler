@@ -17,7 +17,7 @@ these.
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
 | `dev` | `8a5d657` | 25 Nov 2026 18:13 | One reviewer commit, `8a5d657` (finding D-16, accepted). `942403b` only merges `main`. |
-| `geminiceo` | `59afd33` | 25 Nov 2026 17:41 | One reviewer commit, `59afd33` (iteration 8: a clean audit of D-14 and task D's follow-ups, no findings). `b6b4bab` only merges `main`. |
+| `geminiceo` | `5af3bfe` | 25 Nov 2026 18:23 | One reviewer commit, `5af3bfe` (findings G-28 and G-29, both accepted). `dbe05e2` only merges `main`. |
 
 ## Findings
 
@@ -382,6 +382,16 @@ Iteration 8 (`59afd33`) audited D-14, task D's follow-ups and the clean-up order
 found nothing. It lists G-27 as still open on its side; that fix has been on `main` since
 `588a572`. Noted; no change. The reviewer could not run the two-process network tests in
 its sandbox, so its audits are by reading plus the one-process tests.
+
+### geminiceo iteration 9 (`5af3bfe`)
+
+| Id | Finding | Verified | Outcome |
+|---|---|---|---|
+| G-28 | One 4-byte identity packet crashes the host: the engine's `get_utf8_string` allocates the declared length (2 GB) before checking how many bytes are left | Confirmed by run: a standalone probe on Godot 4.7.2 exits 138 (SIGBUS) on those four bytes. Any connected device can send it, before it is accepted | Accepted, highest priority. Fixed as part of netfox patch 16 (in progress), with a sweep of every other read whose length comes from the packet. Not in any build made so far |
+| G-29 | A raw packet that is only the 3-byte prefix dispatches command 0 with an empty payload | By reading | Accepted, with G-28 |
+
+The reviewer's commit is used as a reference, not cherry-picked: its files are being edited
+for patch 16.
 
 A note for the architecture: `rocket_step_start` (D-11) is written during the rollback tick
 without being registered state. That is safe because only the host reads it and rewrites
