@@ -32,6 +32,10 @@ Current stage: Prototype, phase 1. Gate not passed.
       after the blast, and under loss the client can hold its own guess for that tick until
       the next state arrives. The game was right. The check now reads the first tick whose
       value came from the host and fails if that takes more than 4 ticks; 0 failures in 80.
+- [ ] Pushes travel about a fifth of the design's distance on the ground and far too much
+      extra at low health (the design's numbers are distances; the code read them as
+      speeds). Found by the phase audit; correction in progress. Builds up to 16:59 on
+      25 Nov have it.
 - [ ] Device checkpoint 1 (Rahul): sticks, jetpack and dash on two phones over a hotspot.
       Script `docs/reviews/device-checkpoint-1.md`; build of 25 Nov at `b90d525`; not yet run.
 - [x] B Combat core, hazard wiring, dummy, push window. Reviewed, merged (`a170e4b`).
@@ -47,7 +51,8 @@ Current stage: Prototype, phase 1. Gate not passed.
 - [ ] Device checkpoint 2 (Rahul): the knockback sandbox, 10 minutes of play. Script
       `docs/reviews/device-checkpoint-2.md`; the same build; not yet run.
 - [ ] 1.6 Dabba fight, built last.
-- [ ] Phase review and `docs/reviews/phase-1-handoff.md`.
+- [ ] Phase review and `docs/reviews/phase-1-handoff.md` (started: the design-numbers audit is
+      in; the authority audit is running).
 
 ## Where work stands (25 Nov 2026, morning)
 

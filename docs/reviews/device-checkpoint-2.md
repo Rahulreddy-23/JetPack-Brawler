@@ -114,6 +114,11 @@ Performance
 
 ## Known limits of this build
 
+- Pushes are much weaker in this build than the design says, so do not judge knockback
+  from it (checks 2 to 6): the design's push numbers were being read as speeds instead of
+  distances. A melee hit moves a bot on the ground about half a bot height where the
+  design says two and a half. The correction is in progress; a new build follows. The
+  controls, weapons, gadgets and sync checks are not affected.
 - Grey boxes only: no art, no sound.
 - The hit freeze holds the hit bot's picture for a few frames; the game itself never pauses.
 - If the host phone is put in the background, the match breaks. That is not handled yet.
