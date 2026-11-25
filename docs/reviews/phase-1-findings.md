@@ -16,8 +16,8 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `09018a2` | 25 Nov 2026 22:22 | No reviewer commit since `09018a2` (D-17); later commits up to `1c4cf2e` only merge `main`. |
-| `geminiceo` | `2ee2aba` | 25 Nov 2026 22:22 | One reviewer commit, `2ee2aba` (iteration 14: finding G-31, accepted). `cb00be4` only merges `main`. |
+| `dev` | `09018a2` | 25 Nov 2026 23:51 | No reviewer commit since `09018a2` (D-17); later commits up to `3438439` only merge `main`. |
+| `geminiceo` | `39a4a86` | 25 Nov 2026 23:51 | One reviewer commit, `39a4a86` (iteration 15: a clean audit of the G-31 fix; the reviewer reports no open findings left on its side and removes its own test file). `63ef1e2` and `9f0e422` only merge `main`. |
 
 ## Findings
 
@@ -176,11 +176,21 @@ these.
   for the whole pause; the bot was driven about 390 px and burned a second of fuel. A
   one-tick press before a lost input was applied twice, a joining bot started 5 to 6 ticks
   late, and the fill could fire before a late input arrived.
-- Second version, in progress: no input is ever invented. A gap the host has waited on for
-  twice the redundancy window (8 ticks) is accepted as a tick on which the bot did not
-  act, which is what netfox itself ends up with, and play continues from there. A tick
-  before a bot's first input is not a gap. The smoke test's comparison rule is corrected
-  in the same change.
+- Second version, merged: no input is ever invented. The host waits up to 12 ticks
+  (400 ms, three times the redundancy window, on its own clock) for a missing input, then
+  accepts the tick as one on which the bot did not act, which is what netfox itself ends
+  up with, and refuses input older than that, so nothing it has sent for that bot is
+  replaced. A tick before a bot's first input is not a gap, and that start is final. A
+  device whose input is always too late gets a warning on the host, at most once a
+  second, and a count the game can read. Measured with packets held or dropped on
+  purpose: inputs 6 to 8 ticks late give no state sent then replaced and no wrong
+  display; a 1-second pause leaves the bot standing still (the first version drove it
+  410 px); the smoke test at 300 ms jitter went from 10 failures in 10 to none. The host
+  freeze test still stores every input. Reviewed three times; suite on `main` 59 of 59.
+- What it costs, written into section 15 of the patch notes: a lost input, or the end of a
+  pause, holds that bot still for every other player for up to 400 ms and then it jumps;
+  a player whose input is steadily later than 400 ms is frozen for everyone else. The
+  400 ms is a first guess to be judged on phones.
 
 ### D-11 (dev, `782da7b`): a deflected rocket was checked against a path it never flew
 
@@ -433,6 +443,10 @@ for recoil. Noted; no change.
 | Id | Finding | Verified | Outcome |
 |---|---|---|---|
 | G-31 | One more decoder turns a peer's bytes into text unchecked: a subject named by full name (id 0) in any snapshot frame is read as a null-terminated string and decoded as UTF-8, at one engine error line per invalid byte, before the sender's ownership is checked | Path confirmed by reading: `_NetworkIdentityReferenceSerializer.decode` calls `_CStringSerializer.decode` for id 0, and the dense, sparse and redundant serializers decode a reference at the start of every frame. Patch 16's sweep had marked it "bounded by the bytes left", which is true of its length and not of its log lines, and the security review passed it. The reviewer measured 15,000 lines and 100 ms for a 15 KB packet under its own size cap; ours is smaller | Accepted and merged. Measured on `main` before the fix: 4,051 lines and 36 ms for a full input packet, 1,011 lines for a state packet; after it, 0 lines. A second sweep, of every place a peer's bytes become text or a node path, is in the patch notes (section 16, part E) and found no other reachable site inside netfox |
+
+Iteration 15 (`39a4a86`) audited the G-31 fix as merged and found nothing. The reviewer
+states that every finding of its that was accepted, G-1 to G-31, is now on `main`, and it
+removed its own test file from its branch. Noted; no change.
 
 A note for the architecture: `rocket_step_start` (D-11) is written during the rollback tick
 without being registered state. That is safe because only the host reads it and rewrites

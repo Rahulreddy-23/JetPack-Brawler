@@ -70,11 +70,10 @@ host reads a client's input.
   crafted input gives no extra speed, fire rate, ammo, dash, gadget or range, and nothing
   while knocked out. Several inputs for one tick: the first wins. Inputs stamped in the
   future are bounded.
-- Not validated, being corrected: the host accepted input for ticks up to about 2 seconds
-  in the past and replayed the match from there. A modified client could withhold its
-  input, then send it with hindsight (hits land late, hits on it are undone), and by
-  staying behind could make the host replay 64 ticks every frame. The bound is being added
-  with netfox patch 15, using the same allowance as its gap rule.
+- Was not validated, corrected in netfox patch 15: the host accepted input for ticks up to
+  about 2 seconds in the past and replayed the match from there, so a modified client
+  could withhold its input and send it with hindsight, or make the host replay 64 ticks
+  every frame. Input older than 12 ticks (400 ms) is now refused.
 - Was not validated, corrected in netfox patch 16: three log lines any connected device
   could trigger without limit, one of them before it is accepted.
 - Found by the external reviewer and corrected in the same patch: one 4-byte packet crashed

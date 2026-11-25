@@ -156,6 +156,7 @@ func erase_peer(peer: int) -> void:
 	_rb_sent_state_history.erase(peer)
 	_rb_last_full_tick.erase(peer)
 	_last_size_warning_msec.erase(peer)
+	NetworkHistoryServer.erase_peer(peer) # PATCH: see addons/NETFOX_PATCHES.md
 
 ## Forget what was sent to other peers, while keeping the registered properties
 ## [br][br]

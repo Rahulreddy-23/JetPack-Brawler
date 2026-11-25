@@ -20,8 +20,16 @@ is inconclusive, because client prediction may then differ for reasons that are 
 With simulated latency the client rarely re-simulates a tick from a state it has just
 received, so the rule above finds nothing to compare. --settled TICKS then replaces it:
 every client tick that is at least TICKS older than the client's last one is compared,
-provided the host really simulated it and used the same input on that tick. By then the
-host's corrections have arrived, so the client's final value must equal the host's.
+provided the host really simulated it and the host and the client used the same input on
+that tick and on the MEMORY_TICKS ticks before it (and, for a value the client chained from
+its own prediction, on every tick since the received state it started from). By then the
+host's corrections have arrived, so the client's final value must equal the host's, and a
+difference is reported as: the client's settled position differs from the host's final
+position at tick N. The window is what the movement code remembers of an input: the
+longest of dash_time, thrust_ramp_time, input_buffer_time, wall_jump_grace and
+drop_through_time in config/tuning.tres is 0.25 s (drop_through_time), 8 ticks at 30 per
+second. A tick whose recent input differs between host and client (an input the host never
+got and filled in) is skipped, not failed: the two sides legitimately differ there.
 """
 import re
 import sys
@@ -30,6 +38,7 @@ TOLERANCE = 0.01          # pixels
 MIN_QUALIFIED = 0.8       # fraction of candidate ticks that must be comparable
 MIN_MOVE = 200.0          # pixels the client bot must travel
 MAX_HOST_LACKED = 2       # candidate ticks the host may lack the client's input for
+MEMORY_TICKS = 8          # ticks of input the movement code remembers, see the docstring
 FIELD = re.compile(r"(\w+)=(\S+)")
 
 
@@ -73,11 +82,26 @@ def main():
     if settled is not None:
         candidates = [t for t in candidates if t <= max(client) - settled]
     qualified, strict, host_lacked, mismatched, worst, neutral = [], 0, 0, 0, 0.0, 0
+    # Without simulated latency a client that never re-simulated from a state of the host's has
+    # nothing to be corrected by: that is a failure of its own, not an inconclusive run. (In
+    # settled mode a missing root says nothing: with latency the values are mostly chained.)
+    if settled is None and candidates and not any(int(client[t]["root"]) >= 0 for t in candidates):
+        print("FAIL: the client never got the host's states for its own bot (no tick of it was simulated from a received state)")
+        return 1
+
+    # The host does not simulate a bot before its first input arrives (netfox patch 15, join
+    # start): such a tick, with no input from the client either, is not a disagreement.
+    host_first_sim = min((u for u, f in host.items() if f["sim"] == "1"), default=0)
+
+    def idle(f):
+        return float(f["mx"]) == 0.0 and float(f["my"]) == 0.0 and f["jet"] == "0" and f["dash"] == "0"
 
     def same_inputs(first, last):
         # The host really simulated every tick of the run and used what the client sent.
         for u in range(first, last + 1):
             h, c = host.get(u), client.get(u)
+            if c is not None and u < host_first_sim and idle(c):
+                continue
             if h is None or c is None or h["sim"] != "1" or inputs(c) != inputs(h):
                 return False
         return True
@@ -89,8 +113,13 @@ def main():
             host_lacked += 1
             continue
         if settled is not None:
-            # Settled mode: the client's final value for this tick, same input on this tick.
-            if not same_inputs(t, t):
+            # Settled mode: the client's final value for this tick, same input on this tick
+            # and on the ticks the movement code still remembers before it, and since the
+            # received state the value was chained from.
+            first_input = t - MEMORY_TICKS
+            if int(c["root"]) >= 0:
+                first_input = min(first_input, int(c["root"]) + 1)
+            if not same_inputs(first_input, t):
                 mismatched += 1
                 continue
         else:
@@ -125,7 +154,10 @@ def main():
         return 1
     if worst > TOLERANCE:
         late = [t for t in qualified if (((float(client[t]["x"]) - float(host[t]["x"])) ** 2 + (float(client[t]["y"]) - float(host[t]["y"])) ** 2) ** 0.5) > TOLERANCE]
-        print("FAIL: host and client positions disagree on ticks with identical input, first at tick %d" % late[0])
+        if settled is not None:
+            print("FAIL: the client's settled position differs from the host's final position at tick %d" % late[0])
+        else:
+            print("FAIL: host and client positions disagree on ticks with identical input, first at tick %d" % late[0])
         return 1
     stalled = host_stall or client_stall or host_logged or client_logged
     if host_lacked > MAX_HOST_LACKED and not stalled:

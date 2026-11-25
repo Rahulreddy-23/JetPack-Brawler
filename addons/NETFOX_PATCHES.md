@@ -21,6 +21,9 @@ Tests named below (the `run_all.sh` name in brackets):
 - `tests/test_slow_frames.tscn` [slow_frames]: in-process host with 100 ms frames; every tick must be simulated.
 - `tests/net_hitch.sh` [host_hitch]: two processes; the host stalls its main thread for 400, 700 and 950 ms while an autopilot client plays, and must store and simulate every input tick the client sent.
 - `tests/net_diffs.sh` [host_diffs]: two processes, diff states on in the host; the client's bot and the host's own must each get a full state at least every `full_state_interval` ticks.
+- `tests/test_hole_rule.tscn` [hole_rule]: one process; probe subjects with a hole in their input: skipped while the hole is open, simulated from it when it is filled in time, left unsimulated and its carry-over made the state of record once it expires; input later than the allowance is refused (exactly the allowance accepted, one tick more refused, a stream of 60-tick-old input refused with no tick older than the allowance simulated and one warning per peer in the log); the refusal count of a peer; the reordered join (first inputs refused once their ticks were passed); the cost of the expired-hole scan.
+- `tests/net_late_input.sh` [late_input_1, late_input_2, late_input_refused, silent_peer, pause_input]: two processes (three with OBSERVER=1); the simulator holds a window of the client's packets so that later ones overtake them (`--sim-hold-ms`): inside the allowance no state sent for a tick may be replaced and the client may never show its own bot wrong; past it (EXPECT_REFUSED=1) the straggler is refused, the bot is not simulated on its tick and the client's wrong display is bounded; with a one way delay of 600 ms (EXPECT_SILENT=1) every input is refused, the bot is never simulated and the refusals are counted and warned about; PAUSE_MS stops the client for a second.
+- `tests/net_lost_input.sh` [lost_input]: two processes; the simulator drops the packets that carry one input tick (`--sim-drop-ms`); the host's bot stands still at most the input allowance + a few ticks.
 - `tests/net_smoke.sh` [net_smoke]: two-process honest session; also fails if a packet was dropped for size.
 
 ## 1. A server refuses snapshots stamped too far ahead of its clock
@@ -423,6 +426,249 @@ Tests named below (the `run_all.sh` name in brackets):
   next warning is logged again; after `erase_peer` and after `reset` the next packet
   of that peer is logged at once; and the dictionary holds only the peers warned since
   the reset.
+
+## 15. A hole in a subject's input: the host waits for it, then stops waiting, and invents nothing
+
+- Files: `addons/netfox/servers/rollback-simulation-server.gd` (`_get_nodes_to_simulate`,
+  `_is_predicting`, new `_starts_from_carry_over`, `_is_hole_accepted`,
+  `_get_earliest_expired_hole`, `_get_hole_allowance` and the constant
+  `_INPUT_ALLOWANCE_FACTOR`, `_is_start_decided`), `addons/netfox/servers/network-history-server.gd`
+  (`_record_rollback_state` passes the tick; `_merge_rollback_input` refuses late input;
+  `_note_refused_input`, `get_recent_refused_input_count`, `erase_peer`, and the clear in
+  `reset`), `addons/netfox/servers/network-synchronization-server.gd` (`erase_peer` calls the
+  history server's) and `addons/netfox/rollback/network-rollback.gd` (`_rollback`).
+- What upstream does: a client's input packets carry the last `input_redundancy` ticks, and
+  they can overtake each other, so the host can hold the inputs of the ticks after a tick u
+  and not the input of u itself (a hole). The host skips a node whose input for the tick is
+  missing (`_get_nodes_to_simulate`; prediction is off) and `_record_rollback_state` records
+  the state for the next tick as not authoritative, carrying the state of tick u over, so
+  nothing is sent for it. But on the next tick the input is there and the node is simulated
+  from that carried-over state: `restore_latest` takes the latest state at or before the tick,
+  which is the carry-over, one step behind. The result is recorded as authoritative, because
+  that decision looks only at whether the previous tick's input exists, and is sent. This
+  repeats for every tick until the missing input arrives; then the host re-simulates from u
+  and sends every state again, corrected. Every viewer of the bot sees, for as many ticks as
+  the hole is open, a state one step behind (28.6 px at jetpack speed in the test), and if
+  the two versions of a tick arrive in the other order the stale one stays in the client's
+  history. (Found as dev finding D-10; reproduced with `tests/net_late_input.sh`, which
+  fails identically on the unpatched addon.)
+- The principle: later than the allowance is the same as lost. The host stops waiting, the
+  tick stands as one where the bot did not act, and an input for it that arrives afterwards
+  is refused. Nothing the host has sent is then replaced. The owner's client, which did
+  simulate that tick, is corrected once, by at most the movement of the ticks it lost; that
+  is what a lost input costs, and it is accepted. No input is ever made up. An earlier version
+  of this patch filled an expired hole with the last known input; the review rejected it:
+  after a pause of the client every tick of the pause was filled at once with stale input
+  (the bot drove on by itself), one-tick presses were applied again, and the host could
+  expire a hole before its straggler arrived.
+- The input allowance A is `_INPUT_ALLOWANCE_FACTOR * input_redundancy` = 3 * 4 = 12 ticks,
+  400 ms at 30 ticks per second, counted on the host's own clock (`NetworkTime.tick`) from the
+  tick the input belongs to: the latest an honest input may arrive. It is one named constant
+  used by both rules below. 12 and not 8: the bound also applies to honest input that is
+  merely late and in order (a Wi-Fi stall delivers a run of packets at once, and everything in
+  it older than A is refused), and the authority audit's own suggestion was about 250 ms plus
+  the redundancy (11.5 ticks). With 8 a hold that makes the input arrive about 5 ticks after
+  the packets that overtook it already lands past the allowance (hole at tick 152, expiry at
+  host tick 161, straggler at 163). It is a first guess, to be judged after the phone test.
+- The patch, on the peer that owns the state (the host):
+  1. While a hole is open a node is not simulated from a carry-over. A node whose state at the
+     tick is only a carry-over (non-authoritative, because it was skipped on an earlier tick)
+     is not simulated, and `_is_predicting` says so, exactly like a tick with no input. So no
+     state built on a stale start is recorded as authoritative or sent. When the missing input
+     arrives in time, the existing path (`_handle_input` sets the earliest input, `_rollback`
+     re-simulates from it) simulates from the hole on and sends the states.
+  2. Expiry. A tick with no input, with a later input present, whose age
+     (`NetworkTime.tick - tick`) is more than A is final: it stays unsimulated, its
+     carried-over state becomes the state of record (`_is_hole_accepted`, used by
+     `_is_predicting`), and the node goes on from the real inputs after it. Nothing arrives at
+     that moment, so `_rollback` asks `_get_earliest_expired_hole()` for the earliest such
+     tick whose carry-over is not yet the state of record and re-simulates from it. The rule
+     reads only the input and state histories and `NetworkTime.tick`, which does not change
+     inside a rollback loop, so every pass over the tick gives the same answer.
+  3. A tick with no input before it (the first ticks of a subject that has not started to
+     send) is no hole once a later input exists: the subject is simulated from its first input
+     tick, with no delay.
+  4. Refusal (the audit addition). On a server `_merge_rollback_input` refuses the input of a
+     tick older than A (`NetworkTime.tick - tick > A`); exactly A is accepted. So what the
+     host did with an expired tick is final, a peer cannot make the host simulate a long
+     stretch again by sending old input (a re-simulation starts at most A ticks back), and a
+     modified client's hindsight window is 400 ms where it was about 2 s (the history window).
+     Upstream's own warning "Input being merged is too old!" (history window, 64 ticks) is out
+     of reach for a server now, because the refusal comes first.
+  5. The start is final too (`_is_start_decided`). A tick before a subject's first input is
+     accepted as "no input, no hole" as soon as a later input is held, and its carried-over
+     state is recorded as authoritative and sent. If the input of that tick (or of an earlier
+     one) then arrives, inside the allowance, it would be simulated and the states already
+     sent would be replaced (the review's probe: inputs 9 and 10 arrive first, ticks 7 and 8
+     are carried over and sent, then inputs 7 and 8 arrive). So on a server input for a tick
+     with no input held at or before it, whose following state is a carry-over recorded as
+     authoritative, is refused. It reads only the input and state histories (nothing is
+     stored), so it holds after a pause longer than the history as well, where the old inputs
+     are gone from the input history (that case is the same code and has no test of its own).
+     An ordinary join is not refused: before a later input is held the states of the ticks
+     before the first input are not authoritative.
+  6. Visibility. A client whose input always arrives later than A has every input refused, so
+     no later input is ever held, no hole is ever accepted, the bot is never simulated and
+     nothing is sent for it; its owner sees it move and everyone else sees it frozen, and
+     without a message nobody would know why. `_note_refused_input` logs at trace level for
+     every refusal and as a warning (peer id, the tick, how old it was at the host, the
+     allowance) for the first refusal of a peer and then at most once a second, with
+     `_PeerRateLimit` of patch 16. `NetworkHistoryServer.get_recent_refused_input_count(peer)`
+     is a read-only query, in the style of `has_authoritative_state`: how many input snapshots
+     of that peer the server refused in the last second (0 on a client). Every input tick
+     travels in up to `input_redundancy` packets, so a peer whose every input is refused counts
+     about 4 per tick, 116 a second in the test. A game can show "connection too slow" from
+     it; no UI is built. The bookkeeping is a dictionary per peer that has had a refusal, with
+     at most one entry per host tick of the last second (about 31 integers); a refusal costs
+     one dictionary update, and the first of each host tick also drops the entries older than
+     a second. A peer with no refusals costs nothing. It is erased when the peer leaves
+     (`NetworkSynchronizationServer.erase_peer` calls `NetworkHistoryServer.erase_peer`, which
+     also erases the limiter's entry) and cleared by `NetworkHistoryServer.reset()`, which
+     `NetworkTime.stop()` calls; both are tested.
+  The scan for expired holes runs once per remote input node per rollback loop, with no
+  allocation: it starts at the tick before the loop (the newest state recorded) and goes back
+  only while the subject's states are carry-overs.
+- Host stall: the multiplayer poll runs before the tick loop in a frame (`SceneTree` polls
+  first; `NetworkTime._loop` runs in `_process`), and a stalled host does not advance
+  `NetworkTime.tick`. So the packets that queued up during a 400 to 950 ms freeze are merged
+  in the first poll after it, while the host's tick is still the old one: their age is small
+  or negative, never above A. Measured by `host_hitch` (the `INPUT_AGE` lines): the oldest
+  input merged after the freezes was 1 to 2 ticks old (400 ms), 0 to 1 (700 ms) and below 0
+  (950 ms: the clock is reset after a stall above the stall threshold); every input tick of
+  the client was stored at all three freeze lengths (369 of 369) and the bot simulated on
+  each. The catch-up ticks (8 per frame at most) run after the poll, so a stall of the host
+  does not make honest input older than A. A stall of the client's network is the case the
+  refusal is for: a run of packets arrives at once, and what is older than 12 ticks is
+  refused.
+- What is not touched: a client (`is_multiplayer_authority()` is false for the state it
+  predicts, so the rules return false there; the refusal is for a server only); the host's own
+  bot (its input is recorded every tick, no hole); subjects without inputs are simulated on
+  every tick as before; the combat resolver runs on `after_process_tick`, which is emitted
+  for every tick whether a node was simulated or not. Nodes with `enable_prediction` on keep
+  upstream behaviour; the project does not use it.
+- Costs, stated plainly:
+  - An input that never arrives holds that bot still for up to A = 12 ticks before it carries
+    on (measured by `lost_input`: 11 ticks standing still), and its state is not sent in that
+    time, so other players see it stand still. Before this patch they saw a state one step
+    behind instead.
+  - After a pause of the client the bot moves again within that allowance of the first new
+    input (the last ticks of the pause are younger than A and stay open until they expire).
+  - A modified client's window to put input in the past is 400 ms (it was about 2 s).
+  - The owner's own client shows its bot wrong for up to A ticks after an input that never
+    arrives (it simulated the tick, the host did not), at most the movement of the ticks it
+    lost, and is corrected once the host's states arrive.
+  - Hits and the resolver (a correction to an earlier version of this note, which said the
+    resolver sees a held bot at its last position): when a hole expires or is filled the host
+    re-simulates from the hole to now, so the resolver runs again on every held tick with the
+    bot on its real path; only the hole tick itself keeps the bot standing still. So "no state
+    the host sent is replaced" holds for the held bot itself, but the states of other
+    subjects that depended on it during the hold (an attacker's knockout count and repair,
+    pickups, world objects) are sent during the hold and can be replaced afterwards: the same
+    class as before this patch, over a window of up to A ticks.
+  - In plain terms: any lost input, and the end of any pause, holds that bot still for
+    everyone else for up to 400 ms, and then it jumps.
+  - A join in which the inputs of the first ticks arrive after later ones (the review's probe,
+    reproduced with 150 ms of jitter: 5 refusals, first stored input at tick 30): those first
+    inputs are refused, and the owner's client, which simulated those ticks, shows its bot
+    wrong once (one loop, 1.8 px) before the host's states correct it. Nothing the host sent
+    is replaced. `late_input` reports `JOIN_REORDERED` and does not count those ticks (up to
+    two after the first input stored); any other wrong tick still fails it.
+  - A client whose input always arrives later than A is out of sync for good (see 6): its
+    owner sees its bot move, everyone else sees it frozen at its last carried-over state.
+  - The scan for expired holes: per rollback loop, per remote input, two state lookups and one
+    input lookup in a normal session (the tick before the loop is authoritative), more while a
+    subject's input is missing (one more per tick it has been missing, at most the history
+    window). Timed in `hole_rule` with six remote inputs, several of them with a long run of
+    missing input: 240 microseconds per call (the review measured 1.4 to 1.7 ms for the first
+    version of the scan and about 6 microseconds per call in a normal session); `hole_rule`
+    fails above 500.
+- Tests that fail without it (run_all names): `hole_rule` (one process; a probe subject
+  registered with the real history and simulation servers: first input without delay, hole
+  open, hole filled in time, expiry by the host's clock whatever input follows, nothing made
+  up and a one-tick press applied once, the expiry stays after simulating again, a straggler
+  after the expiry refused and changing nothing, exactly A accepted and A + 1 refused, a
+  stream of 60-tick-old input refused with no tick older than A simulated and one warning per
+  peer in the log instead of one per snapshot, the refusal count of a peer: counted, 0 for a
+  peer not refused, 0 a second later, erased when the peer leaves, cleared on reset; the
+  reordered join: inputs 10 and 11 first, the carried-over states of 8 and 9 authoritative,
+  inputs 8 and 9 then refused and nothing replaced; an ordinary join after the host passed some
+  ticks still accepted and simulated from its first tick; scan time), `late_input_1` and `_2`
+  (two processes, `_2` with a third client watching; the simulator holds the client's packets
+  of a 150 ms window an extra 183 and 217 ms; the test reports how many ticks after its own
+  tick the hole's input arrived and fails if that is within 3 ticks of A; zero states sent and replaced, zero loops
+  with the client's own bot wrong, the bot simulated from its first input tick),
+  `late_input_refused` (a hold of 600 ms, 18 ticks, past A: the hole's input is refused, the bot is not
+  simulated on that tick, zero states replaced, the client's wrong display ends within
+  A + `input_redundancy` ticks of the hole, and host and client agree afterwards; with a third
+  client watching), `pause_input` (the client is stopped for a second with SIGSTOP: the host
+  never simulates the bot on a tick it has no input for, the bot does not move across them,
+  and the client's wrong display is bounded the same way), `silent_peer` (a one way delay of
+  600 ms, so that every input of the client is later than A: the host stores none, never
+  simulates the bot, sends no state for it, counts the refusals for the peer and warns at most
+  once a second, while the client moves its own bot), `lost_input` (the simulator drops
+  the packets of a 140 ms window for good: the bot stands still on the host for at most A +
+  the number of lost inputs + 2 ticks, then goes on, and host and client agree 20 ticks after
+  the last lost input), `host_hitch` (every client input tick still stored at 400, 700 and
+  950 ms freezes, with the age of the oldest input merged reported).
+- Measured: `tests/net_late_input.sh`, no run spanning a pause of the machine.
+  - Inside the allowance: holds of 183 and 217 ms (window 150 ms) made the hole's input arrive
+    6 to 7 and 7 to 8 ticks after its own tick; 5 of 5 runs each passed with the whole
+    `run_all.sh` suite running on the same machine (margin to A = 12: 4 ticks at the least;
+    the test fails below 3). The earlier 250 ms hold made it arrive 8 to 9 ticks after its
+    tick, a margin of 3 when idle and about 1 when busy, and a hold of 317 ms 10 to 11, so
+    neither is a test. In all runs: 0 states sent and then replaced (full state signature),
+    0 loops with the client's own bot shown wrong, the bot first simulated on its first input
+    tick, and the third client received 0 wrong states (its longest silence for the bot was 7
+    client ticks, then a catch-up of 4 to 5 ticks and 11 to 15 px).
+  - Beyond the allowance: a hold of 600 ms (18 ticks; 5 of 5 runs passed under the same load;
+    a hold of 500 ms, 15 ticks, is only 3 ticks past A and was replaced): the hole's input
+    is refused (1 or 2 ticks never stored), the bot is not simulated on them, 0 states sent and
+    replaced, the owner's client shows its bot wrong for 12 to 13 ticks (ticks hole + 1 to
+    hole + 12 or 13, at most 23.5 px), which ends when the host's states for the following
+    ticks arrive (the bound in the test is A + `input_redundancy` ticks after the hole), and
+    host and client agree on every later settled tick (`TRACE_DIFF` lists 1 or 2 ticks, right
+    after the hole). The third client: 0 wrong states, longest silence 11 client ticks, then a
+    catch-up of 3 ticks and 6.6 px.
+  - A client whose input always arrives later than A (`silent_peer`, a one way delay of 600
+    ms; with 450 ms the input arrives 12 ticks after its tick, right at A, and only some of it
+    is refused, so that is not a test): all 8 warnings in about 10 seconds are for that peer
+    (one a second), the first one reading "Refusing input @112 from peer #...: 38 ticks old
+    at the host (the allowance is 12)"; `get_recent_refused_input_count` read 116 at the end;
+    the host stored 0 inputs, simulated the bot on 0 ticks and sent no state for it, so its bot
+    stayed at its spawn point (0 px travelled) for everyone else, while on its owner's client
+    it travelled 277.6 px. Nothing else on the client says anything is wrong: its own bot is
+    displayed from its own prediction and no state ever corrects it.
+  - A pause of the client of one second (SIGSTOP; 2 runs, and 5 of 5 under load): 31 and 32 ticks without input,
+    0 simulated by the host, the bot did not move across any of them, 0 loops with the client's
+    own bot wrong. On the first version of this patch (750c6e0) the same test fails: 31 ticks
+    simulated without input, the bot moves on every one of them, and the client shows it wrong
+    for 5 loops, up to 409.6 px.
+  - A lost input (`lost_input`, 3 runs): the bot stands still on the host for 11 ticks, then
+    goes on; host and client agree 20 ticks after the lost tick.
+  - Host stall (`host_hitch`, 3 runs): every client input tick stored (369 to 370 of 370), the
+    oldest input merged 2, 1 and -3 ticks old at the 400, 700 and 950 ms freezes (1, 0 and -4 in
+    the third run).
+  - Smoke test under simulated jitter on both sides (`SIM_JITTER_MS`, same compare rule, the
+    tree without this patch against the tree with it): at 300 ms the unpatched tree fails 10 of
+    10 runs (the client's settled position differs from the host's final one, 12.8 to 39.3 px);
+    with the patch 0 of 10 fail, 7 pass and 3 are inconclusive. At 150 ms the unpatched tree
+    passes 20 of 20; with the patch 18 pass, 0 fail and 2 are inconclusive. The inconclusive
+    runs are not passes: the one examined at 150 ms had a logged stall (a busy machine); at
+    300 ms the host had not simulated some tick of the bot (a tick whose input arrived later
+    than the allowance, or never; jitter on both sides plus the client's lead can pass 12 ticks)
+    and the dash that the rule needs to compare was within 8 ticks of it. With 75 ms of latency
+    on top of 300 ms jitter a run failed the rule "the host lacked the client's input for more
+    than 2 ticks": 4 of 135 ticks had no input within the allowance.
+  - Timeline from a real log of the host (`TICK_LOG=1`, hold of 217 ms, hole at tick 156): at
+    host tick 157 to 164 the bot is not simulated and stays at x = 2397.81; at host tick 162
+    the inputs of ticks 157 to 160 are there but the bot is still not simulated (they sit
+    behind the hole); the hole's input arrives at host tick 164 (8 ticks after its tick), and
+    in the loop at 165 ticks 156 to 163 are simulated again in one pass (x 2395.68 to 2380.75)
+    and the bot is simulated on every tick after. For a pause: the last input before it is for
+    tick 111; the bot stands still at x = 2489.54 from host tick 112; the first input after it
+    (tick 143) arrives at host tick 145 and is not simulated; at host tick 155 the hole at tick
+    142 is older than 12 ticks, and ticks 143 to 153 are simulated in one loop: the bot moves
+    again 10 ticks after the first new input.
 
 ## 16. Reads that take a length from a packet, and log lines a peer can drive without limit
 
@@ -940,7 +1186,7 @@ diff --git a/addons/netfox/network-time-synchronizer.gd b/addons/netfox/network-
  	_logger.debug("Received initial timestamp @ %.4fs raw time", [_clock.get_raw_time()])
 ```
 
-`addons/netfox/rollback/network-rollback.gd`, carries patch 9:
+`addons/netfox/rollback/network-rollback.gd`, carries patches 9 and 15:
 
 ```diff
 diff --git a/addons/netfox/rollback/network-rollback.gd b/addons/netfox/rollback/network-rollback.gd
@@ -976,6 +1222,19 @@ diff --git a/addons/netfox/rollback/network-rollback.gd b/addons/netfox/rollback
  	before_loop.emit()
  
  	# Figure out where to start rollback from
+@@ -390,6 +397,12 @@
+ 	if _earliest_state >= 0 and _earliest_state <= _resim_from:
+ 		range_source = "latest state"
+ 		_resim_from = _earliest_state
++	# PATCH (see addons/NETFOX_PATCHES.md): nothing arrives when a hole in a subject's
++	# input expires, so go back to it here
++	var expired_hole := RollbackSimulationServer._get_earliest_expired_hole()
++	if expired_hole >= 0 and expired_hole <= _resim_from:
++		range_source = "expired input hole"
++		_resim_from = expired_hole
+ 	_resim_from = mini(_resim_from, NetworkTime.tick - 1)
+ 	_logger.trace("Simulating range @%d>@%d using %s", [_resim_from, NetworkTime.tick, range_source])
+ 
 ```
 
 `addons/netfox/schemas/network-schemas.gd`, carries patches 16 and 5:
@@ -1374,16 +1633,21 @@ diff --git a/addons/netfox/servers/data/snapshot.gd b/addons/netfox/servers/data
  	if not _data.has(subject):
 ```
 
-`addons/netfox/servers/network-history-server.gd`, carries patches 1, 3 (the server-only bound), 10 and 13:
+`addons/netfox/servers/network-history-server.gd`, carries patches 1, 3 (the server-only bound), 10, 13 and 15:
 
 ```diff
 diff --git a/addons/netfox/servers/network-history-server.gd b/addons/netfox/servers/network-history-server.gd
 --- a/addons/netfox/servers/network-history-server.gd
 +++ b/addons/netfox/servers/network-history-server.gd
-@@ -21,6 +21,10 @@
+@@ -21,6 +21,15 @@
  
  var _ignored_subjects := _Set.new()
  
++# PATCH (see addons/NETFOX_PATCHES.md): peer to {host tick: input snapshots refused at that tick},
++# for the last second only; peer to the time of its last warning.
++var _input_refusals := {}
++var _input_refusal_limit := _PeerRateLimit.new()
++
 +# PATCH (see addons/NETFOX_PATCHES.md): subjects that state from their authority
 +# has been merged for in this session
 +var _authoritative_subjects := _Set.new()
@@ -1391,7 +1655,7 @@ diff --git a/addons/netfox/servers/network-history-server.gd b/addons/netfox/ser
  # Source of truth for history
  var _rb_input_history := _PerObjectHistory.new(_rb_history_size)
  var _rb_state_history := _PerObjectHistory.new(_rb_history_size)
-@@ -65,6 +69,8 @@
+@@ -65,6 +74,8 @@
  	_rb_input_properties.erase_subject(node)
  	_sync_state_properties.erase_subject(node)
  
@@ -1400,18 +1664,21 @@ diff --git a/addons/netfox/servers/network-history-server.gd b/addons/netfox/ser
  	# Erase from per-object history
  	_rb_state_history.erase_subject(node)
  	_rb_input_history.erase_subject(node)
-@@ -90,6 +96,7 @@
+@@ -90,6 +101,9 @@
  	_sync_state_snapshots = _HistoryBuffer.new(_sync_history_size)
  
  	_ignored_subjects.clear()
 +	_authoritative_subjects.clear()
++	_input_refusals.clear() # PATCH: see addons/NETFOX_PATCHES.md
++	_input_refusal_limit.clear()
  
  ## Do not record [param subject]
  ## [br][br]
-@@ -135,6 +142,24 @@
+@@ -134,6 +148,61 @@
+ 		return -1
  	else:
  		return tick - latest_input
- 
++
 +## Return true if [param subject] has state that came from its authority
 +## [br][br]
 +## On a peer that is not the authority, rollback and synchronized state of a
@@ -1430,10 +1697,71 @@ diff --git a/addons/netfox/servers/network-history-server.gd b/addons/netfox/ser
 +		return true
 +	return _authoritative_subjects.has(subject)
 +
++## How many input snapshots of [param peer] the server refused in the last second (as late
++## as it was refused, or before the peer's first input), or 0 on a client. Every input tick
++## travels in up to [member NetworkRollback.input_redundancy] packets, so a peer whose every
++## input is refused counts about that many per tick. A game can show "connection too slow"
++## from it. The count is erased when the peer leaves and cleared by [method reset].
++func get_recent_refused_input_count(peer: int) -> int:
++	var by_tick := _input_refusals.get(peer, {}) as Dictionary
++	var from := NetworkTime.tick - NetworkTime.tickrate
++	var count := 0
++	for tick: int in by_tick:
++		if tick > from:
++			count += by_tick[tick] as int
++	return count
++
++## Erase all data kept about [param peer]. Called when it leaves.
++func erase_peer(peer: int) -> void:
++	_input_refusals.erase(peer)
++	_input_refusal_limit.erase_peer(peer)
++
++func _note_refused_input(snapshot: _Snapshot, age: int) -> void:
++	_logger.trace("Refusing input @%d, %d ticks old", [snapshot.tick, age])
++	var peers := {}
++	for input in snapshot.get_subjects():
++		if input is Node:
++			peers[(input as Node).get_multiplayer_authority()] = true
++	var now := NetworkTime.tick
++	for peer: int in peers:
++		var by_tick := _input_refusals.get_or_add(peer, {}) as Dictionary
++		if not by_tick.has(now):
++			for tick: int in by_tick.keys():
++				if tick <= now - NetworkTime.tickrate:
++					by_tick.erase(tick)
++			by_tick[now] = 0
++		by_tick[now] = (by_tick[now] as int) + 1
++		if _input_refusal_limit.allow(peer):
++			_logger.warning("Refusing input @%d from peer #%d: %d ticks old at the host (the allowance is %d)", [snapshot.tick, peer, age, RollbackSimulationServer._get_hole_allowance()])
+ 
  ## Record currently registered rollback state properties for [param subject] at
  ## [param tick].
- func push_rollback_state(subject: Node, tick: int) -> void:
-@@ -199,18 +224,48 @@
+@@ -165,7 +234,7 @@
+ 	_record(tick, _rb_state_history, _rb_state_snapshots, _rb_state_properties, false, func(subject: Node):
+ 		if not subject.is_multiplayer_authority():
+ 			return false
+-		if RollbackSimulationServer._is_predicting(input_snapshot, subject):
++		if RollbackSimulationServer._is_predicting(input_snapshot, subject, tick - 1):
+ 			return false
+ 		return true
+ 	)
+@@ -194,23 +263,64 @@
+ 	return _sync_state_snapshots.get_at(tick)
+ 
+ func _merge_rollback_input(snapshot: _Snapshot) -> bool:
++	# PATCH (see addons/NETFOX_PATCHES.md): a server stops waiting for the input of a tick
++	# after the input allowance; input stamped with a tick older than that is refused, so
++	# that what the host did with an expired tick is final. So is input for a tick before a
++	# subject's first input that the host has already passed (_is_start_decided). Logged at
++	# trace level, and as a warning at most once a second per peer (a peer can cause one
++	# refusal per snapshot); counted for get_recent_refused_input_count.
++	if multiplayer.is_server():
++		var age := NetworkTime.tick - snapshot.tick
++		if age > RollbackSimulationServer._get_hole_allowance() or RollbackSimulationServer._is_start_decided(snapshot):
++			_note_refused_input(snapshot, age)
++			return false
+ 	if not _can_merge_tick(snapshot.tick, _rb_input_history):
+ 		return false
  	_merge_snapshot(snapshot, _rb_input_snapshots, true)
  	return _merge_history(snapshot, _rb_input_history, true)
  
@@ -1484,7 +1812,7 @@ diff --git a/addons/netfox/servers/network-history-server.gd b/addons/netfox/ser
  func _record(tick: int, history: _PerObjectHistory, snapshots: _HistoryBuffer, property_pool: _PropertyPool, only_auth: bool, auth_filter: Callable) -> void:
  	var snapshot := snapshots.get_at(tick, _Snapshot.new(tick)) as _Snapshot
  	if not snapshots.has_at(tick):
-@@ -296,6 +351,26 @@
+@@ -296,6 +406,26 @@
  	return has_updated
  
  func _can_merge_tick(tick: int, history: _PerObjectHistory) -> bool:
@@ -1513,7 +1841,7 @@ diff --git a/addons/netfox/servers/network-history-server.gd b/addons/netfox/ser
  
 ```
 
-`addons/netfox/servers/network-synchronization-server.gd`, carries patches 3, 4, 6, 10, 11 and 14:
+`addons/netfox/servers/network-synchronization-server.gd`, carries patches 3, 4, 6, 10, 11, 14 and 15:
 
 ```diff
 diff --git a/addons/netfox/servers/network-synchronization-server.gd b/addons/netfox/servers/network-synchronization-server.gd
@@ -1538,16 +1866,17 @@ diff --git a/addons/netfox/servers/network-synchronization-server.gd b/addons/ne
  	_rb_state_properties.erase_subject(node)
  	_rb_input_properties.erase_subject(node)
  	_rb_owned_state_properties.erase_subject(node)
-@@ -149,6 +154,8 @@
+@@ -149,6 +154,9 @@
  ## Called by default when a peer leaves
  func erase_peer(peer: int) -> void:
  	_rb_sent_state_history.erase(peer)
 +	_rb_last_full_tick.erase(peer)
 +	_last_size_warning_msec.erase(peer)
++	NetworkHistoryServer.erase_peer(peer) # PATCH: see addons/NETFOX_PATCHES.md
  
  ## Forget what was sent to other peers, while keeping the registered properties
  ## [br][br]
-@@ -157,6 +164,8 @@
+@@ -157,6 +165,8 @@
  ## [method _NetworkTime.stop].
  func reset() -> void:
  	_rb_sent_state_history.clear()
@@ -1556,7 +1885,7 @@ diff --git a/addons/netfox/servers/network-synchronization-server.gd b/addons/ne
  	_last_sync_state_sent = _Snapshot.new(0)
  
  func _get_peer_rb_sent_history(peer: int) -> _HistoryBuffer:
-@@ -164,25 +173,42 @@
+@@ -164,25 +174,42 @@
  		_rb_sent_state_history[peer] = _HistoryBuffer.new(NetworkRollback.history_limit)
  	return _rb_sent_state_history[peer]
  
@@ -1613,7 +1942,7 @@ diff --git a/addons/netfox/servers/network-synchronization-server.gd b/addons/ne
  # Prepare snapshot to be sent to `peer`
  # Only contains visible subjects' auth properties
  func _make_peer_snapshot(snapshot: _Snapshot, peer: int, properties: _PropertyPool) -> _Snapshot:
-@@ -269,43 +295,68 @@
+@@ -269,43 +296,68 @@
  		# Nothing to send
  		return
  
@@ -1704,7 +2033,7 @@ diff --git a/addons/netfox/servers/network-synchronization-server.gd b/addons/ne
  func _synchronize_sync_state(tick: int) -> void:
  	# We don't own sync state, nothing to synchronize
  	if _sync_owned_state_properties.is_empty():
-@@ -391,7 +442,34 @@
+@@ -391,7 +443,34 @@
  	elif is_instance_valid(multiplayer):
  		multiplayer.peer_disconnected.connect(erase_peer)
  
@@ -1739,7 +2068,7 @@ diff --git a/addons/netfox/servers/network-synchronization-server.gd b/addons/ne
  	var buffer := StreamPeerBuffer.new()
  	buffer.data_array = data
  
-@@ -399,12 +477,17 @@
+@@ -399,12 +478,17 @@
  
  	for snapshot in snapshots:
  		snapshot.sanitize(sender)
@@ -1757,7 +2086,7 @@ diff --git a/addons/netfox/servers/network-synchronization-server.gd b/addons/ne
  	var buffer := StreamPeerBuffer.new()
  	buffer.data_array = data
  
-@@ -413,37 +496,52 @@
+@@ -413,37 +497,52 @@
  	_ingest_state(sender, snapshot)
  
  func _handle_diff_state(sender: int, data: PackedByteArray) -> void:
@@ -1814,6 +2143,158 @@ diff --git a/addons/netfox/servers/network-synchronization-server.gd b/addons/ne
 +	if NetworkHistoryServer._merge_rollback_state(snapshot, is_diff):
  		_on_state.emit(snapshot)
  	_logger.trace("Ingested state: %s", [snapshot])
+```
+
+`addons/netfox/servers/rollback-simulation-server.gd`, carries patch 15:
+
+```diff
+diff --git a/addons/netfox/servers/rollback-simulation-server.gd b/addons/netfox/servers/rollback-simulation-server.gd
+--- a/addons/netfox/servers/rollback-simulation-server.gd
++++ b/addons/netfox/servers/rollback-simulation-server.gd
+@@ -123,7 +123,7 @@
+ 
+ 	# Determine predicted nodes
+ 	for node in _callbacks.keys():
+-		if _is_predicting(input_snapshot, node):
++		if _is_predicting(input_snapshot, node, tick):
+ 			_predicted_nodes.add(node)
+ 
+ 	# Run callbacks and clear group
+@@ -171,11 +171,20 @@
+ 			# Don't simulate
+ 			continue
+ 
++		# PATCH (see addons/NETFOX_PATCHES.md): an owned node does not build on
++		# a state that is only a carry-over, see _starts_from_carry_over()
++		if input_snapshot.has_subjects(inputs, true) and _starts_from_carry_over(node, tick):
++			continue
++
+ 		result.append(node)
+ 
+ 	return result
+ 
+-func _is_predicting(input_snapshot: _Snapshot, node: Node) -> bool:
++# PATCH (see addons/NETFOX_PATCHES.md): `tick` is the tick of the input snapshot, for when there
++# is no input snapshot at all for that tick
++func _is_predicting(input_snapshot: _Snapshot, node: Node, tick: int = -1) -> bool:
++	if input_snapshot:
++		tick = input_snapshot.tick
+ 	var input_nodes := [] as Array[Node]
+ 	input_nodes.assign(_input_graph.get_linked_to(node))
+ 
+@@ -197,10 +206,112 @@
+ 		return false
+ 	if is_owned and not has_input:
+ 		# We own the node, node depends on input, we don't have data for input - predict
++		# PATCH (see addons/NETFOX_PATCHES.md): unless this is no hole, or the hole has
++		# expired; the node was not simulated, and its state carried over is then the state
++		# of record
++		if tick >= 0 and not is_prediction_enabled_for(node) and _is_hole_accepted(node, input_nodes, tick):
++			return false
+ 		return true
+ 	# We own the node and we have data for node's input - we're sure
++	# PATCH (see addons/NETFOX_PATCHES.md): but not if it starts from a carry-over
++	if tick >= 0 and _starts_from_carry_over(node, tick):
++		return true
+ 	return false
+ 
++# PATCH (see addons/NETFOX_PATCHES.md): true if `node`, which this peer owns, has a state
++# at `tick` that is only a carry-over: it was skipped on an earlier tick because its input
++# for that tick had not arrived, so its state at `tick` is the state before it, recorded as
++# not authoritative. Simulating from it, with the input of `tick`, would build a state
++# that is one or more steps behind and record it as authoritative.
++func _starts_from_carry_over(node: Node, tick: int) -> bool:
++	if not node.is_multiplayer_authority():
++		return false
++	var state_snapshot := NetworkHistoryServer._get_rollback_state_snapshot(tick)
++	return state_snapshot != null and state_snapshot.has_subject(node) and not state_snapshot.is_auth(node)
++
++# PATCH (see addons/NETFOX_PATCHES.md): the latest an honest input may arrive, as a multiple of
++# input_redundancy ticks counted on the host's own clock from the tick the input belongs to.
++# Later than that is the same as lost: the host stops waiting, the tick stands as one where
++# the subject did not act, and input for it that arrives afterwards is refused. It also
++# covers honest input that is merely late and in order (a stall delivers a run of packets at
++# once; what is older than the allowance in it is refused). 3 times 4 ticks is 12 ticks, 400 ms
++# at 30 ticks per second. A first guess, to be judged after the phone test.
++const _INPUT_ALLOWANCE_FACTOR := 3
++
++# PATCH (see addons/NETFOX_PATCHES.md): the input allowance in ticks (see above). After it
++# the tick is final: its hole is accepted (see _is_hole_accepted) and the host refuses input
++# stamped with it (see NetworkHistoryServer._merge_rollback_input).
++func _get_hole_allowance() -> int:
++	return _INPUT_ALLOWANCE_FACTOR * NetworkRollback.input_redundancy
++
++# PATCH (see addons/NETFOX_PATCHES.md): true if `node`, which this peer owns, was not
++# simulated on `tick` for lack of input and that is final, so that the state carried over
++# from `tick` is the state of record (the node did not act on that tick; no input is made up):
++#   - there is no input before `tick` and one after it: the subject started to send later,
++#     which is no hole; or
++#   - there is an input after `tick` and the host's own tick is more than
++#     _INPUT_ALLOWANCE_FACTOR times input_redundancy ticks past it: the hole expired.
++# It depends only on the input history and NetworkTime.tick, which does not change within a
++# rollback loop, so every pass over the tick gives the same answer.
++func _is_hole_accepted(node: Node, inputs: Array, tick: int) -> bool:
++	if not node.is_multiplayer_authority():
++		return false
++	if NetworkHistoryServer.get_latest_input_for(inputs, NetworkTime.tick + NetworkRollback.history_limit) <= tick:
++		return false
++	if NetworkHistoryServer.get_latest_input_for(inputs, tick) < 0:
++		return true
++	return NetworkTime.tick - tick > _get_hole_allowance()
++
++# PATCH (see addons/NETFOX_PATCHES.md): true if `snapshot` holds input for a tick that the host
++# has already decided had no input and no hole: nothing is held for the tick or before it, and
++# the state after the tick is a carry-over recorded as authoritative (see _is_hole_accepted, the
++# first case: a tick before a subject's first input). The host may have sent that state, so the
++# input is refused and the decision is final, like an expiry. It reads only the histories.
++func _is_start_decided(snapshot: _Snapshot) -> bool:
++	for input in snapshot.get_subjects():
++		for node in _input_graph.get_linked_from(input):
++			if not node.is_multiplayer_authority():
++				continue
++			if NetworkHistoryServer.get_latest_input_for(_input_graph.get_linked_to(node), snapshot.tick) >= 0:
++				continue
++			var state_snapshot := NetworkHistoryServer._get_rollback_state_snapshot(snapshot.tick + 1)
++			if state_snapshot != null and state_snapshot.has_subject(node) and state_snapshot.is_auth(node):
++				return true
++	return false
++
++# PATCH (see addons/NETFOX_PATCHES.md): the earliest tick whose input is missing, whose hole
++# is accepted (see above) and whose carried-over state is not yet the state of record, or -1.
++# Nothing arrives when a hole expires, and the first input of a subject arrives after the
++# ticks before it were passed, so NetworkRollback asks for this at the start of each loop
++# and re-simulates from there. Looked at once per input node of another peer, and only at the
++# ticks after the last authoritative state of the first node that input drives (the others
++# have the same chain), which is where such a hole can be.
++func _get_earliest_expired_hole() -> int:
++	var now := NetworkTime.tick
++	var oldest := maxi(NetworkRollback.history_start, 0)
++	for input: Node in _input_graph._links_from:
++		if input.is_multiplayer_authority():
++			continue
++		var nodes := _input_graph.get_linked_from(input)
++		var node := nodes[0] as Node
++		if not node.is_multiplayer_authority():
++			continue
++
++		# The states of the ticks of this loop are not recorded yet: start at the newest that is.
++		var first := now
++		while first > oldest:
++			var state_snapshot := NetworkHistoryServer._get_rollback_state_snapshot(first)
++			if state_snapshot != null and (not state_snapshot.has_subject(node) or state_snapshot.is_auth(node)):
++				break
++			first -= 1
++
++		var inputs := _input_graph.get_linked_to(node)
++		for tick in range(first, now):
++			var input_snapshot := NetworkHistoryServer._get_rollback_input_snapshot(tick)
++			if (input_snapshot == null or not input_snapshot.has_subject(input, true)) and _is_hole_accepted(node, inputs, tick) and _liveness_server.is_alive(node, tick):
++				return tick
++	return -1
++
+ func _is_tick_fresh_for(node: Node, tick: int) -> bool:
+ 	if not _simulated_ticks.has(node):
+ 		return true
 ```
 
 `addons/netfox.internals/peer-rate-limit.gd`, new file, carries patch 16:
@@ -2215,6 +2696,38 @@ the patch restored. "FAIL" means the test exited 1 or printed a SCRIPT ERROR.
 | 14 | the rate limit (a warning for every packet) | netfox_host | FAIL, 1000 warnings for 1000 packets (exactly 1), and 5 more checks that count warnings |
 | 14 | the drop (warn, then accept the packet) | netfox_host | FAIL, the padded state packet is merged, and the padded input check of patch 6 |
 | 14 | the erase in `erase_peer` and the clear in `reset` | netfox_host | FAIL, 4 checks (no warning after the peer is erased or after a reset, 3 peers kept) |
+| 15 | skip: the carry-over test always false (rule 1 off) | hole_rule | FAIL, 5 checks (4 ticks simulated from the stale start state; authoritative states while the hole is open) |
+| 15 | same | late_input | FAIL, 7 states sent and replaced (up to 16.6 px); the client showed its own bot wrong |
+| 15 | `_is_predicting` ignores the carry-over (state recorded authoritative) | hole_rule | FAIL, 6 checks (3 ticks simulated from the stale start state; authoritative states while the hole is open) |
+| 15 | node simulated although it starts from a carry-over (`_get_nodes_to_simulate` check removed) | hole_rule | FAIL, 2 checks (4 ticks simulated from the stale start state) |
+| 15 | expiry: never expires | hole_rule | FAIL, 3 checks (the carried-over state is not the state of record; the subject does not go on) |
+| 15 | same | lost_input | FAIL, the bot stood still on the host for 19 ticks (more than 15); host and client differ after the hole |
+| 15 | same | pause_input | FAIL, host and client still differ past the bound; the client's wrong display is not bounded |
+| 15 | allowance factor 2 instead of 3 | hole_rule | FAIL, the allowance is not 3 times input_redundancy |
+| 15 | same | late_input | FAIL, the straggler arrived 8 ticks after its tick, within 2 of the allowance (boundary check) |
+| 15 | allowance factor 0 (input older than the host's tick refused) | host_hitch | FAIL, 5 client input ticks lost at the 400 ms freeze |
+| 15 | start: a tick with no input before it counts as a hole | hole_rule | FAIL, 2 checks (not simulated on its first input tick; the ticks before it are not authoritative) |
+| 15 | same | late_input | PASSES: the one-process test catches it, the two-process run has no tick before the first input that matters |
+| 15 | `_record_rollback_state` does not pass the tick to `_is_predicting` | hole_rule | PASSES: the tick only matters for a tick on which no subject at all has an input, which the host never has (its own bot has one every tick); kept for that case, no test reaches it |
+| 15 | `_rollback` does not go back to an expired hole (`_get_earliest_expired_hole` not used) | hole_rule | FAIL, 2 checks (the carry-over never becomes the state of record) |
+| 15 | same | lost_input | FAIL, the bot stood still for 20 ticks (more than 16); host and client differ after the hole |
+| 15 | audit: late input is not refused | hole_rule | FAIL, 5 checks (the straggler after the expiry is simulated; exactly A + 1 ticks old is accepted; the stream causes simulation of old ticks) |
+| 15 | same | late_input_refused | FAIL, 3 checks (every input arrived, no refused tick; the wrong display is not bounded) |
+| 15 | audit: exactly the allowance is refused (`>=` for `>`) | hole_rule | FAIL, input exactly 12 ticks old is not accepted |
+| 15 | audit: one tick more accepted (A + 1) | hole_rule | FAIL, 2 checks (13 ticks old accepted; 1 old tick simulated by the stream) |
+| 15 | audit: the refusal logged as a warning | hole_rule | FAIL, 96 log lines above trace level for the stream (0 expected) |
+| 15 | the carry-over test also applied to nodes this peer does not own (authority test removed) | net_smoke | PASSES: the check is defensive; no behaviour difference found (the first version of this patch failed it) |
+| 15 | start: input for a tick before the first accepted input is not refused (`_is_start_decided` not used) | hole_rule | FAIL, 2 checks (the first inputs are accepted and simulated after the states of those ticks were sent) |
+| 15 | start: refused whatever the state after the tick is (authority of the state not required) | hole_rule | FAIL, 2 checks (an ordinary first input after the host passed its tick is refused) |
+| 15 | same | late_input | FAIL, the hold made no hole and the client showed its own bot wrong (the first inputs of the session are refused) |
+| 15 | start: refused even when an input is held before the tick (`>= 0` guard removed) | hole_rule | PASSES, an equivalent mutation: with an earlier input held and an authoritative state after the tick, the input is a repeat of one held (redundancy) or older than the allowance, which is refused anyway |
+| 15 | visibility: the warning is not rate limited | hole_rule | FAIL, 100 log lines for two peers (4 expected) |
+| 15 | visibility: the warning is never logged | silent_peer | FAIL, 0 warnings about the refused peer (1 to 14 expected) |
+| 15 | visibility: the count keeps old refusals (no one second window) | hole_rule | FAIL, the count is not 0 a second later |
+| 15 | visibility: the count is not erased when the peer leaves | hole_rule | FAIL, the count is not erased when the peer leaves |
+| 15 | visibility: the count is not cleared on reset | hole_rule | FAIL, the count is not cleared by reset |
+| 15 | visibility: refusals are not counted | hole_rule | FAIL, 4 checks (nothing counted for the peer) |
+| 15 | audit: late input is not refused | silent_peer | FAIL, 3 checks (235 inputs stored, the bot simulated on 235 ticks, no refusals counted) |
 | 16 | the identity serializer back to the unpatched one (`get_utf8_string`) | netfox_host | process killed, exit 138 (SIGBUS), on the first call: the 4 byte identity packet |
 | 16 | the variant serializer back to `get_var(false)` | netfox_host | process killed, exit 138, on the first 2 GB variant |
 | 16 | the header type bound (`type > TYPE_COLOR`) | netfox_host | FAIL, the header types 64 to 129 pass the wrapped shift (SCRIPT ERROR x5, the table has no such index) and 5 of the 9 bad types are not refused |

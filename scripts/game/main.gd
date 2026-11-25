@@ -30,6 +30,7 @@ func _ready() -> void:
 	_touch_capable = _args.touch_ui or DisplayServer.is_touchscreen_available()
 	_touch.visible = false
 	_spawner.autopilot = _args.autopilot
+	AutopilotScript.wiggle = _args.autopilot_wiggle
 	_spawner.bot_spawned.connect(_on_bot_spawned)
 	_session.ended.connect(_on_session_ended)
 	_session.peer_accepted.connect(_spawner.on_peer_accepted)
@@ -75,6 +76,8 @@ func _on_host() -> void:
 		_sim = NetSim.new()
 		add_child(_sim)
 		_sim.start(_port(), _args.sim_latency_ms, _args.sim_loss, _args.sim_jitter_ms)
+		_sim.set_hold(_args.sim_hold_ms, _args.sim_hold_at_ms, _args.sim_hold_window_ms)
+		_sim.set_drop(_args.sim_drop_ms, _args.sim_hold_at_ms)
 	# Phase 1 has no rounds: the hazard cycle counts from the moment the host starts.
 	MatchSettings.start_round(NetworkTime.tick)
 	_touch.visible = _touch_capable

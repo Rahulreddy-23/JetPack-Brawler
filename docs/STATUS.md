@@ -23,11 +23,14 @@ Current stage: Prototype, phase 1. Gate not passed.
       only; real Wi-Fi between phones is untested.
 - [x] A Foundation and contracts. Reviewed, merged (`afc2eee`). No gameplay rule yet; the
       game still plays as movement only.
-- [ ] When a burst of a client's input packets is late, the host sends states for that bot
-      that are one step behind, for every player (dev finding D-10). It is upstream netfox
-      behaviour. Cause found and reproduced on demand. Netfox patch 15: the first version
-      was rejected in review (it replayed a paused player's last input); a second version
-      that never invents input is in progress.
+- [x] When a burst of a client's input packets was late, the host sent states for that bot
+      that were one step behind, for every player (dev finding D-10; upstream netfox
+      behaviour). Fixed in netfox patch 15 after two versions and three reviews: the host
+      never builds on a skipped tick and never invents input; it waits up to 12 ticks
+      (400 ms) for a missing input, then treats that tick as one where the bot did not
+      act, and refuses input older than that. Cost, to judge on phones: a lost input or
+      the end of a pause holds that bot still for everyone else for up to 400 ms, then
+      it jumps.
 - [x] `net_blast_bomb_loss` failed about 3 runs in 16. Cause: the test read the one tick
       after the blast, and under loss the client can hold its own guess for that tick until
       the next state arrives. The game was right. The check now reads the first tick whose
@@ -39,9 +42,9 @@ Current stage: Prototype, phase 1. Gate not passed.
       repeated hits still build up (a bolt magazine moves a hovering bot about 27 bot
       heights); to be judged on phones. Builds up to 16:59 on 25 Nov have the old weak
       pushes.
-- [ ] From the authority audit: the host accepts input up to 2 seconds late and replays the
-      match from there. Being bounded with netfox patch 15 (second version under review).
-      Its other finding, three log lines any device could flood, is fixed in patch 16.
+- [x] From the authority audit: the host accepted input up to 2 seconds late and replayed
+      the match from there. Bounded at 12 ticks by netfox patch 15. Its other finding,
+      three log lines any device could flood, is fixed in patch 16.
 - [x] One 4-byte packet crashed the host (geminiceo G-28, confirmed): the engine allocated a
       length taken from the packet before checking the bytes left, and every synchronised
       value went through the same call. Fixed in netfox patch 16 with a sweep of every read
@@ -53,7 +56,7 @@ Current stage: Prototype, phase 1. Gate not passed.
       per-peer packet rate limit and the engine's own network layer unexamined, the game
       is not yet fit for strangers. Builds up to 21:01 on 25 Nov have the crash.
 - [ ] Device checkpoint 1 (Rahul): sticks, jetpack and dash on two phones over a hotspot.
-      Script `docs/reviews/device-checkpoint-1.md`; build of 25 Nov at `cf9c87a`; not yet run.
+      Script `docs/reviews/device-checkpoint-1.md`; build of 26 Nov at `1d75eaf`; not yet run.
 - [x] B Combat core, hazard wiring, dummy, push window. Reviewed, merged (`a170e4b`).
 - [x] C Weapons, melee, pickups. Reviewed, merged (`2ad983e`).
 - [x] D World objects and gadgets. Reviewed twice, merged with its follow-ups and the
@@ -62,11 +65,10 @@ Current stage: Prototype, phase 1. Gate not passed.
       and a health bar that shows only while a bot's health changes. Reviewed, merged.
       Nothing in it can be judged without a phone.
 - [x] F Input and HUD for fire, melee, gadget, swap. Reviewed, merged (`5f92739`).
-- [x] Full test suite on `main` with A to F, netfox patches 1 to 14, the reviewer fixes and
-      the push-distance correction; and again with netfox patch 16: 52 of 52 each time (Mac,
-      headless; nothing on a phone).
+- [x] Full test suite on `main` with A to F, netfox patches 1 to 16, the reviewer fixes and
+      the push-distance correction: 59 of 59 (Mac, headless; nothing on a phone).
 - [ ] Device checkpoint 2 (Rahul): the knockback sandbox, 10 minutes of play. The build of
-      25 Nov at `cf9c87a` has the corrected push distances and the packet crash fix. Script
+      26 Nov at `1d75eaf` has every phase 1 fix so far. Script
       `docs/reviews/device-checkpoint-2.md`; not yet run.
 - [ ] 1.6 Dabba fight, built last.
 - [ ] Phase review and `docs/reviews/phase-1-handoff.md` (started: both audits
@@ -91,8 +93,7 @@ In progress, each on its own branch, none on `main`:
    14 (geminiceo G-24).
 4. Done and on `main`: task E (effects) with the health bar that shows only while a bot's
    health changes (Rahul's decision, see `docs/DECISIONS.md`).
-5. Dev finding D-10 (`worktree-agent-abdc8cb18a9ad9d79`): cause found, fix in progress as
-   netfox patch 15.
+5. Done and on `main`: dev finding D-10, netfox patch 15.
 
 Then: an independent review of each fix round, merge, the full suite on everything, the
 debug APK into `builds/`, and the build line in `docs/reviews/device-checkpoint-2.md`

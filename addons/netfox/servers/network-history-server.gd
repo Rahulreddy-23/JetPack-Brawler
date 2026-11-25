@@ -21,6 +21,11 @@ var _sync_history_size := ProjectSettings.get_setting("netfox/state_synchronizer
 
 var _ignored_subjects := _Set.new()
 
+# PATCH (see addons/NETFOX_PATCHES.md): peer to {host tick: input snapshots refused at that tick},
+# for the last second only; peer to the time of its last warning.
+var _input_refusals := {}
+var _input_refusal_limit := _PeerRateLimit.new()
+
 # PATCH (see addons/NETFOX_PATCHES.md): subjects that state from their authority
 # has been merged for in this session
 var _authoritative_subjects := _Set.new()
@@ -97,6 +102,8 @@ func reset() -> void:
 
 	_ignored_subjects.clear()
 	_authoritative_subjects.clear()
+	_input_refusals.clear() # PATCH: see addons/NETFOX_PATCHES.md
+	_input_refusal_limit.clear()
 
 ## Do not record [param subject]
 ## [br][br]
@@ -160,6 +167,43 @@ func has_authoritative_state(subject: Variant) -> bool:
 		return true
 	return _authoritative_subjects.has(subject)
 
+## How many input snapshots of [param peer] the server refused in the last second (as late
+## as it was refused, or before the peer's first input), or 0 on a client. Every input tick
+## travels in up to [member NetworkRollback.input_redundancy] packets, so a peer whose every
+## input is refused counts about that many per tick. A game can show "connection too slow"
+## from it. The count is erased when the peer leaves and cleared by [method reset].
+func get_recent_refused_input_count(peer: int) -> int:
+	var by_tick := _input_refusals.get(peer, {}) as Dictionary
+	var from := NetworkTime.tick - NetworkTime.tickrate
+	var count := 0
+	for tick: int in by_tick:
+		if tick > from:
+			count += by_tick[tick] as int
+	return count
+
+## Erase all data kept about [param peer]. Called when it leaves.
+func erase_peer(peer: int) -> void:
+	_input_refusals.erase(peer)
+	_input_refusal_limit.erase_peer(peer)
+
+func _note_refused_input(snapshot: _Snapshot, age: int) -> void:
+	_logger.trace("Refusing input @%d, %d ticks old", [snapshot.tick, age])
+	var peers := {}
+	for input in snapshot.get_subjects():
+		if input is Node:
+			peers[(input as Node).get_multiplayer_authority()] = true
+	var now := NetworkTime.tick
+	for peer: int in peers:
+		var by_tick := _input_refusals.get_or_add(peer, {}) as Dictionary
+		if not by_tick.has(now):
+			for tick: int in by_tick.keys():
+				if tick <= now - NetworkTime.tickrate:
+					by_tick.erase(tick)
+			by_tick[now] = 0
+		by_tick[now] = (by_tick[now] as int) + 1
+		if _input_refusal_limit.allow(peer):
+			_logger.warning("Refusing input @%d from peer #%d: %d ticks old at the host (the allowance is %d)", [snapshot.tick, peer, age, RollbackSimulationServer._get_hole_allowance()])
+
 ## Record currently registered rollback state properties for [param subject] at
 ## [param tick].
 func push_rollback_state(subject: Node, tick: int) -> void:
@@ -190,7 +234,7 @@ func _record_rollback_state(tick: int) -> void:
 	_record(tick, _rb_state_history, _rb_state_snapshots, _rb_state_properties, false, func(subject: Node):
 		if not subject.is_multiplayer_authority():
 			return false
-		if RollbackSimulationServer._is_predicting(input_snapshot, subject):
+		if RollbackSimulationServer._is_predicting(input_snapshot, subject, tick - 1):
 			return false
 		return true
 	)
@@ -219,6 +263,17 @@ func _get_synchronizer_state_snapshot(tick: int) -> _Snapshot:
 	return _sync_state_snapshots.get_at(tick)
 
 func _merge_rollback_input(snapshot: _Snapshot) -> bool:
+	# PATCH (see addons/NETFOX_PATCHES.md): a server stops waiting for the input of a tick
+	# after the input allowance; input stamped with a tick older than that is refused, so
+	# that what the host did with an expired tick is final. So is input for a tick before a
+	# subject's first input that the host has already passed (_is_start_decided). Logged at
+	# trace level, and as a warning at most once a second per peer (a peer can cause one
+	# refusal per snapshot); counted for get_recent_refused_input_count.
+	if multiplayer.is_server():
+		var age := NetworkTime.tick - snapshot.tick
+		if age > RollbackSimulationServer._get_hole_allowance() or RollbackSimulationServer._is_start_decided(snapshot):
+			_note_refused_input(snapshot, age)
+			return false
 	if not _can_merge_tick(snapshot.tick, _rb_input_history):
 		return false
 	_merge_snapshot(snapshot, _rb_input_snapshots, true)
