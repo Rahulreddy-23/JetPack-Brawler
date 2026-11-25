@@ -90,6 +90,12 @@ if grep -q "Dropping .* byte packet" "$TMP/host.log" "$TMP/client.log"; then
 	echo "FAIL: a packet was dropped for size"; grep -h "Dropping .* byte packet" "$TMP/host.log" "$TMP/client.log" | head -3; exit 1
 fi
 
+# Likewise netfox must refuse no identity packet: honest names are short ASCII node paths
+# (netfox patch 16). A refusal means the limits are too tight for an honest session.
+if grep -q "Refusing identity packet" "$TMP/host.log" "$TMP/client.log"; then
+	echo "FAIL: an identity packet was refused"; grep -h "Refusing identity packet" "$TMP/host.log" "$TMP/client.log" | head -3; exit 1
+fi
+
 # ENet's packet throttle must never leave its maximum on either side: below it ENet drops
 # unreliable packets (the player's input) before sending them. See Session.
 THROTTLE_LINES="$(grep -h "^THROTTLE" "$TMP/host.log" "$TMP/client.log")"

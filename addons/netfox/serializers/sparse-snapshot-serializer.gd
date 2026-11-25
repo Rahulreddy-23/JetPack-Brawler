@@ -89,6 +89,10 @@ func read_from(peer: int, properties: _PropertyPool, buffer: StreamPeerBuffer, i
 		if not changed_indices.is_empty() and changed_indices.back() >= node_props.size():
 			_warn_peer(peer, "Received a changed-bits index past the property count from #%s, skipping data", [peer])
 			break
+		# PATCH (see addons/NETFOX_PATCHES.md): a frame cannot be larger than the
+		# packet's rest; a negative size is an engine error for every such frame
+		if node_data_size < 0 or node_data_size > buffer.get_available_bytes():
+			break
 		node_buffer.data_array = buffer.get_partial_data(node_data_size)[1]
 
 		# Read changed properties

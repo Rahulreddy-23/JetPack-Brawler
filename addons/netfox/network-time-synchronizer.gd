@@ -250,8 +250,24 @@ func _discipline_clock() -> void:
 
 		_offset = offset - nudge
 
+# PATCH (see addons/NETFOX_PATCHES.md): the payloads of the clock commands are
+# var_to_bytes of an int (ping), of an array of an int and two floats (pong) and of
+# a float (timestamp). Anything of another size or type is refused before it is
+# decoded: the engine prints an error line for every invalid UTF-8 byte of a string
+# variant, so a ping of 200,000 bad bytes cost 1.7 s and 200,000 lines. The limits
+# are the largest honest sizes: a 4 byte header and 8 bytes for each 64 bit number
+# plus a 4 byte header for each element and for the array's count.
+const _PING_MAX_BYTES := 4 + 8
+const _PONG_MAX_BYTES := 4 + 4 + 3 * (4 + 8)
+const _TIMESTAMP_MAX_BYTES := 4 + 8
+
+func _is_payload_of(data: PackedByteArray, type: int, max_bytes: int) -> bool:
+	return data.size() >= 8 and data.size() <= max_bytes and (data.decode_u32(0) & 0xff) == type
+
 func _handle_ping(sender: int, data: PackedByteArray) -> void:
-	# PATCH (see addons/NETFOX_PATCHES.md): a malformed payload is not an index.
+	# PATCH: a malformed payload is not an index.
+	if not _is_payload_of(data, TYPE_INT, _PING_MAX_BYTES):
+		return
 	var decoded: Variant = bytes_to_var(data)
 	if typeof(decoded) != TYPE_INT:
 		return
@@ -266,7 +282,12 @@ func _handle_pong(sender: int, data: PackedByteArray) -> void:
 	if sender != SERVER_PEER_ID:
 		return
 
-	var args := bytes_to_var(data)
+	# PATCH: a pong is an array of an int and two floats, and nothing else
+	if not _is_payload_of(data, TYPE_ARRAY, _PONG_MAX_BYTES):
+		return
+	var args: Variant = bytes_to_var(data)
+	if typeof(args) != TYPE_ARRAY or (args as Array).size() != 3 or typeof(args[0]) != TYPE_INT or typeof(args[1]) != TYPE_FLOAT or typeof(args[2]) != TYPE_FLOAT:
+		return
 
 	var idx := args[0] as int
 	var ping_received := args[1] as float
@@ -312,6 +333,9 @@ func _handle_set_timestamp(sender: int, data: PackedByteArray) -> void:
 	if sender != SERVER_PEER_ID:
 		return
 
+	# PATCH: a timestamp is a float, and nothing else
+	if not _is_payload_of(data, TYPE_FLOAT, _TIMESTAMP_MAX_BYTES):
+		return
 	var timestamp := bytes_to_var(data) as float
 
 	_logger.debug("Received initial timestamp @ %.4fs raw time", [_clock.get_raw_time()])

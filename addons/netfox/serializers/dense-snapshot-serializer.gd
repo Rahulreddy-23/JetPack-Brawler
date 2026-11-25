@@ -70,6 +70,10 @@ func read_from(peer: int, properties: _PropertyPool, buffer: StreamPeerBuffer, i
 		# Read identity reference, data size, and data
 		var idref := netref.decode(buffer) as _NetworkIdentityReference
 		var node_data_size := varuint.decode(buffer) as int
+		# PATCH (see addons/NETFOX_PATCHES.md): a frame cannot be larger than the
+		# packet's rest; a negative size is an engine error for every such frame
+		if node_data_size < 0 or node_data_size > buffer.get_available_bytes():
+			break
 		node_buffer.data_array = buffer.get_partial_data(node_data_size)[1]
 
 		# Resolve to identifier

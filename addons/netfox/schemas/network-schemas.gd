@@ -489,15 +489,51 @@ class _VariantSerializer extends NetworkSchemaSerializer:
 	func encode(v: Variant, b: StreamPeerBuffer) -> void:
 		b.put_var(v, false)
 
+	# PATCH (see addons/NETFOX_PATCHES.md): two limits, for a decoder that reads what a
+	# peer sends.
+	# 1. get_var() allocates the length the packet declares before it checks the bytes
+	#    left, so 4 bytes declaring 2 GB kill the process. The length (a 32 bit field
+	#    before the value, as put_var writes it) is checked against the bytes left first.
+	# 2. The engine prints an error line for every invalid UTF-8 byte of a string, so a
+	#    string of 4,000 bad bytes in a state packet costs 4,000 lines. Only fixed-size
+	#    values are decoded: nil, bool, int, float and the math types and Color, which
+	#    carry no length and no string. Anything else, the strings, node paths,
+	#    containers and objects included, is skipped and read as null. A property of
+	#    such a type needs a registered schema with a bounded decoder of its own.
+	# The checks read the 4 byte length and the 4 byte type header, then seek back and
+	# let get_var decode (which does not build objects with allow_objects false).
+	const _FIXED_SIZE_TYPES := ((1 << (TYPE_COLOR + 1)) - 1) & ~(1 << TYPE_STRING)
+
 	func decode(b: StreamPeerBuffer) -> Variant:
+		var start := b.get_position()
+		var left := b.get_available_bytes() - 4
+		if left < 4:
+			b.seek(start + b.get_available_bytes())
+			return null
+		var size := b.get_32()
+		if size < 4 or size > left:
+			b.seek(start + 4 + clampi(size, 0, left))
+			return null
+		var type := b.get_32() & 0xff
+		if (_FIXED_SIZE_TYPES >> type) & 1 == 0:
+			b.seek(start + 4 + size)
+			return null
+		b.seek(start)
 		return b.get_var(false)
 
 class _StringSerializer extends NetworkSchemaSerializer:
 	func encode(v: Variant, b: StreamPeerBuffer) -> void:
 		b.put_utf8_string(str(v))
 
+	# PATCH (see addons/NETFOX_PATCHES.md): the length is checked before it is read,
+	# as for the variant serializer above; a bad length gives an empty string
 	func decode(b: StreamPeerBuffer) -> Variant:
-		return b.get_utf8_string()
+		if b.get_available_bytes() < 4:
+			return ""
+		var size := b.get_32()
+		if size < 0 or size > b.get_available_bytes():
+			return ""
+		return (b.get_data(size)[1] as PackedByteArray).get_string_from_utf8()
 
 class _CStringSerializer extends NetworkSchemaSerializer:
 	static var instance := _CStringSerializer.new()
@@ -860,6 +896,10 @@ class _ArraySerializer extends NetworkSchemaSerializer:
 		var array := []
 
 		var item_count = size.decode(b)
+		# PATCH (see addons/NETFOX_PATCHES.md): an item takes at least a byte, so a
+		# count over the bytes left is not honest, and would allocate and loop for it
+		if item_count < 0 or item_count > b.get_available_bytes():
+			return array
 		array.resize(item_count)
 		for i in item_count:
 			array[i] = component.decode(b)
@@ -889,6 +929,10 @@ class _DictionarySerializer extends NetworkSchemaSerializer:
 		var dictionary := {}
 
 		var size = size_serializer.decode(b)
+		# PATCH (see addons/NETFOX_PATCHES.md): an entry takes at least two bytes, so a
+		# count over half the bytes left is not honest, and would loop for it
+		if size < 0 or size > b.get_available_bytes() >> 1:
+			return dictionary
 		for i in size:
 			var key = key_serializer.decode(b)
 			var value = value_serializer.decode(b)

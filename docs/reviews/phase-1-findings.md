@@ -403,8 +403,8 @@ its sandbox, so its audits are by reading plus the one-process tests.
 
 | Id | Finding | Verified | Outcome |
 |---|---|---|---|
-| G-28 | One 4-byte identity packet crashes the host: the engine's `get_utf8_string` allocates the declared length (2 GB) before checking how many bytes are left | Confirmed by run: a standalone probe on Godot 4.7.2 exits 138 (SIGBUS) on those four bytes. Any connected device can send it, before it is accepted | Accepted, highest priority. Fixed as part of netfox patch 16 (in progress), with a sweep of every other read whose length comes from the packet. Not in any build made so far |
-| G-29 | A raw packet that is only the 3-byte prefix dispatches command 0 with an empty payload | By reading | Accepted, with G-28 |
+| G-28 | One 4-byte identity packet crashes the host: the engine's `get_utf8_string` allocates the declared length (2 GB) before checking how many bytes are left | Confirmed by run: a standalone probe on Godot 4.7.2 exits 138 (SIGBUS) on those four bytes. Any connected device can send it, before it is accepted | Accepted, highest priority. Fixed in netfox patch 16 and merged, with a sweep of every other read whose length comes from the packet. The sweep found the same call under every synchronised value, so a state or input packet could crash the host too. Builds up to 21:01 on 25 Nov have the crash |
+| G-29 | A raw packet that is only the 3-byte prefix dispatches command 0 with an empty payload | By reading | Accepted; merged with G-28 in patch 16 |
 
 The reviewer's commit is used as a reference, not cherry-picked: its files are being edited
 for patch 16.

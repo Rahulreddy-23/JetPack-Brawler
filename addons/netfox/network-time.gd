@@ -482,6 +482,8 @@ func stop() -> void:
 	NetworkHistoryServer.reset()
 	NetworkSynchronizationServer.reset()
 	RollbackSimulationServer.reset()
+	NetworkCommandServer.reset() # PATCH: see addons/NETFOX_PATCHES.md
+	NetworkIdentityServer.reset()
 
 	if multiplayer.peer_disconnected.is_connected(_handle_peer_disconnect):
 		multiplayer.peer_disconnected.disconnect(_handle_peer_disconnect)

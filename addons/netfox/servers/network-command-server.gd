@@ -28,6 +28,8 @@ var _commands := {} # id to `Command`
 
 var _use_raw := ProjectSettings.get_setting("netfox/general/use_raw_commands", false) as bool
 
+var _unknown_command_limit := _PeerRateLimit.new() # PATCH: see addons/NETFOX_PATCHES.md
+
 static var _logger := NetfoxLogger._for_netfox("NetworkCommandServer")
 
 ## Register a command at the next available ID
@@ -70,10 +72,22 @@ func is_command_packet(packet: PackedByteArray) -> bool:
 func get_command_packet_prefix() -> PackedByteArray:
 	return _packet_prefix
 
+## Erase all data kept about [param peer]
+## [br][br]
+## Called by default when a peer leaves
+func erase_peer(peer: int) -> void:
+	_unknown_command_limit.erase_peer(peer)
+
+## Forget what is kept about peers, called by [method _NetworkTime.stop]
+func reset() -> void:
+	_unknown_command_limit.clear()
+
 func _handle_command(sender: int, idx: int, data: PackedByteArray) -> void:
 	var command := _commands.get(idx) as Command
 	if not command:
-		_logger.error("Received unknown command #%d!", [idx])
+		# PATCH: an unknown command is ignored, and logged at most once per second per peer
+		if _unknown_command_limit.allow(sender):
+			_logger.error("Received unknown command #%d from #%d!", [idx, sender])
 		return
 	command._handle(sender, data)
 
@@ -83,6 +97,12 @@ func _ready() -> void:
 
 	_rpc_transport.on_receive.connect(_handle_command)
 	_packet_transport.on_receive.connect(_handle_command)
+
+	# PATCH: forget peers that leave
+	if NetworkEvents.enabled:
+		NetworkEvents.on_peer_leave.connect(erase_peer)
+	elif is_instance_valid(multiplayer):
+		multiplayer.peer_disconnected.connect(erase_peer)
 
 ## Networked command
 ##
@@ -147,8 +167,9 @@ class _PacketTransport extends _Transport:
 		var buffer := StreamPeerBuffer.new()
 		buffer.data_array = packet
 
-		# Check header
-		if not is_command_packet(packet):
+		# Check header; PATCH (see addons/NETFOX_PATCHES.md): the command index byte
+		# must be there too, a bare prefix is not command 0
+		if not is_command_packet(packet) or packet.size() < _packet_prefix.size() + 1:
 			return
 
 		# Grab data

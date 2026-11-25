@@ -27,6 +27,8 @@ const SIGNAL := 3
 ## Defaults to [constant WARN], based on project settings.
 var mismatch_action: int = ProjectSettings.get_setting(&"netfox/time/tickrate_mismatch_action", WARN)
 
+var _mismatch_warning_limit := _PeerRateLimit.new() # PATCH: see addons/NETFOX_PATCHES.md
+
 static var _logger := NetfoxLogger._for_netfox("NetworkTickrateHandshake")
 
 ## Emitted when a tickrate mismatch is encountered, and [member mismatch_action] is set to
@@ -40,6 +42,10 @@ signal on_tickrate_mismatch(peer: int, tickrate: int)
 ## [br][br]
 ## Called by [_NetworkTime], no need to call manually.
 func run() -> void:
+	# PATCH: forget peers that leave
+	if not multiplayer.peer_disconnected.is_connected(erase_peer):
+		multiplayer.peer_disconnected.connect(erase_peer)
+
 	if _is_authority():
 		# Broadcast tickrate
 		_submit_tickrate.rpc(NetworkTime.tickrate)
@@ -56,6 +62,15 @@ func run() -> void:
 func stop() -> void:
 	if multiplayer.peer_connected.is_connected(_handle_new_peer):
 		multiplayer.peer_connected.disconnect(_handle_new_peer)
+	if multiplayer.peer_disconnected.is_connected(erase_peer):
+		multiplayer.peer_disconnected.disconnect(erase_peer)
+	_mismatch_warning_limit.clear()
+
+## Erase all data kept about [param peer]
+## [br][br]
+## Called when a peer leaves, no need to call manually.
+func erase_peer(peer: int) -> void:
+	_mismatch_warning_limit.erase_peer(peer)
 
 func _ready() -> void:
 	name = "NetworkTickrateHandshake"
@@ -67,12 +82,14 @@ func _handle_new_peer(peer: int) -> void:
 func _handle_tickrate_mismatch(peer: int, tickrate: int) -> void:
 	match mismatch_action:
 		WARN:
-			_logger.warning(
-				"Local tickrate %dtps differs from tickrate of peer #%d at %dtps! " +
-				"Make sure that tickrates are correctly configured in the Project settings! " +
-				"See netfox/Time/Tickrate.", [
-					NetworkTime.tickrate, peer, tickrate
-				])
+			# PATCH: logged at most once per second per peer, the packet is handled as before
+			if _mismatch_warning_limit.allow(peer):
+				_logger.warning(
+					"Local tickrate %dtps differs from tickrate of peer #%d at %dtps! " +
+					"Make sure that tickrates are correctly configured in the Project settings! " +
+					"See netfox/Time/Tickrate.", [
+						NetworkTime.tickrate, peer, tickrate
+					])
 		DISCONNECT:
 			if _is_authority():
 				_logger.warning("Peer #%d's tickrate of %dtps differs from expected %dtps! Disconnecting.", [

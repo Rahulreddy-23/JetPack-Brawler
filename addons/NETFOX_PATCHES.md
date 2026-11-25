@@ -424,11 +424,315 @@ Tests named below (the `run_all.sh` name in brackets):
   of that peer is logged at once; and the dictionary holds only the peers warned since
   the reset.
 
+## 16. Reads that take a length from a packet, and log lines a peer can drive without limit
+
+Part A, the crash. Part A2, strings that cost a line per byte. Part B, the sweep of every other read. Part C, the log lines. Part D, what is not fixed.
+
+### A. A 4 byte packet kills the host
+
+- Files: `addons/netfox/serializers/identity-packet-serializer.gd` (`deserialize`),
+  `addons/netfox/schemas/network-schemas.gd` (`_VariantSerializer`, `_StringSerializer`,
+  `_ArraySerializer`, `_DictionarySerializer`),
+  `addons/netfox/servers/network-command-server.gd` (`_PacketTransport._handle_packet`),
+  `addons/netfox/serializers/dense-snapshot-serializer.gd` and
+  `addons/netfox/serializers/sparse-snapshot-serializer.gd` (`read_from`)
+- Why: in Godot 4.7.2 `StreamPeerBuffer.get_utf8_string()` and `get_var()` read a 32 bit
+  length from the buffer and allocate that much before they check how many bytes are
+  left. A buffer of `[0xff, 0xff, 0xff, 0x7f]` (2 GB declared) ends the process with
+  SIGBUS: probed outside the project, exit code 138 for both, and the unpatched
+  `netfox_host` test dies with exit 138 on its first such call (mutation table).
+  Two paths reach it from a peer, both before anything is validated:
+  1. Command 0 is the identity packet (`NetworkIdentityServer._handle_ids`), which any
+     connected peer may send, one not yet accepted into the match included. The
+     deserializer called `get_utf8_string()` on it. 4 bytes were enough.
+  2. Every property of the game is read by the variant serializer (`get_var`): the
+     project registers no schema (`set_schema`, `merge_schema` and `register_schema`
+     are never called in `scripts/`, `scenes/` or the autoloads), so every state, input
+     and sync property uses the fallback. A state or input packet with one frame of a
+     known subject whose first property is those 4 bytes reaches `get_var` in
+     `read_from`, before the sender is checked for ownership. This path was not in the
+     external report; it is the wider one.
+- The fix: the 4 byte length is read, refused if negative or larger than the bytes left,
+  and only then are exactly that many bytes read. The variant serializer reads the
+  length itself, checks it, and then lets `get_var(false)` decode from the same place
+  (the format is the one `put_var(v, false)` writes; objects are not built). The first
+  version of this patch decoded with `bytes_to_var` on a copy of the bytes, which was
+  slower; see A2. The string serializer checks the same way.
+- A malformed identity packet registers nothing. The reviewer's version (geminiceo
+  `5af3bfe`) stops at the first bad entry and keeps the entries before it. That is
+  harmless (each kept entry is a complete name and id, as in a shorter packet), but a
+  packet that is cut or malformed anywhere is not an honest client's, so
+  `deserialize` returns an empty dictionary for it, and an id whose varuint ends in the
+  last byte while still marked as continued is also a cut packet (a half id would
+  otherwise be stored as a wrong id, 0 at worst, the marker of a name reference).
+  An empty name is read as an empty name.
+- The size cap of Part C does not protect against this: a 4 byte packet is under any cap.
+  The length check is what protects, and the tests call the deserializer without the
+  cap in front of it.
+- The raw command packet: `_PacketTransport._handle_packet` accepted a packet that was
+  exactly the 3 byte prefix, read the missing command index as 0 (`get_u8` on nothing)
+  and dispatched command 0 with an empty payload. It now requires the index byte.
+- Array and dictionary schemas: the count read from the packet was used for
+  `array.resize` and as a loop bound. A count over the bytes left (each item takes at
+  least one byte, each dictionary entry at least two) is now an empty result. Neither
+  can be reached today (no schema is registered, as above), they are bounded because an
+  unused decoder that crashes on a short packet is one `set_schema` call from reachable.
+- Frames in a state packet: the size of a frame (`node_data_size`) is now checked
+  against the bytes left, and the packet ends there if it is larger or negative.
+  `get_partial_data` itself is safe for a size past the end (probed: it returns the 4
+  bytes there are, in 0 ms, for 2^31 - 1 and for 2^32 + 5) but a negative size is an
+  engine error for every such frame (probed), and a frame declared larger than the
+  packet was read from what remained.
+
+### A2. A string costs a line per invalid byte
+
+- Files: `addons/netfox/serializers/identity-packet-serializer.gd`,
+  `addons/netfox/servers/network-identity-server.gd`,
+  `addons/netfox/network-time-synchronizer.gd`, `addons/netfox/schemas/network-schemas.gd`
+- Why: Godot prints one engine line ("Unicode parsing error ... Invalid UTF-8 leading
+  byte") for every invalid byte of a string it decodes. So any string a peer can make the
+  host decode costs a line per byte, whatever the bounds on the packet are. Three places
+  decoded a peer's string without a bound of their own. Measured by calling the real
+  handlers (Mac, headless, debug build), lines counted in process by an engine logger:
+  1. Identity packet, one name of 14,000 bytes of 0xff (a packet of 14,005 bytes, under
+     the 14,522 byte cap): 14,000 lines, 136 ms (the reviewer measured 491 ms).
+     100 names of 128 bad bytes, each within the name limit and 13,300 bytes in all:
+     12,800 lines, 112 to 148 ms.
+  2. The ping command (`_handle_ping`): a payload that is a string variant of 200,000
+     bad bytes: 200,000 lines, 1.8 s on the main thread. The pong and the timestamp
+     handlers decode the same way (they take packets from the server only, but a client
+     must not be stalled by a bad host packet either).
+  3. The variant fallback: a state, input or sync property sent as a string of bad bytes:
+     one line per byte, 2,000 lines for a 2,000 byte property, up to about 4,000 for a
+     4 KB input packet, unreliable, and decoded before the ownership check.
+  After this each of these costs 0 lines and 0 to 1 ms.
+- Identity names: `deserialize` refuses the whole packet (reads as no entries) if a name is
+  longer than `MAX_NAME_BYTES` (128, which `_MAX_ID_NAME_BYTES` is now taken from, and was
+  declared but not enforced per name before) or has a byte of 0x80 or more, judged on the
+  raw bytes before decoding, and stops after `_MAX_ID_ENTRIES + 1` entries instead of
+  reading the rest. A packet that reads as nothing but is not empty is refused with the
+  same rate limited warning as an oversized one. Assumption, stated in the code: node
+  paths in this project are ASCII. A node named with other characters would not be
+  synchronised. The honest sessions refuse nothing: `net_smoke` (also its lag and jitter
+  runs), `net_full` and `net_world_objects_join` now fail on the text "Refusing identity
+  packet", and an instrumented run over seven session scripts (349 packets) saw no
+  refusal and names of 37 bytes at most.
+- Clock commands: the payload of a ping is `var_to_bytes(int)`, of a pong
+  `var_to_bytes([int, float, float])`, of a timestamp `var_to_bytes(float)`. The handlers
+  refuse a payload over the largest honest size (12, 44 and 12 bytes: 4 byte headers and
+  8 bytes for each 64 bit number) or whose header type is not int, array or float, before
+  decoding; the pong must also be an array of an int and two floats. A pong that passes
+  the size check can still hold a string of up to about 30 bytes, so up to about 30 lines,
+  from the server only.
+- Variant fallback: only fixed-size values are decoded. The type is read from the 4 byte
+  header after the length (without decoding) and the value is decoded only if it is nil,
+  bool, int, float, or one of the math types and Color: Vector2, Vector2i, Rect2, Rect2i,
+  Vector3, Vector3i, Transform2D, Vector4, Vector4i, Plane, Quaternion, AABB, Basis,
+  Transform3D, Projection, Color (the types of Godot 4.7 with numbers 0 to 20 except
+  String). These carry no length and no string, so decoding costs a fixed time and at
+  most one line per packet, never one per byte. Everything else (String, StringName,
+  NodePath, RID, Object, Callable, Signal, Dictionary, Array and the packed arrays,
+  which may hold strings or a length) is skipped, the buffer moves past its declared
+  length, and the property reads as null. This is a deliberate restriction of netfox for
+  this project: a property of a string or container type needs a registered schema with a
+  bounded decoder of its own (and the string, array and dictionary schemas of this addon
+  are bounded by length only: see Part D). Every property this game synchronises is of an
+  allowed type. The 69 properties of the three scenes with a synchroniser, read from the
+  scenes by the test and each round-tripped:
+  - Vector2 (14): bot global_position (in the lists of two synchronisers), velocity,
+    dash_dir, aim_dir, Vitals:last_hit_push, Arsenal:shot_dir, Arsenal:melee_dir,
+    Gadgets:gadget_dir, Input:move, Input:aim; world object global_position (two lists)
+    and velocity.
+  - float (10): bot fuel, thrust_level, dash_left, dash_cooldown_left, jet_buffer,
+    dash_buffer, wall_grace_left, drop_left, Vitals:health, Vitals:last_hit_damage.
+  - bool (10): bot jet_held_prev, Vitals:knocked_out, Input:jet, dash, fire, melee, gadget,
+    swap; world object active, landed.
+  - int (35): the other bot state (wall_nx, facing, the counters and ticks of Vitals,
+    Arsenal and Gadgets), the world object's kind, owner_peer, spawn_tick, arm_tick,
+    fuse_tick, explode_tick, launches, blasts, and the pickup spot's ready_tick.
+- Speed: after the length and the type are checked the value is decoded by `get_var(false)`
+  after a seek back, which allocates nothing more than the unpatched code did (the length
+  is below the bytes left). The first version of this patch decoded with `get_data` and
+  `bytes_to_var` and was slower. 20,000 decodes of a bool, an int, a float, a Vector2 and
+  a Vector2i, median of 7, Mac debug build, in microseconds: a bare `get_var(false)` loop
+  1,250 to 1,420; the unpatched serializer method (one call around `get_var`) 3,850 to
+  3,970; the first version of the patch 9,600 to 9,820; this version 7,800 to 8,070. Through
+  `_NetworkSchema.decode`, the call the synchronisers actually make: unpatched 16,300 to
+  16,400, this version 20,350 to 20,530, 1.25 times. Per property that is about 0.2
+  microseconds more on a Mac, about 0.1 ms for a full client state of 520 properties; a
+  phone will be several times that, not measured. The serializer alone is 2 times the
+  unpatched serializer, more than 1.5: the extra is the 6 calls of the checks, which
+  were tried as 5 (one 64 bit read for the length and type) with no gain.
+
+### B. The sweep: every read on network data whose size or count comes from the packet
+
+Probed outside the project (`godot --headless -s`, one process per case, killed after
+20 s; the script is not part of the repository):
+
+| Call | Input | Result |
+|---|---|---|
+| `get_utf8_string()` | length 2^31 - 1, 4 bytes | killed, exit 138 (SIGBUS) |
+| `get_utf8_string()` | length -1 | engine error, empty string |
+| `get_utf8_string()` | length one more than the bytes left | engine error, empty string |
+| `get_var(false)` | length 2^31 - 1, 4 bytes | killed, exit 138 (SIGBUS) |
+| `get_var(false)` | length 2^30 - 1, 4 bytes | engine error, null, no crash |
+| `get_var(false)` | length -1 | engine error, null |
+| `get_partial_data(n)` | n = 2^31 - 1 or 2^32 + 5, 4 bytes in the buffer | returns the 4 bytes, 0 ms |
+| `get_partial_data(-5)` | | engine error, empty |
+| `get_data(2^31 - 1)` | 4 bytes in the buffer | error code returned, no crash |
+| `bytes_to_var` | ARRAY, typed ARRAY, DICTIONARY, STRING, PACKED_BYTE_ARRAY, PACKED_VECTOR2_ARRAY, PACKED_STRING_ARRAY declaring 2^31 - 1 items, PACKED_INT32_ARRAY declaring 2^30 - 1; ARRAY and DICTIONARY also with a few valid items after the count | engine error, null, no allocation from the declared count, no crash |
+| `bytes_to_var` | 100,000 nested arrays | "Variant is too deep. Bailing.", no crash |
+| `bytes_to_var` | an object | refused (ERR_UNAUTHORIZED) |
+| `bytes_to_var` | 2 bytes | engine error, null |
+
+Each place in the addon that reads a size or count from a packet:
+
+| Site | What the packet decides | Status |
+|---|---|---|
+| `identity-packet-serializer.gd` `deserialize`: name length (`get_utf8_string`) | allocation | crash; bounded now by this patch (length checked, atomic) |
+| the same, the name's bytes (`get_string_from_utf8`) | one error line per invalid byte | bounded now (A2): a name over 128 bytes or with a byte of 0x80 or more refuses the packet, checked on the raw bytes |
+| the same, id (varuint) | up to 10 bytes | bounded by the 10 iteration loop upstream; now also must end inside the packet |
+| `network-identity-server.gd` `_handle_ids` | size and entry count of the packet | unbounded before; bounded now by this patch (Part C) |
+| `network-schemas.gd` `_VariantSerializer.decode` (`get_var`) | allocation, and a line per invalid byte of a string | crash, reachable from every state, input and sync packet; bounded now (A, A2): length checked, only fixed-size types decoded |
+| `_StringSerializer.decode` (`get_utf8_string`) | allocation | crash; not reachable today (no schema is registered); bounded now |
+| `_ArraySerializer.decode`, `_DictionarySerializer.decode` | resize and loop count | unbounded; not reachable today (no schema is registered: `grep` of `scripts`, `scenes`, `project.godot` for `NetworkSchemas`, `array_of`, `set_schema`, `merge_schema`, `register_schema` finds none, and in the addon the only callers of `register_schema` are `set_schema` and `merge_schema` of the two synchronizers); bounded now by the bytes left |
+| `_CStringSerializer.decode` | loop | bounded by the bytes left, upstream |
+| `_VaruintSerializer.decode` | loop | at most 10 iterations, upstream; may yield a negative number, handled by its users below |
+| `_VariableBitsetSerializer.decode` | bytes read | patch 5 |
+| `_NetworkIdentityReferenceSerializer.decode` | id or name | the two above |
+| `dense-snapshot-serializer.gd` `read_from`: frame size | `get_partial_data` | probed: clamps, negative is an engine error; bounded now by this patch; unknown frames by patch 12 |
+| `sparse-snapshot-serializer.gd` `read_from`: frame size | `get_partial_data` | the same; the changed-bits field by patch 5 |
+| `redundant-snapshot-serializer.gd` `read_from`: snapshot size and count | `get_partial_data`, loop | patch 6 |
+| `network-synchronization-server.gd` handlers: packet size | everything above | patch 6 |
+| `tickset-serializer.gd` `deserialize` (`RewindableAction._submit_state`) | loop over the bytes | bounded by the bytes; the RPC is `authority` mode, so only the host can call it on a client; the node is not used in this project |
+| `network-time-synchronizer.gd`: `bytes_to_var` in `_handle_ping`, `_handle_pong`, `_handle_set_timestamp` | decoded variant | probed above: no crash, no allocation from a declared size, but one error line per invalid byte of a string (a ping of 200,000 bad bytes cost 1.8 s; an earlier version of this table said "one engine error per packet", which was wrong). Bounded now (A2): the payload must be of the honest size and header type before it is decoded. A pong and a set time only from the server (patch 2), the type of a ping is checked after decoding (patch 7) |
+| `_StringSerializer.decode` (`get_string_from_utf8`) | a line per invalid byte | not reachable today (no schema is registered); bounded by the packet only. See Part D |
+| `network-command-server.gd` `_PacketTransport._handle_packet`: command index and rest | one byte, then `get_partial_data(available)` | the index byte was assumed; required now by this patch. `get_partial_data(available)` cannot exceed the packet |
+| `network-command-server.gd` RPC transports | `idx` and `data` | typed RPC arguments; the data goes to the handlers above |
+| `network-tickrate-handshake.gd` `_submit_tickrate(tickrate: int)`, `network-time.gd` `_submit_sync_success()` | one typed int, none | no read from a buffer |
+| `get_string`, `get_data` | | not used in the addon outside this patch, which checks the length first |
+
+Not reachable from a peer: nothing else in `addons/` reads a network buffer.
+
+### C. Log lines a peer can drive without limit
+
+- Files: new `addons/netfox.internals/peer-rate-limit.gd` (`_PeerRateLimit`),
+  `addons/netfox/servers/network-command-server.gd` (`_handle_command`, new
+  `erase_peer` and `reset`), `addons/netfox/time/network-tickrate-handshake.gd`
+  (`_handle_tickrate_mismatch`, `run`, `stop`, new `erase_peer`),
+  `addons/netfox/servers/network-identity-server.gd` (`_handle_ids`, `erase_peer`,
+  `clear`) and `addons/netfox/network-time.gd` (`stop` calls the command server's
+  `reset`)
+- Why: three handlers log for every packet they get, from any connected device, one of
+  which is not yet accepted into the match. Measured by calling the real handlers
+  (Mac, headless, debug build):
+  1. An unknown command index logged an error line and a `push_error` per packet:
+     1000 packets took 52 ms and made 1000 lines.
+  2. A tickrate that differs logged a warning and a `push_warning` per packet: 1000
+     packets took 55 ms and made 1000 lines.
+  3. An identity packet logged one INFO line per entry (the project's netfox log level is
+     INFO) and had no size limit: one packet of 10,000 names (258,762 bytes) took 149 ms
+     and made 10,000 lines; a reliable packet can be megabytes.
+- Rate limit (1 and 2): `_PeerRateLimit.allow(peer)` is true for the first call for a
+  peer and then at most once per second per peer, the mechanism of patch 14 in a
+  class of its own, because three files need it. The patch 12 `_warn_peer` is a method
+  of the snapshot serializers and was not reachable from them. After this, 1000
+  packets cost 0 to 3 ms and make one line each. The packet is handled as before:
+  an unknown command is ignored, a mismatch is a warning (or the other configured
+  actions, which are not limited here: disconnect ends the connection, signal and
+  adjust log nothing a peer can repeat). Each table is erased when the peer leaves
+  (command server: `NetworkEvents.on_peer_leave`, as the identity server;
+  handshake: `multiplayer.peer_disconnected`, connected in `run`, disconnected in
+  `stop`) and cleared on a reset (command server and identity server: `reset`, both
+  called by `NetworkTime.stop()`; handshake: `stop`; the identity server's `clear` clears
+  the table too).
+- Identity packets (3): the per-entry INFO line is now a TRACE line and there is one
+  DEBUG line per packet with the entry count and the sender. Chosen over one INFO line
+  per packet because a peer can send small packets as fast as the network carries
+  them, and an INFO line per packet would still be a line per packet; at debug and
+  trace the project's log level prints nothing, and the cost of a packet is bounded by
+  the limits below. The ids of an honest session can still be seen by lowering the
+  netfox log level. After this the 10,000 entry packet is refused in 0 ms with one
+  warning.
+- Identity packets (3), limits: a packet is refused (one warning per peer per second,
+  nothing stored) when it is over `_MAX_ID_PACKET_BYTES` bytes, which is checked before
+  it is read, or when it has more than `_MAX_ID_ENTRIES` entries. An honest client
+  registers 4 pickup spots, 24 world object slots and for each of up to 5 bots the bot,
+  Vitals, Arsenal, Gadgets and Input: 4 + 24 + 5 * 5 = 53 entries. The limit is twice
+  that, 106 entries, and each entry may take 4 + 128 + 5 bytes (string length, a name of
+  up to 128 bytes, a varuint), 14,522 bytes in all. Measured by recording every
+  identity packet in `net_full`, `net_world_objects_join`, `net_smoke`, `net_rejoin`,
+  `net_combat`, `net_world_objects` and `net_fire` (349 packets): the largest had 26
+  entries in 893 bytes (an earlier run: 21 entries, 705 bytes), the longest name 37
+  bytes, and none was refused. The limits are about 4 and 16 times what a real session
+  sends. The numbers are this project's (netfox is used by this game only); another
+  game with more nodes must raise `_HONEST_ID_COUNT`.
+- Cost: none for an honest session.
+- Test that fails without it: `netfox_host`. Part A: the 4 byte identity packet through
+  the handler and through `deserialize` (without the cap in front) returns and registers
+  nothing; a negative length, a name one byte longer than the bytes left, a valid entry
+  followed by 3 bytes of the next, a valid entry followed by a 2 GB name, a valid entry
+  followed by a name with no id, and an id still marked as continued in the last byte
+  all register nothing; the same lengths give an empty string and null from the string
+  and variant serializers, which read back what they wrote (and what `put_var` wrote);
+  an array and a dictionary declaring 2^40 entries are empty in under 50 ms; a state
+  packet and an input packet whose first property is a 2 GB variant in 4 bytes are
+  handled and return; dense and sparse frames of size 200 (over the rest) and -1 are
+  dropped with no engine error while a right-sized frame is merged; a raw packet that is
+  the prefix alone, shorter, or without the prefix dispatches nothing and one with an
+  index dispatches once. A crash cannot be asserted in a process: the test shows that
+  the calls return, and the mutation table shows that each kills the process (exit 138)
+  with its fix removed. Part C: 1000 unknown-command packets from one peer give one
+  line in under 50 ms, a second peer gets its own, and the next line is logged after
+  the interval; the same for 1000 tickrate mismatches; three identity packets of 10,000
+  entries are refused in under 50 ms with one warning, no per-entry line and nothing
+  stored; one of 200,000 entries (about 5 MB) is refused in under 50 ms; a packet of
+  107 short names (under the byte limit) is refused for its count; a packet of 53
+  entries and one with a 128 byte name are accepted with no per-entry line; the three
+  per-peer tables hold the logged peers, lose a peer that leaves (a `peer_disconnected`
+  signal is emitted), and are empty after the command server's `reset`, the
+  handshake's `stop` and the identity server's `clear`, and after `NetworkTime.stop()`
+  (last in the run, as it stops the clock).
+- Tests for A2 (`netfox_host`, each asserting the engine's error lines, counted in process
+  by an engine logger, as well as the time): one 14,000 byte bad name and 100 bad names
+  of 128 bytes give 0 lines in under 50 ms; a name of 129 bytes and a name that is valid
+  UTF-8 but not ASCII refuse the whole packet; a packet of 2,000 entries is read up to
+  107 entries; a ping that is a 200,000 byte bad string, and a pong and a timestamp
+  from the server that are bad strings, give 0 lines in under 50 ms; the size and type
+  check passes an honest ping (also with a 64 bit index), pong and timestamp and fails
+  the wrong type; a string property of 2,000 bad bytes in a state, a diff state and an
+  input packet gives 0 lines; 25 fixed-size values (all the allowed types) round trip;
+  10 string, name, path, container and packed values read as null and leave the buffer
+  at its end; the value after a refused one is read in place; every property of the
+  bot, world object and pickup scenes is of an allowed type and round trips; a
+  dictionary of 5 entries in 9 bytes is refused and 4 in 8 are read; a variant that
+  declares 2 GB and has a header and a value after it gives null; the identity limiter
+  table is empty after `NetworkTime.stop()`.
+
+### D. What is not fixed
+
+This patch bounds the cost of a packet. It does not make the host safe against a peer
+that sends a lot of packets.
+- Any reliable command, at the network's own rate. There is no per-peer packet rate
+  limit anywhere in the addon or in the game: a peer can send identity packets (each one
+  now cheap but not free: parsed up to 14,522 bytes and 107 entries), unknown commands,
+  tickrate messages and input packets as fast as ENet carries them, and the host spends
+  its time reading them. The rate limited log lines bound the output, not the work.
+- Godot's own `SceneMultiplayer` layer below netfox: malformed remote calls, the path
+  strings of RPC and node-path caches, the system messages. They were not probed.
+- The string schema of this addon (`_StringSerializer`) decodes UTF-8 and has the same
+  cost per invalid byte; it is bounded by the packet size only and is not registered
+  anywhere in this project. A pong may still hold a string of about 30 bytes.
+- Every measurement is from a Mac debug build, headless. A phone host writing its log to
+  the system log will be slower per line, and the CPU of a budget phone several times
+  slower per call. Nothing here was measured on a device or over a real network.
+
+
 ## The diffs
 
 The blocks below are the whole set, one per file.
 
-`addons/netfox/network-time-synchronizer.gd`, carries patches 2 and 7:
+`addons/netfox/network-time-synchronizer.gd`, carries patches 16, 2 and 7:
 
 ```diff
 diff --git a/addons/netfox/network-time-synchronizer.gd b/addons/netfox/network-time-synchronizer.gd
@@ -443,12 +747,30 @@ diff --git a/addons/netfox/network-time-synchronizer.gd b/addons/netfox/network-
  @onready var _cmd_ping := NetworkCommandServer.register_command(_handle_ping, MultiplayerPeer.TRANSFER_MODE_UNRELIABLE)
  @onready var _cmd_pong := NetworkCommandServer.register_command(_handle_pong, MultiplayerPeer.TRANSFER_MODE_UNRELIABLE)
  @onready var _cmd_req_time := NetworkCommandServer.register_command(_handle_request_timestamp, MultiplayerPeer.TRANSFER_MODE_RELIABLE)
-@@ -249,12 +251,21 @@
- 		_offset = offset - nudge
+@@ -247,16 +249,46 @@
+ 		_logger.trace("Adjusted clock by %.2fms, offset: %.2fms, new time: %.4fss", [nudge * 1000., offset * 1000., _clock.get_time()])
  
+ 		_offset = offset - nudge
++
++# PATCH (see addons/NETFOX_PATCHES.md): the payloads of the clock commands are
++# var_to_bytes of an int (ping), of an array of an int and two floats (pong) and of
++# a float (timestamp). Anything of another size or type is refused before it is
++# decoded: the engine prints an error line for every invalid UTF-8 byte of a string
++# variant, so a ping of 200,000 bad bytes cost 1.7 s and 200,000 lines. The limits
++# are the largest honest sizes: a 4 byte header and 8 bytes for each 64 bit number
++# plus a 4 byte header for each element and for the array's count.
++const _PING_MAX_BYTES := 4 + 8
++const _PONG_MAX_BYTES := 4 + 4 + 3 * (4 + 8)
++const _TIMESTAMP_MAX_BYTES := 4 + 8
+ 
++func _is_payload_of(data: PackedByteArray, type: int, max_bytes: int) -> bool:
++	return data.size() >= 8 and data.size() <= max_bytes and (data.decode_u32(0) & 0xff) == type
++
  func _handle_ping(sender: int, data: PackedByteArray) -> void:
 -	var idx := bytes_to_var(data) as int
-+	# PATCH (see addons/NETFOX_PATCHES.md): a malformed payload is not an index.
++	# PATCH: a malformed payload is not an index.
++	if not _is_payload_of(data, TYPE_INT, _PING_MAX_BYTES):
++		return
 +	var decoded: Variant = bytes_to_var(data)
 +	if typeof(decoded) != TYPE_INT:
 +		return
@@ -459,14 +781,22 @@ diff --git a/addons/netfox/network-time-synchronizer.gd b/addons/netfox/network-
  	_cmd_pong.send(var_to_bytes([idx, ping_received, _clock.get_time()]), sender)
  
  func _handle_pong(sender: int, data: PackedByteArray) -> void:
+-	var args := bytes_to_var(data)
 +	# PATCH (see addons/NETFOX_PATCHES.md): only the server answers pings.
 +	if sender != SERVER_PEER_ID:
 +		return
-+
- 	var args := bytes_to_var(data)
  
++	# PATCH: a pong is an array of an int and two floats, and nothing else
++	if not _is_payload_of(data, TYPE_ARRAY, _PONG_MAX_BYTES):
++		return
++	var args: Variant = bytes_to_var(data)
++	if typeof(args) != TYPE_ARRAY or (args as Array).size() != 3 or typeof(args[0]) != TYPE_INT or typeof(args[1]) != TYPE_FLOAT or typeof(args[2]) != TYPE_FLOAT:
++		return
++
  	var idx := args[0] as int
-@@ -296,6 +307,11 @@
+ 	var ping_received := args[1] as float
+ 	var pong_sent := args[2] as float
+@@ -296,6 +328,14 @@
  	_cmd_set_time.send(var_to_bytes(_clock.get_time()), sender)
  
  func _handle_set_timestamp(sender: int, data: PackedByteArray) -> void:
@@ -475,6 +805,9 @@ diff --git a/addons/netfox/network-time-synchronizer.gd b/addons/netfox/network-
 +	if sender != SERVER_PEER_ID:
 +		return
 +
++	# PATCH: a timestamp is a float, and nothing else
++	if not _is_payload_of(data, TYPE_FLOAT, _TIMESTAMP_MAX_BYTES):
++		return
  	var timestamp := bytes_to_var(data) as float
  
  	_logger.debug("Received initial timestamp @ %.4fs raw time", [_clock.get_raw_time()])
@@ -518,7 +851,7 @@ diff --git a/addons/netfox/rollback/network-rollback.gd b/addons/netfox/rollback
  	# Figure out where to start rollback from
 ```
 
-`addons/netfox/schemas/network-schemas.gd`, carries patch 5:
+`addons/netfox/schemas/network-schemas.gd`, carries patches 16 and 5:
 
 ```diff
 diff --git a/addons/netfox/schemas/network-schemas.gd b/addons/netfox/schemas/network-schemas.gd
@@ -533,7 +866,60 @@ diff --git a/addons/netfox/schemas/network-schemas.gd b/addons/netfox/schemas/ne
  	return _VariableBitsetSerializer.instance
  
  ## Serialize signed integers as 8 bits.
-@@ -610,9 +610,19 @@
+@@ -489,15 +489,51 @@
+ 	func encode(v: Variant, b: StreamPeerBuffer) -> void:
+ 		b.put_var(v, false)
+ 
++	# PATCH (see addons/NETFOX_PATCHES.md): two limits, for a decoder that reads what a
++	# peer sends.
++	# 1. get_var() allocates the length the packet declares before it checks the bytes
++	#    left, so 4 bytes declaring 2 GB kill the process. The length (a 32 bit field
++	#    before the value, as put_var writes it) is checked against the bytes left first.
++	# 2. The engine prints an error line for every invalid UTF-8 byte of a string, so a
++	#    string of 4,000 bad bytes in a state packet costs 4,000 lines. Only fixed-size
++	#    values are decoded: nil, bool, int, float and the math types and Color, which
++	#    carry no length and no string. Anything else, the strings, node paths,
++	#    containers and objects included, is skipped and read as null. A property of
++	#    such a type needs a registered schema with a bounded decoder of its own.
++	# The checks read the 4 byte length and the 4 byte type header, then seek back and
++	# let get_var decode (which does not build objects with allow_objects false).
++	const _FIXED_SIZE_TYPES := ((1 << (TYPE_COLOR + 1)) - 1) & ~(1 << TYPE_STRING)
++
+ 	func decode(b: StreamPeerBuffer) -> Variant:
++		var start := b.get_position()
++		var left := b.get_available_bytes() - 4
++		if left < 4:
++			b.seek(start + b.get_available_bytes())
++			return null
++		var size := b.get_32()
++		if size < 4 or size > left:
++			b.seek(start + 4 + clampi(size, 0, left))
++			return null
++		var type := b.get_32() & 0xff
++		if (_FIXED_SIZE_TYPES >> type) & 1 == 0:
++			b.seek(start + 4 + size)
++			return null
++		b.seek(start)
+ 		return b.get_var(false)
+ 
+ class _StringSerializer extends NetworkSchemaSerializer:
+ 	func encode(v: Variant, b: StreamPeerBuffer) -> void:
+ 		b.put_utf8_string(str(v))
+ 
++	# PATCH (see addons/NETFOX_PATCHES.md): the length is checked before it is read,
++	# as for the variant serializer above; a bad length gives an empty string
+ 	func decode(b: StreamPeerBuffer) -> Variant:
+-		return b.get_utf8_string()
++		if b.get_available_bytes() < 4:
++			return ""
++		var size := b.get_32()
++		if size < 0 or size > b.get_available_bytes():
++			return ""
++		return (b.get_data(size)[1] as PackedByteArray).get_string_from_utf8()
+ 
+ class _CStringSerializer extends NetworkSchemaSerializer:
+ 	static var instance := _CStringSerializer.new()
+@@ -610,9 +646,19 @@
  			b.put_u8(byte)
  
  	func decode(b: StreamPeerBuffer) -> Variant:
@@ -554,7 +940,7 @@ diff --git a/addons/netfox/schemas/network-schemas.gd b/addons/netfox/schemas/ne
  			var byte := b.get_u8()
  
  			bools.append(byte & 0x01)
-@@ -625,9 +635,9 @@
+@@ -625,9 +671,9 @@
  
  			# Stop if no more data to read
  			if byte & 0x80 == 0:
@@ -566,6 +952,28 @@ diff --git a/addons/netfox/schemas/network-schemas.gd b/addons/netfox/schemas/ne
  
  class _Float16Serializer extends NetworkSchemaSerializer:
  	func encode(v: Variant, b: StreamPeerBuffer) -> void:
+@@ -850,6 +896,10 @@
+ 		var array := []
+ 
+ 		var item_count = size.decode(b)
++		# PATCH (see addons/NETFOX_PATCHES.md): an item takes at least a byte, so a
++		# count over the bytes left is not honest, and would allocate and loop for it
++		if item_count < 0 or item_count > b.get_available_bytes():
++			return array
+ 		array.resize(item_count)
+ 		for i in item_count:
+ 			array[i] = component.decode(b)
+@@ -879,6 +929,10 @@
+ 		var dictionary := {}
+ 
+ 		var size = size_serializer.decode(b)
++		# PATCH (see addons/NETFOX_PATCHES.md): an entry takes at least two bytes, so a
++		# count over half the bytes left is not honest, and would loop for it
++		if size < 0 or size > b.get_available_bytes() >> 1:
++			return dictionary
+ 		for i in size:
+ 			var key = key_serializer.decode(b)
+ 			var value = value_serializer.decode(b)
 ```
 
 `addons/netfox/serializers/base-snapshot-serializer.gd`, carries patch 12:
@@ -602,13 +1010,13 @@ diff --git a/addons/netfox/serializers/base-snapshot-serializer.gd b/addons/netf
 +const _WARNING_INTERVAL_MSEC := 1000
 ```
 
-`addons/netfox/serializers/dense-snapshot-serializer.gd`, carries patch 12:
+`addons/netfox/serializers/dense-snapshot-serializer.gd`, carries patches 16 and 12:
 
 ```diff
 diff --git a/addons/netfox/serializers/dense-snapshot-serializer.gd b/addons/netfox/serializers/dense-snapshot-serializer.gd
 --- a/addons/netfox/serializers/dense-snapshot-serializer.gd
 +++ b/addons/netfox/serializers/dense-snapshot-serializer.gd
-@@ -61,6 +61,11 @@
+@@ -61,17 +61,29 @@
  	var tick := buffer.get_u32()
  	var snapshot := _Snapshot.new(tick)
  
@@ -620,7 +1028,14 @@ diff --git a/addons/netfox/serializers/dense-snapshot-serializer.gd b/addons/net
  	while buffer.get_available_bytes() > 0:
  		# Read identity reference, data size, and data
  		var idref := netref.decode(buffer) as _NetworkIdentityReference
-@@ -71,7 +76,10 @@
+ 		var node_data_size := varuint.decode(buffer) as int
++		# PATCH (see addons/NETFOX_PATCHES.md): a frame cannot be larger than the
++		# packet's rest; a negative size is an engine error for every such frame
++		if node_data_size < 0 or node_data_size > buffer.get_available_bytes():
++			break
+ 		node_buffer.data_array = buffer.get_partial_data(node_data_size)[1]
+ 
+ 		# Resolve to identifier
  		var identifier := _get_identity_server()._resolve_reference(peer, idref)
  		if not identifier:
  			# TODO(#563): Handle unknown IDs gracefully
@@ -665,13 +1080,13 @@ diff --git a/addons/netfox/serializers/redundant-snapshot-serializer.gd b/addons
  
 ```
 
-`addons/netfox/serializers/sparse-snapshot-serializer.gd`, carries patches 5 and 12:
+`addons/netfox/serializers/sparse-snapshot-serializer.gd`, carries patches 16, 5 and 12:
 
 ```diff
 diff --git a/addons/netfox/serializers/sparse-snapshot-serializer.gd b/addons/netfox/serializers/sparse-snapshot-serializer.gd
 --- a/addons/netfox/serializers/sparse-snapshot-serializer.gd
 +++ b/addons/netfox/serializers/sparse-snapshot-serializer.gd
-@@ -69,20 +69,30 @@
+@@ -69,20 +69,34 @@
  		# Read header, including identity reference
  		var idref := netref.decode(buffer) as _NetworkIdentityReference
  		var node_data_size := varuint.decode(buffer) as int
@@ -697,6 +1112,10 @@ diff --git a/addons/netfox/serializers/sparse-snapshot-serializer.gd b/addons/ne
 +		var changed_indices := changed_bits.get_set_indices()
 +		if not changed_indices.is_empty() and changed_indices.back() >= node_props.size():
 +			_warn_peer(peer, "Received a changed-bits index past the property count from #%s, skipping data", [peer])
++			break
++		# PATCH (see addons/NETFOX_PATCHES.md): a frame cannot be larger than the
++		# packet's rest; a negative size is an engine error for every such frame
++		if node_data_size < 0 or node_data_size > buffer.get_available_bytes():
 +			break
 +		node_buffer.data_array = buffer.get_partial_data(node_data_size)[1]
 +
@@ -1218,6 +1637,351 @@ diff --git a/addons/netfox/servers/network-synchronization-server.gd b/addons/ne
  	_logger.trace("Ingested state: %s", [snapshot])
 ```
 
+`addons/netfox.internals/peer-rate-limit.gd`, new file, carries patch 16:
+
+```diff
+diff --git a/addons/netfox.internals/peer-rate-limit.gd b/addons/netfox.internals/peer-rate-limit.gd
+new file mode 100644
+--- /dev/null
++++ b/addons/netfox.internals/peer-rate-limit.gd
+@@ -0,0 +1,25 @@
++extends RefCounted
++class_name _PeerRateLimit
++
++# PATCH (see addons/NETFOX_PATCHES.md): lets a log line about what a peer sent
++# through at most once per interval per peer, the first one always, so a peer
++# cannot fill the log and spend the host's time on printing by repeating a bad
++# packet. A user of this class erases a peer when it leaves and clears on reset.
++
++const INTERVAL_MSEC := 1000
++
++var _last_msec := {} # peer to the time (msec) of its last line
++
++## True if a line about [param peer] may be logged now, and records that it was
++func allow(peer: int) -> bool:
++	var now := Time.get_ticks_msec()
++	if now - (_last_msec.get(peer, -INTERVAL_MSEC) as int) < INTERVAL_MSEC:
++		return false
++	_last_msec[peer] = now
++	return true
++
++func erase_peer(peer: int) -> void:
++	_last_msec.erase(peer)
++
++func clear() -> void:
++	_last_msec.clear()
+```
+
+`addons/netfox/network-time.gd`, carries patch 16:
+
+```diff
+diff --git a/addons/netfox/network-time.gd b/addons/netfox/network-time.gd
+--- a/addons/netfox/network-time.gd
++++ b/addons/netfox/network-time.gd
+@@ -482,6 +482,8 @@
+ 	NetworkHistoryServer.reset()
+ 	NetworkSynchronizationServer.reset()
+ 	RollbackSimulationServer.reset()
++	NetworkCommandServer.reset() # PATCH: see addons/NETFOX_PATCHES.md
++	NetworkIdentityServer.reset()
+ 
+ 	if multiplayer.peer_disconnected.is_connected(_handle_peer_disconnect):
+ 		multiplayer.peer_disconnected.disconnect(_handle_peer_disconnect)
+```
+
+`addons/netfox/serializers/identity-packet-serializer.gd`, carries patch 16:
+
+```diff
+diff --git a/addons/netfox/serializers/identity-packet-serializer.gd b/addons/netfox/serializers/identity-packet-serializer.gd
+--- a/addons/netfox/serializers/identity-packet-serializer.gd
++++ b/addons/netfox/serializers/identity-packet-serializer.gd
+@@ -5,6 +5,10 @@
+ #
+ # Used by NetworkIdentityServer, when sending local IDs to other peers
+ 
++# PATCH (see addons/NETFOX_PATCHES.md): the longest name an honest client sends, in
++# bytes. Names are node paths, which in this project are ASCII.
++const MAX_NAME_BYTES := 128
++
+ # ids: Dictionary[full_name, local_id]
+ func serialize(ids: Dictionary) -> PackedByteArray:
+ 	var buffer := StreamPeerBuffer.new()
+@@ -19,16 +23,53 @@
+ 	return buffer.data_array
+ 
+ # return: Dictionary[full_name, local_id]
+-func deserialize(data: PackedByteArray) -> Dictionary:
++# PATCH: reads at most max_entries entries (all if max_entries is negative), so a
++# caller that refuses a packet of more than N entries passes N + 1.
++func deserialize(data: PackedByteArray, max_entries: int = -1) -> Dictionary:
+ 	var ids := {}
+-	var varuint := NetworkSchemas.varuint()
+ 	var buffer := StreamPeerBuffer.new()
+ 	buffer.data_array = data
+ 
+ 	while buffer.get_available_bytes() > 0:
+-		var full_name := buffer.get_utf8_string()
+-		var id := varuint.decode(buffer) as int
++		if max_entries >= 0 and ids.size() >= max_entries:
++			break
++		# PATCH (see addons/NETFOX_PATCHES.md): get_utf8_string() allocates the length
++		# the packet declares before it checks the bytes left, so 4 bytes declaring 2 GB
++		# kill the process. Check the length first. A packet that is malformed or cut
++		# anywhere registers nothing, not the entries before the bad one.
++		if buffer.get_available_bytes() < 4:
++			return {}
++		var name_size := buffer.get_32()
++		if name_size < 0 or name_size > buffer.get_available_bytes():
++			return {}
++		# PATCH: the engine prints an error line for every invalid UTF-8 byte it decodes,
++		# so a name of 14,000 bytes of 0xff costs 14,000 lines and half a second. A name
++		# is refused, with its packet, if it is longer than MAX_NAME_BYTES or has a byte
++		# of 0x80 or more, judged on the raw bytes before they are decoded. Names are node
++		# paths and this project's are ASCII: a node named with other characters would
++		# not be synchronised.
++		if name_size > MAX_NAME_BYTES:
++			return {}
++		var raw := buffer.get_data(name_size)[1] as PackedByteArray
++		for byte in raw:
++			if byte >= 0x80:
++				return {}
++		var full_name := raw.get_string_from_ascii()
+ 
++		# The id is a varuint that must end inside the packet
++		var id := 0
++		var id_complete := false
++		for i in 10:
++			if buffer.get_available_bytes() == 0:
++				break
++			var byte := buffer.get_u8()
++			id += (byte & 0x7f) << (i * 7)
++			if byte & 0x80 == 0:
++				id_complete = true
++				break
++		if not id_complete:
++			return {}
++
+ 		ids[full_name] = id
+ 
+ 	return ids
+```
+
+`addons/netfox/servers/network-command-server.gd`, carries patch 16:
+
+```diff
+diff --git a/addons/netfox/servers/network-command-server.gd b/addons/netfox/servers/network-command-server.gd
+--- a/addons/netfox/servers/network-command-server.gd
++++ b/addons/netfox/servers/network-command-server.gd
+@@ -28,6 +28,8 @@
+ 
+ var _use_raw := ProjectSettings.get_setting("netfox/general/use_raw_commands", false) as bool
+ 
++var _unknown_command_limit := _PeerRateLimit.new() # PATCH: see addons/NETFOX_PATCHES.md
++
+ static var _logger := NetfoxLogger._for_netfox("NetworkCommandServer")
+ 
+ ## Register a command at the next available ID
+@@ -70,10 +72,22 @@
+ func get_command_packet_prefix() -> PackedByteArray:
+ 	return _packet_prefix
+ 
++## Erase all data kept about [param peer]
++## [br][br]
++## Called by default when a peer leaves
++func erase_peer(peer: int) -> void:
++	_unknown_command_limit.erase_peer(peer)
++
++## Forget what is kept about peers, called by [method _NetworkTime.stop]
++func reset() -> void:
++	_unknown_command_limit.clear()
++
+ func _handle_command(sender: int, idx: int, data: PackedByteArray) -> void:
+ 	var command := _commands.get(idx) as Command
+ 	if not command:
+-		_logger.error("Received unknown command #%d!", [idx])
++		# PATCH: an unknown command is ignored, and logged at most once per second per peer
++		if _unknown_command_limit.allow(sender):
++			_logger.error("Received unknown command #%d from #%d!", [idx, sender])
+ 		return
+ 	command._handle(sender, data)
+ 
+@@ -84,6 +98,12 @@
+ 	_rpc_transport.on_receive.connect(_handle_command)
+ 	_packet_transport.on_receive.connect(_handle_command)
+ 
++	# PATCH: forget peers that leave
++	if NetworkEvents.enabled:
++		NetworkEvents.on_peer_leave.connect(erase_peer)
++	elif is_instance_valid(multiplayer):
++		multiplayer.peer_disconnected.connect(erase_peer)
++
+ ## Networked command
+ ##
+ ## Provides a convenient interface for sending and managing networked commands.
+@@ -147,8 +167,9 @@
+ 		var buffer := StreamPeerBuffer.new()
+ 		buffer.data_array = packet
+ 
+-		# Check header
+-		if not is_command_packet(packet):
++		# Check header; PATCH (see addons/NETFOX_PATCHES.md): the command index byte
++		# must be there too, a bare prefix is not command 0
++		if not is_command_packet(packet) or packet.size() < _packet_prefix.size() + 1:
+ 			return
+ 
+ 		# Grab data
+```
+
+`addons/netfox/servers/network-identity-server.gd`, carries patch 16:
+
+```diff
+diff --git a/addons/netfox/servers/network-identity-server.gd b/addons/netfox/servers/network-identity-server.gd
+--- a/addons/netfox/servers/network-identity-server.gd
++++ b/addons/netfox/servers/network-identity-server.gd
+@@ -39,6 +39,24 @@
+ 
+ const _WARN_QUEUE_SIZE := 128
+ 
++# PATCH (see addons/NETFOX_PATCHES.md): how big an identity packet may be. A peer
++# sends the identities of the nodes it has registered, and an honest client
++# registers a small, known number: 4 pickup spots, 24 world object slots, and for
++# each of up to 5 bots the bot, its Vitals, Arsenal, Gadgets and Input nodes.
++# That is 4 + 24 + 5 * 5 = 53 entries in total, and the largest packet seen in
++# the project's sessions (4 players, late joiners) had 26 entries in 893 bytes,
++# the longest name 37 bytes. The limits are twice the total count, and a name of
++# up to 128 bytes, so they are about 4 and 16 times what a real session sends.
++const _HONEST_ID_COUNT := 4 + 24 + 5 * 5
++const _ID_COUNT_HEADROOM := 2
++const _MAX_ID_ENTRIES := _HONEST_ID_COUNT * _ID_COUNT_HEADROOM
++# 4 bytes of string length, the name, and a varuint of at most 5 bytes
++const _MAX_ID_NAME_BYTES := _IdentityPacketSerializer.MAX_NAME_BYTES
++const _MAX_ID_ENTRY_BYTES := 4 + _MAX_ID_NAME_BYTES + 5
++const _MAX_ID_PACKET_BYTES := _MAX_ID_ENTRIES * _MAX_ID_ENTRY_BYTES
++
++var _refusal_limit := _PeerRateLimit.new() # PATCH: peer to the time of its last refusal warning
++
+ func _init(p_command_server: _NetworkCommandServer = null) -> void:
+ 	_command_server = p_command_server
+ 
+@@ -84,16 +102,22 @@
+ 	_logger.debug("Erasing data for peer #%d", [peer])
+ 
+ 	_push_queue.erase(peer)
++	_refusal_limit.erase_peer(peer)
+ 	_identifier_by_id.erase(peer)
+ 	for identifier in _identifiers.values():
+ 		(identifier as _NetworkIdentifier).erase_id_for(peer)
+ 
++## Forget what is kept about peers, called by [method _NetworkTime.stop]
++func reset() -> void:
++	_refusal_limit.clear()
++
+ ## Clear all identities
+ func clear() -> void:
+ 	_identifiers.clear()
+ 	_identifier_by_name.clear()
+ 	_identifier_by_id.clear()
+ 	_identifier_by_local_id.clear()
++	_refusal_limit.clear()
+ 	_next_id = 0
+ 
+ ## Queue sending the numeric ID of [param node] to [param peer]
+@@ -190,11 +214,25 @@
+ 			_identifier_by_id.erase(peer)
+ 
+ func _handle_ids(sender: int, data: PackedByteArray) -> void:
+-	var ids := _packet_serializer.deserialize(data)
++	# PATCH: a packet over the limits is refused before it is read, or after, if
++	# it is small but made of many short names; logged at most once per second per peer
++	# A packet that is cut, has a name over _MAX_ID_NAME_BYTES or a byte of 0x80 or more in
++	# a name reads as no entries at all
++	var ids := {}
++	if data.size() <= _MAX_ID_PACKET_BYTES:
++		ids = _packet_serializer.deserialize(data, _MAX_ID_ENTRIES + 1)
++	if data.size() > _MAX_ID_PACKET_BYTES or ids.size() > _MAX_ID_ENTRIES or (ids.is_empty() and not data.is_empty()):
++		if _refusal_limit.allow(sender):
++			_logger.warning("Refusing identity packet of %d bytes from #%d, over the limit of %d bytes or %d entries, or malformed, or a name over %d bytes or not ASCII", [data.size(), sender, _MAX_ID_PACKET_BYTES, _MAX_ID_ENTRIES, _MAX_ID_NAME_BYTES])
++		return
+ 
++	# PATCH: one line per packet, and one per entry only at trace level (it was
++	# one INFO line per entry), so the cost of a packet is bounded by the limits above
++	_logger.debug("Received %d IDs from #%d", [ids.size(), sender])
++
+ 	for full_name in ids:
+ 		var id := ids[full_name] as int
+-		_logger.info("Received ID #%d for %s from #%d", [id, full_name, sender])
++		_logger.trace("Received ID #%d for %s from #%d", [id, full_name, sender])
+ 		var identifier := _get_identifier_by_name(full_name)
+ 		if not identifier:
+ 			# Deleted since then
+```
+
+`addons/netfox/time/network-tickrate-handshake.gd`, carries patch 16:
+
+```diff
+diff --git a/addons/netfox/time/network-tickrate-handshake.gd b/addons/netfox/time/network-tickrate-handshake.gd
+--- a/addons/netfox/time/network-tickrate-handshake.gd
++++ b/addons/netfox/time/network-tickrate-handshake.gd
+@@ -27,6 +27,8 @@
+ ## Defaults to [constant WARN], based on project settings.
+ var mismatch_action: int = ProjectSettings.get_setting(&"netfox/time/tickrate_mismatch_action", WARN)
+ 
++var _mismatch_warning_limit := _PeerRateLimit.new() # PATCH: see addons/NETFOX_PATCHES.md
++
+ static var _logger := NetfoxLogger._for_netfox("NetworkTickrateHandshake")
+ 
+ ## Emitted when a tickrate mismatch is encountered, and [member mismatch_action] is set to
+@@ -40,6 +42,10 @@
+ ## [br][br]
+ ## Called by [_NetworkTime], no need to call manually.
+ func run() -> void:
++	# PATCH: forget peers that leave
++	if not multiplayer.peer_disconnected.is_connected(erase_peer):
++		multiplayer.peer_disconnected.connect(erase_peer)
++
+ 	if _is_authority():
+ 		# Broadcast tickrate
+ 		_submit_tickrate.rpc(NetworkTime.tickrate)
+@@ -56,7 +62,16 @@
+ func stop() -> void:
+ 	if multiplayer.peer_connected.is_connected(_handle_new_peer):
+ 		multiplayer.peer_connected.disconnect(_handle_new_peer)
++	if multiplayer.peer_disconnected.is_connected(erase_peer):
++		multiplayer.peer_disconnected.disconnect(erase_peer)
++	_mismatch_warning_limit.clear()
+ 
++## Erase all data kept about [param peer]
++## [br][br]
++## Called when a peer leaves, no need to call manually.
++func erase_peer(peer: int) -> void:
++	_mismatch_warning_limit.erase_peer(peer)
++
+ func _ready() -> void:
+ 	name = "NetworkTickrateHandshake"
+ 
+@@ -67,12 +82,14 @@
+ func _handle_tickrate_mismatch(peer: int, tickrate: int) -> void:
+ 	match mismatch_action:
+ 		WARN:
+-			_logger.warning(
+-				"Local tickrate %dtps differs from tickrate of peer #%d at %dtps! " +
+-				"Make sure that tickrates are correctly configured in the Project settings! " +
+-				"See netfox/Time/Tickrate.", [
+-					NetworkTime.tickrate, peer, tickrate
+-				])
++			# PATCH: logged at most once per second per peer, the packet is handled as before
++			if _mismatch_warning_limit.allow(peer):
++				_logger.warning(
++					"Local tickrate %dtps differs from tickrate of peer #%d at %dtps! " +
++					"Make sure that tickrates are correctly configured in the Project settings! " +
++					"See netfox/Time/Tickrate.", [
++						NetworkTime.tickrate, peer, tickrate
++					])
+ 		DISCONNECT:
+ 			if _is_authority():
+ 				_logger.warning("Peer #%d's tickrate of %dtps differs from expected %dtps! Disconnecting.", [
+```
+
 ## Mutation table
 
 Each patch removed in turn (or one of its parts, as named), the named test run, then
@@ -1272,3 +2036,41 @@ the patch restored. "FAIL" means the test exited 1 or printed a SCRIPT ERROR.
 | 14 | the rate limit (a warning for every packet) | netfox_host | FAIL, 1000 warnings for 1000 packets (exactly 1), and 5 more checks that count warnings |
 | 14 | the drop (warn, then accept the packet) | netfox_host | FAIL, the padded state packet is merged, and the padded input check of patch 6 |
 | 14 | the erase in `erase_peer` and the clear in `reset` | netfox_host | FAIL, 4 checks (no warning after the peer is erased or after a reset, 3 peers kept) |
+| 16 | the identity serializer back to the unpatched one (`get_utf8_string`) | netfox_host | process killed, exit 138 (SIGBUS), on the first call: the 4 byte identity packet |
+| 16 | the variant serializer back to `get_var(false)` | netfox_host | process killed, exit 138, on the first 2 GB variant |
+| 16 | the variant length check (`size > left`; the 4 byte packets still stop at the earlier size check) | netfox_host | process killed, exit 138, on a 2 GB length followed by a header and a value (a check was added for it; the mutation survived the first version of the test) |
+| 16 | the string serializer back to `get_utf8_string()` | netfox_host | process killed, exit 138 |
+| 16 | the array count check | netfox_host | SCRIPT ERROR x2 (the resize of 2^40 items; scene exits 0, `run_all.sh` fails) |
+| 16 | the dictionary count check | netfox_host | hang in a loop of 2^40 iterations, killed after 90 s |
+| 16 | the dictionary count against half the bytes left (compared with the bytes left) | netfox_host | FAIL, a dictionary of 5 entries in 9 bytes is read |
+| 16 | the identity serializer keeps the entries before a bad one (the reviewer's `break`) | netfox_host | FAIL, a valid entry then a 2 GB name registered the first entry |
+| 16 | the identity id must end inside the packet | netfox_host | FAIL, 2 checks (a cut id was stored) |
+| 16 | the identity name decoded as UTF-8, no length or byte check (before A2) | netfox_host | FAIL, 4 checks: 14,000 lines and 136 ms for one 14,000 byte name, 12,800 lines for 100 names of 128 bytes |
+| 16 | the identity name's byte check (0x80 and over) | netfox_host | FAIL, 2 checks: a name that is valid UTF-8 but not ASCII is accepted, and 12,800 lines for 100 bad names of 128 bytes |
+| 16 | the identity name length check (over 128 bytes) | netfox_host | FAIL, a name of 129 bytes is accepted |
+| 16 | the identity entry limit while reading (`_MAX_ID_ENTRIES + 1`) | netfox_host | FAIL, a packet of 2,000 entries is read in full |
+| 16 | a non-empty packet that reads as no entries is not refused | netfox_host | FAIL, the identity limiter table is empty before `NetworkTime.stop()` (the 4 byte packet is no longer logged) |
+| 16 | the ping size and type check | netfox_host | FAIL, 200,000 lines and 1.8 s for one ping |
+| 16 | the pong size and type check | netfox_host | FAIL, 200,000 lines and 1.8 s for one pong |
+| 16 | the timestamp size and type check | netfox_host | FAIL, 200,000 lines and 1.8 s, and a SCRIPT ERROR (a string cast to a float) |
+| 16 | the variant type allow-list | netfox_host | FAIL, 3 checks: 2,000 lines and 19 ms for a string property, none of the 10 non-fixed values is skipped, the value after a refused one is misread |
+| 16 | the dense frame size check | netfox_host | FAIL, the dense check (1 engine error for size -1; a frame over the rest read from what remained) and, as the error count carries over, the sparse check |
+| 16 | the sparse frame size check | netfox_host | FAIL, the sparse check (the frame over the rest is merged, or 1 engine error for size -1) |
+| 16 | the command index byte required | netfox_host | FAIL, 4 checks (the bare prefix dispatched command 0 with no data) |
+| 16 | the unknown-command limit | netfox_host | FAIL, 1000 lines for 1000 packets and 5 more checks |
+| 16 | the tickrate limit | netfox_host | FAIL, 1000 lines for 1000 packets and 5 more checks |
+| 16 | the byte limit's early refusal (the packet is always read) | netfox_host | FAIL, a 5.7 MB packet takes 158 ms to refuse (limit 50) |
+| 16 | the byte limit (only the entry count refuses) | netfox_host | FAIL, 4 checks (a 10,000 entry packet is not refused as a whole) |
+| 16 | the entry count limit | netfox_host | FAIL, a 107 entry packet under the byte limit is accepted |
+| 16 | the identity refusal rate limit | netfox_host | FAIL, 3 lines for 3 packets and 4 more checks |
+| 16 | the per-entry line back at INFO | netfox_host | FAIL, 53 per-entry lines for one honest packet |
+| 16 | the command server's erase on leave | netfox_host | FAIL, the peer is still in the table after it left |
+| 16 | the handshake's erase on leave | netfox_host | FAIL, the peer is still in the table after it left |
+| 16 | the identity server's erase in `erase_peer` | netfox_host | FAIL, the peer is still in the table after it left |
+| 16 | the command server's `reset` clears nothing | netfox_host | FAIL, 2 checks (after `reset`, after `NetworkTime.stop()`) |
+| 16 | the call to the command server's `reset` in `NetworkTime.stop()` | netfox_host | FAIL, 1 table entry left after `NetworkTime.stop()` |
+| 16 | the call to the identity server's `reset` in `NetworkTime.stop()` | netfox_host | FAIL, 6 entries left in the identity table after `NetworkTime.stop()` |
+| 16 | the identity server's `reset` clears nothing | netfox_host | FAIL, the same |
+| 16 | the handshake's clear in `stop` | netfox_host | FAIL, 2 checks (after `stop`, after `NetworkTime.stop()`) |
+| 16 | the identity server's clear in `clear` | netfox_host | FAIL, 1 entry left after `clear()` |
+| 16 | the unknown-command, tickrate and identity limits together (the unpatched files of `main`) | netfox_host | FAIL, 1000 lines for 1000 packets for both, 52 and 55 ms (limit 50); the identity checks stop at a SCRIPT ERROR because the limit constants do not exist |
