@@ -264,8 +264,7 @@ func _direction(first: Vector2, fallback: Vector2) -> Vector2:
 	return fallback.normalized()
 
 func _on_swing(bot: Bot, cfg: TuningConfig) -> void:
-	# The weapons task stores the swing direction in shot_dir; aim_dir is the fallback.
-	_fx.add_swing(bot.center(), _direction(bot.arsenal.shot_dir, bot.aim_dir), BotVisual.body_color(bot.slot, cfg))
+	_fx.add_swing(bot.center(), _direction(bot.arsenal.melee_dir, bot.aim_dir), BotVisual.body_color(bot.slot, cfg))
 	effect_triggered.emit(&"swing", bot)
 
 func _on_blast(slot: WorldObject, cfg: TuningConfig) -> void:

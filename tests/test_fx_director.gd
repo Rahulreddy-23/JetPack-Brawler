@@ -46,6 +46,7 @@ func _run() -> void:
 	await _test_knockout()
 	await _test_shots()
 	await _test_shot_and_pickup_same_tick()
+	await _test_shot_and_swing_same_frame()
 	await _test_swing()
 	await _test_picture_hides()
 	await _test_health_bar()
@@ -465,6 +466,27 @@ func _test_shot_and_pickup_same_tick() -> void:
 	spot.ready_tick = 0
 	await _clear_bots()
 
+func _test_shot_and_swing_same_frame() -> void:
+	var bot: Bot = await _add_bot(2, 1, Vector2(14.0, 7.0) * _px)
+	_director.scan()
+	var delta: float = 1.0 / float(_cfg.tick_rate)
+	bot.input.aim = Vector2.UP
+	bot.input.fire = true
+	bot.arsenal._rollback_tick(delta, 1, true)
+	bot.input.aim = Vector2.ZERO
+	bot.input.fire = false
+	bot.input.melee = true
+	bot.arsenal._rollback_tick(delta, 2, true)
+	_director.scan()
+
+	var fx: ShotFx = _director.shot_fx()
+	var index: int = fx.last_shot_index()
+	var tracer: Vector2 = fx.shot_end(index) - bot.center()
+	var upward: bool = is_zero_approx(tracer.x) and tracer.y < 0.0
+	_check(_count(&"shot", bot) == 1 and fx.shot_has_tracer(index) and upward, "a shot keeps its upward tracer when a horizontal swing follows before the frame")
+	_check(_count(&"swing", bot) == 1 and is_zero_approx(fx.last_swing_angle()), "the swing keeps its horizontal arc")
+	await _clear_bots()
+
 func _test_swing() -> void:
 	var fx: ShotFx = _director.shot_fx()
 	await get_tree().create_timer(_cfg.melee_arc_seconds + 0.3).timeout
@@ -482,14 +504,14 @@ func _test_swing() -> void:
 	_check(absf(fx.swing_radius - _cfg.melee_range * _px) < EPS and absf(fx.swing_span - deg_to_rad(_cfg.melee_arc_degrees)) < EPS, "the arc uses the config's melee range and angle")
 	await get_tree().create_timer(_cfg.melee_arc_seconds + 0.3).timeout
 	_check(fx.active_count() == 0, "the arc fades away")
-	bot.arsenal.shot_dir = Vector2.LEFT
+	bot.arsenal.melee_dir = Vector2.LEFT
 	bot.arsenal.melee_serial += 1
 	_director.scan()
-	_check(absf(fx.last_swing_angle() - PI) < EPS, "a swing uses the direction the weapons task stored in shot_dir")
-	bot.arsenal.shot_dir = Vector2.ZERO
+	_check(absf(fx.last_swing_angle() - PI) < EPS, "a swing uses the recorded melee direction")
+	bot.arsenal.melee_dir = Vector2.ZERO
 	bot.arsenal.melee_serial += 1
 	_director.scan()
-	_check(absf(fx.last_swing_angle() - (-PI / 2.0)) < EPS, "and the aim direction when shot_dir is empty")
+	_check(absf(fx.last_swing_angle() - (-PI / 2.0)) < EPS, "and the aim direction when melee_dir is empty")
 	await _clear_bots()
 
 # ---- the picture ----
@@ -662,6 +684,7 @@ func _fire_everything(bots: Array[Bot], frame: int) -> void:
 		bot.vitals.ko_serial += 1
 		bot.arsenal.shot_dir = Vector2.from_angle(float(frame) * 0.3)
 		bot.arsenal.shots_fired += 1
+		bot.arsenal.melee_dir = bot.arsenal.shot_dir
 		bot.arsenal.melee_serial += 1
 		bot.aim_dir = Vector2.from_angle(float(frame) * 0.2)
 	for slot: WorldObject in _director.objects.slots():
@@ -710,6 +733,7 @@ func _test_no_allocation_growth() -> void:
 			bot.vitals.hits_taken += 1
 			bot.arsenal.shot_dir = Vector2.from_angle(float(frames) * 0.3)
 			bot.arsenal.shots_fired += 1
+			bot.arsenal.melee_dir = bot.arsenal.shot_dir
 			bot.arsenal.melee_serial += 1
 		_director.scan()
 		await _frame()

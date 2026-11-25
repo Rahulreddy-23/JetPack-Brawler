@@ -15,7 +15,7 @@ const EPS: float = 0.001
 const ORIGIN: Vector2 = Vector2(2000.0, 2000.0)
 const ARSENAL_STATE: Array[String] = [
 	"active_slot", "picked_weapon", "picked_ammo", "fire_ready_tick", "last_shot_tick",
-	"shots_fired", "last_shot_weapon", "shot_dir", "melee_ready_tick", "last_melee_tick", "melee_serial",
+	"shots_fired", "last_shot_weapon", "shot_dir", "melee_ready_tick", "last_melee_tick", "melee_serial", "melee_dir",
 ]
 
 ## Records every call the rules make on the world objects and answers with canned data.
@@ -487,7 +487,7 @@ func _test_melee_swing_state() -> void:
 	_step(bot, 10)
 	_check(bot.arsenal.meleed_at(10) and bot.arsenal.last_melee_tick == 10 and bot.arsenal.melee_serial == 1, "a melee pulse swings at once")
 	_check(bot.arsenal.melee_ready_tick == 10 + cooldown, "the next swing is one cooldown (%d ticks) later" % cooldown)
-	_check(bot.arsenal.shot_dir == Vector2.UP, "the swing direction is the aim direction")
+	_check(bot.arsenal.melee_dir == Vector2.UP, "the swing direction is the aim direction")
 	_check(bot.arsenal.shots_fired == 0 and bot.arsenal.last_shot_tick == -1, "a swing is not a shot")
 	var swings: Array[int] = []
 	for tick: int in range(11, 11 + 4 * cooldown):
@@ -865,7 +865,7 @@ func _test_rocket_at_wall() -> void:
 func _swinger(dir: Vector2, tick: int) -> Bot:
 	var bot: Bot = _bot()
 	bot.arsenal.last_melee_tick = tick
-	bot.arsenal.shot_dir = dir
+	bot.arsenal.melee_dir = dir
 	return bot
 
 # A bot whose rectangle has the given point as its top-right corner.
@@ -1009,7 +1009,7 @@ func _test_melee_walls() -> void:
 	var y: float = 12.0 * _px
 	var left: Bot = _bot(Vector2(pillar.position.x - half_width, y))
 	left.arsenal.last_melee_tick = 90
-	left.arsenal.shot_dir = Vector2.RIGHT
+	left.arsenal.melee_dir = Vector2.RIGHT
 	var right: Bot = _bot(Vector2(pillar.end.x + half_width, y))
 	var hits: Array[Hit] = _collect(90, _bots([left, right]), _fake(), solids)
 	_check(hits.is_empty(), "a swing does not reach a bot on the other side of a pillar, though it is within the melee range")
@@ -1035,6 +1035,7 @@ func _test_collect_rerun() -> void:
 	# The same tick twice over the same state gives the same hits and the same calls.
 	var shooter: Bot = _shooter(ItemIds.SCRAP_BLASTER, Vector2.RIGHT, 70)
 	shooter.arsenal.last_melee_tick = 70
+	shooter.arsenal.melee_dir = Vector2.RIGHT
 	var target: Bot = _bot(ORIGIN + Vector2(0.9 * _px, 0.0))
 	var bomb: WorldObject = _slot_object(ItemIds.OBJECT_BOMB, ORIGIN + Vector2(0.5 * _px, 0.0))
 	var objects: FakeObjects = _fake()

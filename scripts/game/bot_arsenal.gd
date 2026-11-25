@@ -29,6 +29,8 @@ var melee_ready_tick: int = 0
 var last_melee_tick: int = -1
 ## Counts swings. Never reset; effects compare it with the highest value seen.
 var melee_serial: int = 0
+## Aim direction of the last melee swing.
+var melee_dir: Vector2 = Vector2.ZERO
 
 # Runs on the network tick after the bot's own movement (children run after the root), on the
 # shooter's phone and on the host. Does nothing while the bot is knocked out. Swap and melee
@@ -48,13 +50,11 @@ func _rollback_tick(_delta: float, tick: int, _is_fresh: bool) -> void:
 	var dir: Vector2 = bot.input_aim_direction(cfg)
 	if Bot.clean_bool(bot.input.swap) and picked_weapon != ItemIds.NONE:
 		active_slot = 1 - active_slot
-	# There is no separate melee direction in the state: the swing uses shot_dir, which a shot
-	# on the same tick sets to the same value.
 	if Bot.clean_bool(bot.input.melee) and tick >= melee_ready_tick:
 		last_melee_tick = tick
 		melee_serial += 1
 		melee_ready_tick = tick + WeaponRules.seconds_to_ticks(cfg.melee_cooldown, cfg)
-		shot_dir = dir
+		melee_dir = dir
 	if Bot.clean_bool(bot.input.fire) and tick >= fire_ready_tick:
 		_fire(bot, dir, tick, cfg)
 
