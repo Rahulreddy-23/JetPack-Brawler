@@ -269,6 +269,13 @@ parallel, each in its own files against A's stubs.
   gadget is never lost.
 - Traps are drawn in their owner's colour. Bombs and rockets stay neutral. Blink timing and
   colours are presentation constants in the draw code, not tuning numbers.
+- One exception to "all gameplay values are rollback state": a rocket slot's
+  `rocket_step_start` (where this tick's move began) is plain host-side data. Only the host
+  reads it, in the contact rule, and the host rewrites it at launch and at the start of
+  every rocket step, re-simulated ones included, before that rule runs.
+- On the tick a rocket reaches a wall or its range, a bot on its path is still tested first.
+- The test cycle's reset of gadgets and objects happens before that tick's blasts, plates
+  and throws, and is keyed on the cycle number so a skipped boundary tick is not missed.
 
 ## Experiments before tasks B to F start
 

@@ -17,7 +17,7 @@ these.
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
 | `dev` | `782da7b` | 25 Nov 2026 09:19 | Two reviewer commits: `2ce67fc` (finding D-10, reproduced, open) and `782da7b` (finding D-11, accepted). `521903f` and later merge commits only merge `main`. |
-| `geminiceo` | `60fabd3` | 24 Nov 2026 23:26 | One reviewer commit, `60fabd3` (follow-up check: findings G-13 and G-14, decided below; its one code change only brings the branch's future-tick bound in line with `main`). `290ac58` only merges `main`. |
+| `geminiceo` | `2afecfe` | 25 Nov 2026 09:40 | Two reviewer commits, `ba1904c` and `2afecfe` (findings G-15 to G-24, decided below). `6d966de` and `880200a` only merge `main`. Neither commit is taken whole: `ba1904c` carries netfox hunks `main` already has in another form and a session change already rejected, and the object hunks of `2afecfe` conflict with D-11. |
 
 ## Findings
 
@@ -228,6 +228,34 @@ fix and the netfox hardening merged. Each part was checked against `main` at `24
 
 The reviewer's clean audit of `scripts/game/combat_geometry.gd` and `cast_result.gd` (NaN and
 infinite inputs, zero-length segments, corner normals) is noted; no change follows from it.
+
+### geminiceo iterations 2 and 3 (`ba1904c`, `2afecfe`)
+
+Each finding was checked against `main` at `f479130` by an independent verifier, with a run
+where one was cheap. The reviewer's own test suite gives 22 of 22 on its branch and 10
+failures of 19 on `main`.
+
+| Id | Finding | Verified against `main` | Outcome |
+|---|---|---|---|
+| G-15 | A bot flush against a wall fires its rocket from 16 px inside the wall | Partly: no tunnelling (the rocket explodes at once, by design), but the blast centre sits inside the wall, so self-damage is 32.7 instead of 36.0 | Accepted as is, low. In the fix round |
+| G-16 | The reject timer has no tree or peer guard | Same as G-13.3; the reviewer reverted it | Rejected (already decided) |
+| G-17 | The pickup cycle reset is missed when a stall skips the boundary tick | Confirmed by run: a spot stayed on cooldown up to 15 s into the next cycle | Accepted, low. In the fix round, with the limit noted (the take tick is inferred from the respawn time) |
+| G-18 | The HUD does not redraw on resize; divide by zero on maximum health | Not real: a Control redraws on resize, and the draw returns before the value is used | Rejected |
+| G-19 | A flick that curves past the fire ring fires at the crossing angle | Confirmed by run | Accepted with a smaller fix: the reviewer's version gives an extra shot when the thumb is pulled back inside the ring between two ticks. In the fix round |
+| G-20 | Reapply the 1.1b-N netfox hardening | Already on `main` as patches 1 to 13 | Already fixed |
+| G-21a, b | A rocket that passes a bot and reaches a wall or its range in the same tick explodes past the bot | Confirmed by run; the blast lands at most one tick of travel past the bot (about 5 to 10 of 40 damage) | Accepted with a smaller fix on top of D-11. The independent review of task D found the same fault. In the fix round |
+| G-21c | A deflected rocket is swept along its new velocity | Was real | Already fixed (D-11, the same code) |
+| G-22 | The gadget cycle reset runs after blasts, plates and throws, and misses skipped ticks | Confirmed by run: a plate on a spawn point launches the fresh bot, a gadget thrown on the boundary tick is wiped, a stall leaves old plates | Accepted. In the fix round |
+| G-23 | Pickups never reset between sessions | Confirmed by reading: after Leave then Host a spot can stay empty up to 45 s | Accepted, needed before the phone test. In the fix round |
+| G-24 | The oversized-packet warning is not rate limited | Confirmed by run: 1000 packets printed 8003 log lines in 45 ms on the Mac; any device on the hotspot can do it | Accepted, as a new recorded netfox patch. In the fix round |
+
+The reviewer's `tests/test_security_audit.gd` is not taken as it is: several of its checks
+pass on `main` without the fix they name, and two error out instead of failing. Each
+accepted fix gets its own test that fails without it.
+
+A note for the architecture: `rocket_step_start` (D-11) is written during the rollback tick
+without being registered state. That is safe because only the host reads it and rewrites
+it before every read; `docs/ARCHITECTURE.md` records the exception.
 
 The reviewer's test file is not taken as it is: against `main` it exits 1, three of its nine
 checks assert nothing, and five findings have no check. Each accepted fix gets its own test
