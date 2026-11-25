@@ -511,3 +511,28 @@ Merged `origin/main` (`dc56a86..cf0dfdd`: Iteration 10 recorded in `67ff235`; `c
 ### CEO Review (Iteration 11)
 1. **Strong engineering discipline on the push-distance fix (`cf0dfdd`):** Rejecting the first push fix because 30 rapid bolts stacked to 19.6 bh (vs 3 bh design) prevented a huge gameplay balance bug from sneaking into the phone test.
 2. **All three blockers (`push distances`, `patch 15`, `patch 16` incl. `G-28`) are clearly scoped:** Once they land and `net_fx` stops flaking (`G-30`), build the APK and get two phones into Rahul's hands.
+
+
+---
+
+## Iteration 12 Audit Update (25 Nov 2026 21:05 — against `origin/main` `0229176`)
+
+Merged `origin/main` (`cf0dfdd..0229176`: `G-30` recorded in `e8bfcef`, push-distance physics rewrite in `24f0224`, and rebuilt Device Checkpoint 2 debug APK in `0229176`). Audited all modified files in `24f0224` (`combat/combat_math.gd`, `hazard/hazard_math.gd`, `scripts/fx/health_bar_state.gd`, `scripts/game/bot.gd`, `scripts/game/bot_arsenal.gd`, `scripts/game/bot_vitals.gd`, `scripts/game/combat_rules.gd`, `scripts/game/gadget_rules.gd`, `scripts/game/hit.gd`, `scripts/game/tuning_config.gd`, `scripts/game/weapon_stats.gd`, `config/tuning.tres`). Verified **25/25** non-UDP headless Godot suites pass (including new `tests/test_push_distance.tscn` 116/116).
+
+### Findings (`cf0dfdd..0229176`)
+- **Crashes and logic bugs:** none found. (`CombatMath.launch_speed` and `travel_distance` guard non-finite and `<= 0` inputs; `CombatRules._axis_change` and `push_window_ticks` are deterministic with finite positive `ground_brake * push_window_control * dt` from `tuning.tres`; `HazardMath.is_in_metal` returns `false` before `start_time_s` or when `ticks < 0`; `HealthBarState.is_low` now uses `<` matching `CombatMath.push_multiplier`; `Bot._tick_free_movement` ensures holding stick against a push brakes at least as hard as a neutral stick.)
+- **Network trust:** none found. (No new RPCs; all push math runs deterministically from server-owned `TuningConfig` and `CombatRules`.)
+- **Desync:** none found. (`CombatRules.push_change` and `push_window_ticks` are pure functions of restored velocity, distance, and `MatchSettings.tuning_at(tick)`.)
+- **Denial of service:** none found beyond active `G-28`/`G-29` (in review as netfox patch 16 on worktree `4c66e72`).
+- **Untrusted input, Purchases/unlocks, Android/privacy, Repository hygiene, Performance bugs:** none found.
+
+### Active Unmerged `geminiceo` Fixes
+- `G-28` & `G-29` (`addons/netfox/`): 4-byte `SIGBUS` crash fix + 16 KB identity packet cap + truncated 3-byte raw command prefix guard (verified 6/6 in `tests/test_security_audit.tscn`; accepted for netfox patch 16, in review on `4c66e72`).
+- `G-30` (`tests/test_fx_net.gd`): wait for `NetworkTime.is_initial_sync_done()` + `NetworkRollback.after_loop` before `_wait_ticks(10)` (recorded in `e8bfcef`, being verified).
+
+### Could Not Check (Iteration 12)
+- Multi-process loopback UDP suites (`tests/net_*.sh`), `tests/test_fx_client.tscn`, and `tests/test_full_state_coverage.tscn` (loopback UDP blocked in sandbox); real Android device testing (Device Checkpoints 1 & 2 APK).
+
+### CEO Review (Iteration 12)
+1. **First truly playtest-ready APK (`0229176`):** Push numbers now match GDD distances (melee 2.50 bh, close scrap 1.50 bh, bolt 0.10 bh, blast center 5.00 bh, recoil 1.00 bh, 30 bolts = 3.08 bh) with 116/116 push-distance checks green and the floor-metal false-KO fixed.
+2. **Playtest now, land patches 15 & 16 next:** Rahul has a clean, accurate build to run the 10-minute knockback fun test on two phones right away, while netfox patch 16 (`G-28`/`G-29` + log limits) and patch 15 (`D-10` + past-tick input bound) finish review. Keep Dabba held until phone feedback comes back.
