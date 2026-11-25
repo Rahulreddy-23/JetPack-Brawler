@@ -366,3 +366,35 @@ Merged `origin/main` (`0c8e6a4..2a9e175`: Device Checkpoint 2 draft & Rahul's ch
 1. **Great product decision on health bars (`0b10721`):** Showing a bot's health bar only while health is changing (~1.5 s) with a color flip at `<= 25` HP keeps the grey-box/final arena uncluttered while solving the core readability gap for the 2x low-health knockback push.
 2. **`net_blast_bomb_loss` is a test-harness artifact, not a gameplay blocker:** Because `Hud` and `EffectsDirector` self-heal on `explode + 2` (33 ms later), fixing `test_combat_objects.gd` to check `has_subject(..., true)` removes the 3-in-16 flake cleanly without adding redundant server bandwidth.
 3. **Ship the Device Checkpoint 2 APK next:** Once Task D's follow-up (`G-21`/`G-22`), Task E (effects + changing health bars), and netfox patch 15 (`D-10`) merge, cut the debug APK immediately and get two phones running the 10-minute knockback sandbox — nothing else should come before real thumb feel and hotspot validation.
+
+
+---
+
+## Iteration 7 Audit Update (25 Nov 2026 16:40 — against `origin/main` `22dd106`)
+
+Merged `origin/main` (`2a9e175..22dd106`: Task E presentation effects & changing health bar `0cfa603`, D-13 shared `Bot.input_aim_direction` `8ccb4b7`, and Device Checkpoint 1/2 APK scripts `715c149`/`22dd106`). Audited every new and changed script (`scripts/fx/counter_watch.gd`, `scripts/fx/health_bar_state.gd`, `scripts/fx/shot_fx.gd`, `scripts/fx/effects_director.gd`, `scripts/game/bot_visual.gd`, `scripts/game/bot.gd`, `scripts/game/bot_arsenal.gd`, `scripts/game/bot_gadgets.gd`, `scripts/game/tuning_config.gd`, `config/tuning.tres`).
+
+### Findings (0cfa603..22dd106)
+- **Crashes and logic bugs:** none found. (`EffectsDirector` validates `is_instance_valid(bot)`, `is_node_ready()`, finite directions, `stats != null`, and `range_px > 0` under `tuning.tres`; `ShotFx` uses fixed-size `Packed*Array` rings; `HealthBarState` guards `is_finite(health)` and `max_health <= 0.0`; `Bot.input_aim_direction` runs after `facing` updates and stays consistent across aim line, shots, melee, and gadgets.)
+- **Network trust:** none found. (Task E adds zero RPCs, reads only host-authoritative or locally predicted presentation counters, and writes no simulation state.)
+- **Desync:** none found. (Effects and health bars run strictly on frame time in presentation nodes, use dedicated `RandomNumberGenerator` instances, and never mutate rollback state; verified by `test_fx_director.tscn` 112/112.)
+- **Denial of service:** none found. (Fixed `fx_pool_size = 16` shape rings, `debris_max = 60`, host-owned counters.)
+- **Untrusted input:** none found. (`Bot.input_aim_direction` routes `input.aim` through `Bot.clean_vector`.)
+- **Purchases and unlocks:** none found (not yet present).
+- **Android and privacy:** none found. (Device Checkpoint 2 APK uses `arm64-v8a`, target 36, `INTERNET` permission only.)
+- **Repository hygiene:** none found. (Debug APK stays out of git under `builds/`.)
+- **Performance bugs:** none found. (`ShotFx` stops `_process` when idle and allocates nothing per shot; `test_fx_director.tscn` confirms flat node and object counts over 580 frames.)
+
+### Unmerged `geminiceo` Fixes Still Active (verified 7/7 in `tests/test_security_audit.tscn`)
+- `G-21a/b` (`scripts/game/gadget_rules.gd`): rocket hitting wall/floor or max-range tick still resolves earlier bot contact first.
+- `G-22` (`scripts/game/gadget_rules.gd`): gadget cycle reset runs before blasts/plates/throws and clears prior-cycle objects even if a stall skips the exact boundary tick.
+- `G-26` (`tests/test_combat_objects.gd`): `net_blast_bomb_loss` flake fix — record per-subject `snapshot.has_subject(..., true)` flags and read `client_hp` / `dummy_hp` from the nearest authoritative row within `explode + 1..explode + 6`.
+- `G-27` (`scripts/ui/touch_controls.gd`): refresh `pending_touch_fire_aim` in `_update_aim` while armed so a curved flick pulled back inside the fire ring before the next tick keeps its curved angle.
+
+### Could Not Check (Iteration 7)
+- Multi-process loopback UDP tests (`net_*.sh`, including new `tests/net_fx.sh`), `test_fx_client.tscn`, and `test_full_state_coverage.tscn` (loopback UDP blocked in sandbox; `test_fx_client.tscn` creates an ENet client to `127.0.0.1` which immediately fails in sandbox and drops to `OfflineMultiplayerPeer`).
+- Real Android device testing (Device Checkpoints 1 & 2 APK).
+
+### CEO Review (Iteration 7)
+1. **Milestone hit — Device Checkpoint 2 APK is cut (`8ccb4b7`, 28.6 MB):** Task E landed cleanly (112/112 headless checks, zero simulation writes, crisp changing-only health bars) and the APK is ready for Rahul's two-phone test.
+2. **Next priorities after phone feedback:** Merge the three remaining in-progress items (Task D `G-21`/`G-22` follow-up, netfox patch 15 for `D-10`, and `G-26` for the `net_blast_bomb_loss` flake), then act strictly on what Rahul feels on real thumbs before starting Dabba or Phase 2.
