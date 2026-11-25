@@ -16,7 +16,7 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `782da7b` | 25 Nov 2026 09:19 | Two reviewer commits: `2ce67fc` (finding D-10, reproduced, open) and `782da7b` (finding D-11, accepted). `521903f` and later merge commits only merge `main`. |
+| `dev` | `782da7b` | 25 Nov 2026 09:19 | Two reviewer commits: `2ce67fc` (finding D-10, cause found, fix in progress) and `782da7b` (finding D-11, accepted). `521903f` and later merge commits only merge `main`. |
 | `geminiceo` | `2afecfe` | 25 Nov 2026 09:31 | Two reviewer commits, `ba1904c` and `2afecfe` (findings G-15 to G-24, decided below). `6d966de` and `880200a` only merge `main`. Neither commit is taken whole: `ba1904c` carries netfox hunks `main` already has in another form and a session change already rejected, and the object hunks of `2afecfe` conflict with D-11. |
 
 ## Findings
@@ -147,13 +147,29 @@ these.
   and it is right again from the next tick. So the client was sent, and applied, two states
   for its own bot that were one tick behind the host's final history. No input was lost,
   no stall was logged and the throttle stayed at its maximum.
-- Reading (not yet proven): the client's input for one tick reached the host late; the
-  host sent the bot's state for that tick without having simulated it, then repaired its
-  own history when the input arrived. If so, a late input packet on real Wi-Fi shows the
-  player a small snap of their own bot.
-- Outcome: accepted as a real fault, open. An investigation is assigned: the mechanism in
-  netfox, a reproduction on demand, and the options (an input delay, not sending a state
-  that was not simulated, or the client keeping its own prediction).
+- Cause, found by investigation and reproduced on demand (branch
+  `worktree-agent-abdc8cb18a9ad9d79`, `tests/net_late_input.sh`): it is plain upstream
+  netfox, the same with an unpatched addon. When a client's input for one tick is missing,
+  the host skips that bot for the tick and sends nothing, which is right. But it simulates
+  the next tick as soon as that tick's own input is there, starting from the carried-over
+  state, and sends the result as authoritative: one step behind. It does this for every
+  following tick until the missing input arrives, then re-simulates and sends corrected
+  states. Every player sees it: the owner's bot is pulled back, a third player sees a
+  one-tick step backwards. If jitter delivers the stale version of a tick after the
+  corrected one, the wrong value stays in the client's history, which is what the smoke
+  test caught.
+- How often: not on every late packet. Each packet carries the last 4 ticks of input, so a
+  gap needs four or five packets in a row delayed or reordered, about 133 ms of burst.
+  Measured with packets held on purpose: 4 to 8 stale states per gap and the bot shown up
+  to 28.6 px wrong (57 px in three runs) for about as many frames as the gap lasted.
+- Options measured: an input delay of 2 ticks made no difference. Letting the host predict
+  with the last known input removed it but would repeat one-tick button presses (melee,
+  swap, dash, gadget). Not building on a carried-over start state removed it in a prototype.
+- Outcome: accepted. Fix in progress as netfox patch 15: the host does not simulate a bot
+  from a carried-over start state while the gap is open, and fills a gap that can no longer
+  be filled (older than the redundancy window) with the last known input so the bot cannot
+  freeze. The smoke test's comparison rule is corrected in the same change: it compared a
+  tick whenever that tick's own input matched, which is not enough.
 
 ### D-11 (dev, `782da7b`): a deflected rocket was checked against a path it never flew
 

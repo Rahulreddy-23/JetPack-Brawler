@@ -23,8 +23,9 @@ Current stage: Prototype, phase 1. Gate not passed.
       only; real Wi-Fi between phones is untested.
 - [x] A Foundation and contracts. Reviewed, merged (`afc2eee`). No gameplay rule yet; the
       game still plays as movement only.
-- [ ] Under simulated jitter the client's own bot is sometimes sent two states that are one
-      tick behind (dev finding D-10; 1 run in 14). Cause under investigation.
+- [ ] When a burst of a client's input packets is late, the host sends states for that bot
+      that are one step behind, for every player (dev finding D-10). It is upstream netfox
+      behaviour. Cause found and reproduced on demand; fix in progress as netfox patch 15.
 - [ ] Device checkpoint 1 (Rahul): sticks, jetpack and dash on two phones over a hotspot.
       Build and script are ready (`docs/reviews/device-checkpoint-1.md`); not yet run.
 - [x] B Combat core, hazard wiring, dummy, push window. Reviewed, merged (`a170e4b`).
@@ -54,11 +55,12 @@ In progress, each on its own branch, none on `main`:
    tightened. From the independent review of D's fix round and geminiceo G-21, G-22.
 2. Pickup session and cycle resets, rocket muzzle, curved flick (a new implementer branch):
    geminiceo G-15, G-17, G-19, G-23.
-3. Rate limit on netfox's oversized-packet warning, as a new recorded patch (a new
-   implementer branch): geminiceo G-24.
+3. Done and on `main` (`a73b845`): rate limit on netfox's oversized-packet warning, patch
+   14 (geminiceo G-24).
 4. Task E (effects), branch `worktree-agent-a0ba5c0a664836773`: last step, plus a health bar
    above every bot (product owner decision, see `docs/DECISIONS.md`).
-5. Dev finding D-10 (`worktree-agent-abdc8cb18a9ad9d79`): investigation only, no fix yet.
+5. Dev finding D-10 (`worktree-agent-abdc8cb18a9ad9d79`): cause found, fix in progress as
+   netfox patch 15.
 
 Then: an independent review of each fix round, merge, the full suite on everything, the
 debug APK into `builds/`, and the build line in `docs/reviews/device-checkpoint-2.md`
