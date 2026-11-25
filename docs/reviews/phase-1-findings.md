@@ -16,8 +16,8 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `09018a2` | 25 Nov 2026 23:51 | No reviewer commit since `09018a2` (D-17); later commits up to `3438439` only merge `main`. |
-| `geminiceo` | `39a4a86` | 25 Nov 2026 23:51 | One reviewer commit, `39a4a86` (iteration 15: a clean audit of the G-31 fix; the reviewer reports no open findings left on its side and removes its own test file). `63ef1e2` and `9f0e422` only merge `main`. |
+| `dev` | `09018a2` | 26 Nov 2026 00:21 | No reviewer commit since `09018a2` (D-17); later commits up to `076b37a` only merge `main`. |
+| `geminiceo` | `6bd7477` | 26 Nov 2026 00:21 | One reviewer commit, `6bd7477` (finding G-32, accepted). `deab46a` only merges `main`. |
 
 ## Findings
 
@@ -447,6 +447,12 @@ for recoil. Noted; no change.
 Iteration 15 (`39a4a86`) audited the G-31 fix as merged and found nothing. The reviewer
 states that every finding of its that was accepted, G-1 to G-31, is now on `main`, and it
 removed its own test file from its branch. Noted; no change.
+
+### geminiceo iteration 16 (`6bd7477`)
+
+| Id | Finding | Verified | Outcome |
+|---|---|---|---|
+| G-32 | In netfox patch 15, the scan for an expired input gap returns the first remote player's, not the earliest across all players | Confirmed by reading: the `return` is inside the loop over remote inputs. With one client it changes nothing, which is why every test passed and three reviews missed it. With two or more, an older gap of a second player waits one more loop (33 ms), and that loop then re-simulates over states already sent | Accepted. The five-line fix and a two-player test that fails without it are with the patch 15 implementer. The two-phone test is not affected |
 
 A note for the architecture: `rocket_step_start` (D-11) is written during the rollback tick
 without being registered state. That is safe because only the host reads it and rewrites

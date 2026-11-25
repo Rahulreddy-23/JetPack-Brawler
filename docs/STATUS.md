@@ -55,6 +55,9 @@ Current stage: Prototype, phase 1. Gate not passed.
       subject named by full name in a snapshot frame, G-31) and is fixed too. With no
       per-peer packet rate limit and the engine's own network layer unexamined, the game
       is not yet fit for strangers. Builds up to 21:01 on 25 Nov have the crash.
+- [ ] In patch 15, the scan for an expired input gap returns the first remote player's
+      instead of the earliest across players (geminiceo G-32). No effect with two phones;
+      with three or more, one gap is resolved a loop late. Fix in progress.
 - [ ] Device checkpoint 1 (Rahul): sticks, jetpack and dash on two phones over a hotspot.
       Script `docs/reviews/device-checkpoint-1.md`; build of 26 Nov at `1d75eaf`; not yet run.
 - [x] B Combat core, hazard wiring, dummy, push window. Reviewed, merged (`a170e4b`).
