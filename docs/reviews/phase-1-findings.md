@@ -17,7 +17,7 @@ these.
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
 | `dev` | `6bbcd11` | 25 Nov 2026 17:34 | No reviewer commit since `6bbcd11` (D-14); `b23193b`, `754b470`, `339632f` and `2cb1595` only merge `main`. |
-| `geminiceo` | `8160914` | 25 Nov 2026 17:34 | Two reviewer commits: `4fa8884` (iteration 6: findings G-26 and G-27) and `8160914` (iteration 7: a clean audit of task E and D-13). `984b722`, `3f7c4ec` and `e40e738` only merge `main`. |
+| `geminiceo` | `59afd33` | 25 Nov 2026 17:41 | One reviewer commit, `59afd33` (iteration 8: a clean audit of D-14 and task D's follow-ups, no findings). `b6b4bab` only merges `main`. |
 
 ## Findings
 
@@ -348,6 +348,11 @@ runs alongside the build and does not block it.
 
 Iteration 7 audited task E and D-13 and found nothing: no network calls added, no writes
 to simulation state, fixed-size effect pools, input still sanitised. Noted; no change.
+
+Iteration 8 (`59afd33`) audited D-14, task D's follow-ups and the clean-up ordering and
+found nothing. It lists G-27 as still open on its side; that fix has been on `main` since
+`588a572`. Noted; no change. The reviewer could not run the two-process network tests in
+its sandbox, so its audits are by reading plus the one-process tests.
 
 A note for the architecture: `rocket_step_start` (D-11) is written during the rollback tick
 without being registered state. That is safe because only the host reads it and rewrites
