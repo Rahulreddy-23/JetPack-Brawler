@@ -398,3 +398,31 @@ Merged `origin/main` (`2a9e175..22dd106`: Task E presentation effects & changing
 ### CEO Review (Iteration 7)
 1. **Milestone hit — Device Checkpoint 2 APK is cut (`8ccb4b7`, 28.6 MB):** Task E landed cleanly (112/112 headless checks, zero simulation writes, crisp changing-only health bars) and the APK is ready for Rahul's two-phone test.
 2. **Next priorities after phone feedback:** Merge the three remaining in-progress items (Task D `G-21`/`G-22` follow-up, netfox patch 15 for `D-10`, and `G-26` for the `net_blast_bomb_loss` flake), then act strictly on what Rahul feels on real thumbs before starting Dabba or Phase 2.
+
+
+---
+
+## Iteration 8 Audit Update (25 Nov 2026 17:30 — against `origin/main` `7c2da44`)
+
+Merged `origin/main` (`22dd106..7c2da44`: D-14 `last_shot_weapon` `e5f9fec`, Task D follow-ups landing `G-21a/b`, `G-22`, and `G-26` + zero-speed rocket fallback `b90d525`, cycle clean-up ordered ahead of `WeaponRules.collect` `7c2da44`, and rebuilt Device Checkpoint 2 debug APK `a888e93`/`36fa991`). Aligned `scripts/game/gadget_rules.gd`, `tests/test_world_objects.gd`, and `tests/test_combat_objects.gd` verbatim with `origin/main` so `geminiceo` carries zero drift on landed fixes.
+
+### Findings (22dd106..7c2da44)
+- **Crashes and logic bugs:** none found. (`WorldObjects._rocket_range_tick` now guards `normal_step > 0.0 and is_finite(normal_step)` with `bomb_fuse_time` fallback; `WorldObjects.launch` initializes `rocket_step_start = pos_px` so even wall-overlap rockets sweep cleanly; `GadgetRules.clear_old_cycle` runs first in `CombatResolver.resolve`, preventing old-cycle plates/bombs from absorbing boundary-tick shots while preserving rockets/gadgets launched on the boundary tick.)
+- **Network trust:** none found. (`BotArsenal.last_shot_weapon` is host-authoritative rollback state registered on `Bot/Arsenal` in `scenes/bot.tscn`; no new RPCs.)
+- **Desync:** none found. (`last_shot_weapon` is part of rollback state and written deterministically in `_fire`; `EffectsDirector._on_shot` reads `last_shot_weapon` instead of `active_weapon()`.)
+- **Denial of service:** none found.
+- **Untrusted input:** none found.
+- **Purchases and unlocks:** none found (not yet present).
+- **Android and privacy:** none found.
+- **Repository hygiene:** none found.
+- **Performance bugs:** none found.
+
+### Unmerged `geminiceo` Fix Still Active (verified 1/1 in `tests/test_security_audit.tscn`)
+- `G-27` (`scripts/ui/touch_controls.gd`): refresh `pending_touch_fire_aim` in `_update_aim` while armed so a curved flick pulled back inside the fire ring before the next tick keeps its curved angle.
+
+### Could Not Check (Iteration 8)
+- Multi-process loopback UDP tests (`net_*.sh`), `test_fx_client.tscn`, and `test_full_state_coverage.tscn` (loopback UDP blocked in sandbox); real Android device testing (Device Checkpoints 1 & 2 APK).
+
+### CEO Review (Iteration 8)
+1. **Clean sweep on Phase 1 combat/object bugs:** Every high/medium bug from Iterations 4–6 (`G-21a/b`, `G-22`, `G-23`, `G-24`, `G-26`, plus `D-13`/`D-14` and the `clear_old_cycle` ordering polish) is now on `main` and in the rebuilt debug APK.
+2. **Hold feature work for phone feedback:** With only netfox patch 15 (`D-10`) and low-severity `G-27` remaining open, the highest-leverage next step is Rahul running Device Checkpoints 1 and 2 on two phones to validate stick/button ergonomics, knockback feel, and hotspot stability before starting Dabba or Phase 2.
