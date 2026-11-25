@@ -22,7 +22,8 @@ One grey-box arena (the Smelter), up to 4 players, joined by typing the host's I
   tube in the middle, Spring Plate low on the left. A taken pickup returns after 15 seconds.
 - Every bot starts each life with one Cooker Bomb.
 - A dummy bot stands on the floor in the middle. It does not move or shoot.
-- Every bot has a thin health bar above it.
+- A bot's health bar appears above it when its health changes and disappears again after
+  about 1.5 seconds. Your own health is also always shown in the corner.
 - The sandbox runs in 45-second cycles: molten metal starts rising at 30 seconds, and at 45
   seconds everything resets. A knocked-out bot comes back after 2 seconds, or at the next
   cycle if the metal is already rising.
@@ -51,8 +52,9 @@ Shooting and knockback (the main point)
 2. Pick up the scrap blaster and fire at the dummy from close range. Does the dummy fly
    back clearly, and do you feel the recoil push you the other way?
 3. Stand in the air and fire the scrap blaster straight down. Do you get an extra hop?
-4. Wear the dummy down until the bar above it changes colour (25 health or less), then hit
-   it again. Is it pushed visibly further than at full health? Is the bar easy to read?
+4. Wear the dummy down until the bar that appears above it on each hit changes colour (25
+   health or less), then hit it again. Is it pushed visibly further than at full health? Is
+   the bar easy to read, and does it stay long enough to read (about 1.5 seconds)?
 5. Knock the dummy into the molten metal after it has risen. Is it knocked out at once, and
    does that moment feel good?
 6. Melee the dummy (tap the right stick, and also the MELEE button). Does it get pushed?

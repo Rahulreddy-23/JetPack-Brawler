@@ -32,6 +32,13 @@ this file wins.
    questions. Still Rahul's alone: the game's name, anything that costs money, publishing,
    the number of bosses in the first release, and whether a gate is passed.
 
+7. Health bars (25 Nov 2026): a bot's health bar appears above it only while its health is
+   changing, for every bot alike, and disappears again shortly after. The lead had proposed
+   a bar that is always shown, because the GDD does not say how a player reads another
+   bot's health and the low-health push cannot be judged without it; Rahul chose to show it
+   only on a change. The fill changes colour at 25 health, where the extra push starts. How
+   long it stays after a change is a first guess in the config (1.5 seconds).
+
 ## Product owner decisions (taken by the lead under decision 6; Rahul can overrule any)
 
 - Card pool: the prototype keeps 4 Chaos Cards. A picked card leaves the pool, and when fewer
@@ -49,11 +56,6 @@ this file wins.
   the config, during which ground braking and steering are reduced. Without it a grounded
   bot stops almost at once and knockback, the core of the design, would not read. Raised by
   the movement research and by the geminiceo audit.
-- Health bars: every bot, the dummy included, shows a thin health bar above it in the
-  prototype, and the fill changes colour at 25 health, where the extra push starts. The GDD
-  does not say how a player reads another bot's health, and without it the low-health push,
-  the core of the knockback design, cannot be seen or judged in the phone test. Whether the
-  finished game keeps a bar or shows damage on the bot itself is open.
 - Order inside phase 1: Dabba (task 1.6) is built last, after Rahul has played the
   movement, knockback and hazard sandbox on phones. Touch controls get a phone test as soon
   as task 1.1 is merged, before more buttons are added.
