@@ -426,7 +426,7 @@ Tests named below (the `run_all.sh` name in brackets):
 
 ## 16. Reads that take a length from a packet, and log lines a peer can drive without limit
 
-Part A, the crash. Part A2, strings that cost a line per byte. Part B, the sweep of every other read. Part C, the log lines. Part D, what is not fixed.
+Part A, the crash. Part A2, strings that cost a line per byte. Part A3, the name of a subject in a snapshot frame. Part B, the sweep of every other read. Part C, the log lines. Part D, what is not fixed. Part E, every place peer bytes become text.
 
 ### A. A 4 byte packet kills the host
 
@@ -596,6 +596,61 @@ Part A, the crash. Part A2, strings that cost a line per byte. Part B, the sweep
   patch, before the type and size checks, was 2.0 times; a variant with one 64 bit read
   for the length and type was tried and was no faster).
 
+### A3. The name of a subject in a snapshot frame
+
+- File: `addons/netfox/schemas/network-schemas.gd` (`_CStringSerializer.decode`)
+- Why: the first sweep (Part B) looked for reads whose length comes from the packet, and
+  passed this decoder as "bounded by the bytes left". It is bounded in bytes but not in
+  error lines. `_NetworkIdentityReferenceSerializer.decode` calls it whenever a frame's
+  subject reference has id 0, which means "named by full name" (what a late joiner sends
+  before it knows ids). The dense, sparse and redundant snapshot serializers read a
+  reference at the start of every frame, in input, state and sync packets, before the
+  sender's ownership is checked. The name was collected up to a NUL and decoded with
+  `get_string_from_utf8()`, which prints a line per invalid byte. A packet that is id 0
+  followed by 0xff bytes cost, measured by calling the real handlers (Mac, headless, debug
+  build), counting the engine's lines in process:
+
+  | Packet | Before | After |
+  |---|---|---|
+  | full state, 1,016 bytes (the cap) | 1,011 lines, 9 ms | 0 lines, 0 ms |
+  | diff state, 1,016 bytes | 1,011 lines, 12 ms | 0 lines, 0 ms |
+  | full sync, 1,016 bytes | 1,011 lines, 11 ms | 0 lines, 0 ms |
+  | diff sync, 1,016 bytes | 1,011 lines, 11 ms | 0 lines, 0 ms |
+  | input, 4,058 bytes (the cap) | 4,051 lines, 36 ms | 0 lines, 0 ms |
+  | 33 frames with a 3 byte bad name each | 9 lines | 0 lines |
+
+  The reviewer measured 15,000 lines and 100 ms for a 15 KB packet under their own cap;
+  the caps here are smaller. A direct probe: `get_string_from_utf8` on 15,000 bytes of
+  0xff prints 15,000 lines in 126 ms, `get_string_from_ascii` prints none in 0 ms.
+- The fix is the reviewer's idea (geminiceo `2ee2aba`), written differently. The decoder
+  finds the NUL with `find`, and consumes the name in full, to and including the NUL, so
+  the reader stays aligned with the rest of the frame. A name longer than
+  `_IdentityPacketSerializer.MAX_NAME_BYTES` (128) is refused without being scanned (the
+  reviewer's loop walked the whole name, up to the packet size, in GDScript); a name with a
+  byte of 0x80 or more is refused, judged on the raw bytes; otherwise it is decoded with
+  `get_string_from_ascii()`. A refused name, and a name with no NUL before the end of the
+  buffer (which consumes the rest of the buffer), are the empty string, which no subject
+  has. The reviewer's version returned a name with no NUL; this one does not, because an
+  honest writer always ends the name.
+- What a refused name does to the frame: the reference resolves to nothing. The dense
+  serializer then takes the unknown-identity path of patch 12: it has read the frame's
+  size field and skips that many bytes, counts the frame against the number of registered
+  subjects, and stops the packet when more frames than subjects are unknown, with its
+  warning rate limited (once a second a peer). The sparse serializer breaks at the first
+  unknown frame. Checked by the tests below: a packet of 33 frames, each with a bad name,
+  costs 0 lines and 0 ms, and a frame after a refused one is read in place. A name is
+  ASCII only, like the identity names; a node named with other characters would be skipped
+  on a late join (the honest session does not name its nodes so).
+- Tests (`netfox_host`): the five packet kinds above through the real handlers, at the
+  size caps, give 0 engine error lines and under 50 ms; 33 frames with bad names give at
+  most one unknown-identity warning; a name of 129 bytes, a name with a byte of 0x80, and a
+  valid UTF-8 name that is not ASCII are skipped and the frame after each is merged; a
+  name with no NUL is empty and prints nothing; a frame named by its full name resolves
+  to its subject (the honest late-join path); the decoder reads a name of 128 bytes, gives
+  empty for 129, and leaves the byte after each NUL in place. `net_full` and
+  `net_world_objects_join` (a late joiner) pass, and they fail on a refused identity
+  packet.
+
 ### B. The sweep: every read on network data whose size or count comes from the packet
 
 Probed outside the project (`godot --headless -s`, one process per case, killed after
@@ -628,7 +683,7 @@ Each place in the addon that reads a size or count from a packet:
 | `network-schemas.gd` `_VariantSerializer.decode` (`get_var`) | allocation, and a line per invalid byte of a string | crash, reachable from every state, input and sync packet; bounded now (A, A2): length checked, only fixed-size types decoded |
 | `_StringSerializer.decode` (`get_utf8_string`) | allocation | crash; not reachable today (no schema is registered); bounded now |
 | `_ArraySerializer.decode`, `_DictionarySerializer.decode` | resize and loop count | unbounded; not reachable today (no schema is registered: `grep` of `scripts`, `scenes`, `project.godot` for `NetworkSchemas`, `array_of`, `set_schema`, `merge_schema`, `register_schema` finds none, and in the addon the only callers of `register_schema` are `set_schema` and `merge_schema` of the two synchronizers); bounded now by the bytes left |
-| `_CStringSerializer.decode` | loop | bounded by the bytes left, upstream |
+| `_CStringSerializer.decode` | loop, and a line per invalid byte of the name | bounded in bytes upstream, but not in error lines (the first version of this table stopped there); fixed in A3 |
 | `_VaruintSerializer.decode` | loop | at most 10 iterations, upstream; may yield a negative number, handled by its users below |
 | `_VariableBitsetSerializer.decode` | bytes read | patch 5 |
 | `_NetworkIdentityReferenceSerializer.decode` | id or name | the two above |
@@ -766,6 +821,33 @@ before strangers can join (a match of friends on one hotspot does not need them)
 - Every measurement is from a Mac debug build, headless. A phone host writing its log to
   the system log will be slower per line, and the CPU of a budget phone several times
   slower per call. Nothing here was measured on a device or over a real network.
+
+### E. Every place peer bytes become text
+
+Searched for in `addons/netfox`, `addons/netfox.internals` (there is no `netfox.extras`)
+and `scripts/`: `get_string_from_utf8`, `get_string_from_ascii`, `get_string_from_utf16`,
+`utf32`, `wchar`, `get_utf8_string`, `get_string`, `String(` and `str(` on decoded data,
+`NodePath(`, `StringName(`, `bytes_to_var`, `get_var`, `JSON`, `Expression`, and every
+`get_node`, `get_node_or_null`, `has_node`, `find_child` and `get_node_and_resource`.
+
+| Site | Reachable from a peer | Cost per byte | Status |
+|---|---|---|---|
+| `network-schemas.gd` `_CStringSerializer.decode` (subject name in a snapshot frame) | yes, input, state and sync packets, unaccepted peers included | one error line | fixed, A3 |
+| `identity-packet-serializer.gd` `deserialize` (names in an identity packet) | yes, command 0, any connected peer | one error line | fixed, A2: raw bytes judged, ASCII decode |
+| `network-schemas.gd` `_VariantSerializer.decode` (strings, names, paths, containers inside a property) | yes, every property | one error line | fixed, A2: not decoded at all, skipped |
+| `network-schemas.gd` `_StringSerializer.decode` | no, no schema is registered | one error line | not fixed, not reachable; Part D |
+| `network-time-synchronizer.gd` `bytes_to_var` (ping, pong, timestamp) | yes, ping from any peer, pong and timestamp from the server only | one error line | fixed for ping and timestamp (exact size and type, A2); a pong can still hold a string of about 30 bytes, from the server only |
+| `network-identity-server.gd` `_handle_ids` (names to `_get_identifier_by_name`) | yes | none: a dictionary lookup of a string that is at most 128 ASCII bytes | not needed |
+| `network-identity-server.gd` `_resolve_reference` (name of a frame to `_get_identifier_by_name`) | yes, through A3 | none: a dictionary lookup of at most 128 ASCII bytes | not needed |
+| the unknown-identity warning of patch 12 and the debug lines that print a name (`%s` of a reference) | yes | formatting at most 128 ASCII bytes, once a second a peer for the warning; the debug line is off at the project's log level | not needed |
+| node-path lookups: `property-entry.gd` `root.get_node(NodePath(path))`, `editor-utils.gd`, `rollback-synchronizer`, scripts' `get_node("Vitals")`, `get_node("Input")`, `get_node_or_null("../Arena")`, `get_node("RollbackSynchronizer")` | no: the paths come from the scene and from the synchronisers' own property lists, never from a packet. A peer's name is only ever the key of `_identifier_by_name`, so it cannot select a node that was not registered with `register_node` (the synchronised ones) | none | not needed |
+| `scripts/`: `str(ammo)`, `String(node.name)` (dev probe) | no, local values | none | not needed |
+| `scripts/` RPCs (`session.gd`, `match_settings.gd`) | typed: no arguments, and one int (checked for the sender) | none | not needed |
+| Godot's own `SceneMultiplayer`: RPC node paths, path cache, system messages | yes | possibly a line per invalid byte of a path | not probed, not fixed; Part D |
+
+`get_string_from_ascii()` was probed with 15,000 bytes of 0xff: 0 lines, 0 ms (the UTF-8
+decode of the same bytes: 15,000 lines, 126 ms), so a decode that judges the raw bytes
+first and then uses the ASCII decoder never prints per byte.
 
 ## The diffs
 
@@ -911,11 +993,10 @@ diff --git a/addons/netfox/schemas/network-schemas.gd b/addons/netfox/schemas/ne
  	return _VariableBitsetSerializer.instance
  
  ## Serialize signed integers as 8 bits.
-@@ -488,16 +488,67 @@
- class _VariantSerializer extends NetworkSchemaSerializer:
+@@ -489,15 +489,66 @@
  	func encode(v: Variant, b: StreamPeerBuffer) -> void:
  		b.put_var(v, false)
-+
+ 
 +	# PATCH (see addons/NETFOX_PATCHES.md): two limits, for a decoder that reads what a
 +	# peer sends.
 +	# 1. get_var() allocates the length the packet declares before it checks the bytes
@@ -944,7 +1025,7 @@ diff --git a/addons/netfox/schemas/network-schemas.gd b/addons/netfox/schemas/ne
 +	# matters (probed: the other 15 flag bits change nothing). Index 4 (String) is unused.
 +	const _BODY_BYTES := [0, 4, 4, 4, 0, 8, 8, 16, 16, 12, 12, 24, 16, 16, 16, 16, 24, 36, 48, 64, 16]
 +	const _BODY_BYTES_64 := [0, 4, 8, 8, 0, 16, 8, 32, 16, 24, 12, 48, 32, 16, 32, 32, 48, 72, 96, 128, 16]
- 
++
  	func decode(b: StreamPeerBuffer) -> Variant:
 +		var start := b.get_position()
 +		var left := b.get_available_bytes() - 4
@@ -980,7 +1061,44 @@ diff --git a/addons/netfox/schemas/network-schemas.gd b/addons/netfox/schemas/ne
  
  class _CStringSerializer extends NetworkSchemaSerializer:
  	static var instance := _CStringSerializer.new()
-@@ -610,9 +661,19 @@
+@@ -506,14 +557,29 @@
+ 		b.put_data(str(v).to_utf8_buffer())
+ 		b.put_u8(0)
+ 
++	# PATCH (see addons/NETFOX_PATCHES.md): the engine prints an error line for every
++	# invalid UTF-8 byte it decodes, and this decoder reads the name of a subject that a
++	# peer sends at the start of every frame of a snapshot (id 0 means "named by full
++	# name"), before anyone checks who the sender is. A name is now read up to its NUL
++	# in full, so the frame stays aligned, and used only if it is at most
++	# _IdentityPacketSerializer.MAX_NAME_BYTES long and ASCII, judged on the raw bytes
++	# before they are decoded. Otherwise, and when there is no NUL before the end of
++	# the buffer, the name is empty, which no subject has: the frame is skipped.
+ 	func decode(b: StreamPeerBuffer) -> Variant:
+-		var data := PackedByteArray()
+-		while b.get_available_bytes() > 0:
+-			var c := b.get_u8()
+-			if c == 0: break
+-			data.append(c)
+-
+-		return data.get_string_from_utf8()
++		var raw := b.data_array
++		var start := b.get_position()
++		var end := raw.find(0, start)
++		if end < 0:
++			b.seek(raw.size())
++			return ""
++		b.seek(end + 1)
++		if end - start > _IdentityPacketSerializer.MAX_NAME_BYTES:
++			return ""
++		var name_bytes := raw.slice(start, end)
++		for byte in name_bytes:
++			if byte >= 0x80:
++				return ""
++		return name_bytes.get_string_from_ascii()
+ 
+ class _BoolSerializer extends NetworkSchemaSerializer:
+ 	func encode(v: Variant, b: StreamPeerBuffer) -> void:
+@@ -610,9 +676,19 @@
  			b.put_u8(byte)
  
  	func decode(b: StreamPeerBuffer) -> Variant:
@@ -1001,7 +1119,7 @@ diff --git a/addons/netfox/schemas/network-schemas.gd b/addons/netfox/schemas/ne
  			var byte := b.get_u8()
  
  			bools.append(byte & 0x01)
-@@ -625,9 +686,9 @@
+@@ -625,9 +701,9 @@
  
  			# Stop if no more data to read
  			if byte & 0x80 == 0:
@@ -1013,7 +1131,7 @@ diff --git a/addons/netfox/schemas/network-schemas.gd b/addons/netfox/schemas/ne
  
  class _Float16Serializer extends NetworkSchemaSerializer:
  	func encode(v: Variant, b: StreamPeerBuffer) -> void:
-@@ -850,6 +911,10 @@
+@@ -850,6 +926,10 @@
  		var array := []
  
  		var item_count = size.decode(b)
@@ -1024,7 +1142,7 @@ diff --git a/addons/netfox/schemas/network-schemas.gd b/addons/netfox/schemas/ne
  		array.resize(item_count)
  		for i in item_count:
  			array[i] = component.decode(b)
-@@ -879,6 +944,10 @@
+@@ -879,6 +959,10 @@
  		var dictionary := {}
  
  		var size = size_serializer.decode(b)
@@ -2104,6 +2222,11 @@ the patch restored. "FAIL" means the test exited 1 or printed a SCRIPT ERROR.
 | 16 | the 64 bit column of the size table (the flag ignored) | netfox_host | FAIL, 26 engine errors for the flagged short values |
 | 16 | the exact size of a ping and a timestamp | netfox_host | FAIL, 3 engine errors (and a SCRIPT ERROR, a malformed float cast) for the 8 bytes with the flag and the 12 bytes without it |
 | 16 | the element count of a pong | netfox_host | FAIL, a pong of 2 elements passes the check |
+| 16 | the name decoder back to the unpatched one (UTF-8, no length or byte check) | netfox_host | FAIL, 7 checks: 1,011 lines for each 1,016 byte packet (9 to 12 ms), 4,051 lines and 36 ms for the 4,058 byte input packet, 9 lines for 33 frames with short bad names |
+| 16 | the name's byte check (0x80 and over; the length check remains) | netfox_host | FAIL, 2 checks: 9 lines for 33 frames with short bad names (the floods are caught by the length check) |
+| 16 | the name's length check (the byte check remains) | netfox_host | FAIL, the direct decoder test: a name of 129 bytes is read in full (the floods are caught by the byte check; a long valid name costs no lines, only time) |
+| 16 | consuming the name to its NUL | netfox_host | FAIL, 7 checks: the frame after a refused name is misread, and the control diff state and diff sync merges and the frame size checks fail |
+| 16 | a name with no NUL is empty | netfox_host | FAIL, 6 checks: the 0xff flood without a NUL costs an engine error line in each packet kind |
 | 16 | the variant length check (`size > left`; the 4 byte packets still stop at the earlier size check) | netfox_host | process killed, exit 138, on a 2 GB length followed by a header and a value (a check was added for it; the mutation survived the first version of the test) |
 | 16 | the string serializer back to `get_utf8_string()` | netfox_host | process killed, exit 138 |
 | 16 | the array count check | netfox_host | SCRIPT ERROR x2 (the resize of 2^40 items; scene exits 0, `run_all.sh` fails) |

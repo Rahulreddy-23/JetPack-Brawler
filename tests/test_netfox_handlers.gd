@@ -132,6 +132,7 @@ func _run() -> void:
 		_variant_type_checks()
 		_variant_shape_checks()
 		_frame_size_checks()
+		_named_subject_checks()
 		_command_prefix_checks()
 	else:
 		await get_tree().process_frame
@@ -541,6 +542,107 @@ func _frame_size_checks() -> void:
 	_sync._handle_diff_state(OTHER_PEER, _state_frame(tick + 6, true, negative))
 	_check(_has_state(tick + 4) and not _has_state(tick + 5) and not _has_state(tick + 6) and _warnings.lines["p_size < 0"] == 0, "sparse frames: right size merged, size 200 over the packet's rest and size -1 dropped, %d engine errors (0)" % _warnings.lines["p_size < 0"])
 	_warnings.lines = {}
+
+## A subject reference that names its subject: id 0, the name's bytes, a NUL.
+func _named_reference(name_bytes: PackedByteArray, terminated: bool = true) -> PackedByteArray:
+	var reference: PackedByteArray = PackedByteArray([0]) + name_bytes
+	if terminated:
+		reference.append(0)
+	return reference
+
+## A dense frame of the probe's two properties under a given reference.
+func _frame_under(reference: PackedByteArray) -> PackedByteArray:
+	var data: StreamPeerBuffer = StreamPeerBuffer.new()
+	NetworkSchemas.variant().encode(6, data)
+	NetworkSchemas.variant().encode(6, data)
+	var frame: StreamPeerBuffer = StreamPeerBuffer.new()
+	frame.put_data(reference)
+	NetworkSchemas.varuint().encode(data.get_size(), frame)
+	frame.put_data(data.data_array)
+	return frame.data_array
+
+func _tick_bytes(tick: int) -> PackedByteArray:
+	var bytes: PackedByteArray = PackedByteArray([0, 0, 0, 0])
+	bytes.encode_u32(0, tick)
+	return bytes
+
+# A frame names its subject by id 0 and a full name when the sender does not know the
+# receiver's ids yet (a late joiner). That name is read, at the start of every frame
+# of every snapshot, before the sender is checked, and was decoded as UTF-8: a line per
+# invalid byte, up to the packet size. A name is now judged on its raw bytes (ASCII,
+# at most 128 bytes) and a bad one is empty, which no subject has, so its frame is skipped.
+func _named_subject_checks() -> void:
+	var tick: int = NetworkTime.tick
+	var name_bytes: PackedByteArray = NetworkIdentityServer._get_identifier_of(_probe).get_full_name().to_ascii_buffer()
+	_probe.set_multiplayer_authority(OTHER_PEER)
+
+	# Whole packets of a reference that is id 0 and then 0xff bytes, at each packet's size cap
+	var state_limit: int = _sync._max_packet_size * 2
+	var input_limit: int = state_limit * NetworkRollback.input_redundancy - 8
+	var flood: PackedByteArray = _tick_bytes(tick + 1) + PackedByteArray([0]) + _bad_bytes(state_limit - 5)
+	var input_flood: PackedByteArray = _tick_bytes(tick + 1) + PackedByteArray([0]) + _bad_bytes(input_limit - 5)
+	var input: StreamPeerBuffer = StreamPeerBuffer.new()
+	NetworkSchemas.varuint().encode(input_flood.size(), input)
+	input.put_data(input_flood)
+	var handlers: Dictionary = {
+		"full state": func() -> void: _sync._handle_full_state(OTHER_PEER, flood),
+		"diff state": func() -> void: _sync._handle_diff_state(OTHER_PEER, flood),
+		"full sync": func() -> void: _sync._handle_full_sync(OTHER_PEER, flood),
+		"diff sync": func() -> void: _sync._handle_diff_sync(OTHER_PEER, flood),
+		"input": func() -> void: _sync._handle_input(OTHER_PEER, input.data_array),
+	}
+	for kind: String in handlers:
+		_warnings.bad_utf8 = 0
+		_warnings.errors = 0
+		var start: int = Time.get_ticks_msec()
+		(handlers[kind] as Callable).call()
+		var elapsed: int = Time.get_ticks_msec() - start
+		_check(_warnings.bad_utf8 == 0 and _warnings.errors == 0 and elapsed < TIME_BOUND_MSEC, "a %s packet of %d bytes whose frame is named by id 0 and then bad bytes: %d engine error lines (0), %d ms (limit %d)" % [kind, input.get_size() if kind == "input" else flood.size(), _warnings.bad_utf8 + _warnings.errors, elapsed, TIME_BOUND_MSEC])
+
+	# Many frames with a bad name each: the unknown-frame bound of patch 12 still applies
+	var many: PackedByteArray = _tick_bytes(tick + 1)
+	var bad_frame: PackedByteArray = _frame_under(_named_reference(PackedByteArray([0xff, 0xfe, 0x80])))
+	while many.size() + bad_frame.size() <= state_limit:
+		many.append_array(bad_frame)
+	_warnings.count = 0
+	_warnings.bad_utf8 = 0
+	var start_many: int = Time.get_ticks_msec()
+	_sync._handle_full_state(OTHER_PEER, many)
+	var elapsed_many: int = Time.get_ticks_msec() - start_many
+	_check(_warnings.count <= 1 and _warnings.bad_utf8 == 0 and elapsed_many < TIME_BOUND_MSEC, "a packet of %d frames with a bad name each: %d unknown-identity warnings (at most 1), %d engine error lines (0), %d ms (limit %d)" % [(many.size() - 4) / bad_frame.size(), _warnings.count, _warnings.bad_utf8, elapsed_many, TIME_BOUND_MSEC])
+
+	# The name decoder itself: the longest name read, one more refused, the NUL consumed
+	var c_string: NetworkSchemaSerializer = NetworkSchemas.c_string()
+	var at_limit: String = "x".repeat(_IdentityPacketSerializer.MAX_NAME_BYTES)
+	var over_limit: String = "x".repeat(_IdentityPacketSerializer.MAX_NAME_BYTES + 1)
+	var written: StreamPeerBuffer = StreamPeerBuffer.new()
+	c_string.encode(at_limit, written)
+	c_string.encode(over_limit, written)
+	c_string.encode("ab", written)
+	written.put_u8(77)
+	var read_names: StreamPeerBuffer = _buffer_of(written.data_array)
+	var first_name: Variant = c_string.decode(read_names)
+	var second_name: Variant = c_string.decode(read_names)
+	var third_name: Variant = c_string.decode(read_names)
+	_check(first_name == at_limit and second_name == "" and third_name == "ab" and read_names.get_u8() == 77, "a name of %d bytes is read, one of %d is empty, each is consumed to its NUL and the byte after the last is in place" % [at_limit.length(), over_limit.length()])
+
+	# Honest named frames resolve; a bad name is skipped and the frame after it is read in place
+	_warnings.errors = 0
+	var good: PackedByteArray = _frame_under(_named_reference(name_bytes))
+	_sync._handle_full_sync(OTHER_PEER, _tick_bytes(tick + 1) + good)
+	_check(_has_sync(tick + 1), "control: a frame named by its full name (id 0, the name, NUL) resolves to its subject")
+	var long_name: PackedByteArray = _frame_under(_named_reference(("/" + "x".repeat(_IdentityPacketSerializer.MAX_NAME_BYTES)).to_ascii_buffer()))
+	_sync._handle_full_sync(OTHER_PEER, _tick_bytes(tick + 2) + long_name + good)
+	_check(_has_sync(tick + 2), "a name of %d bytes is refused, its frame skipped, and the frame after it is read in place" % (_IdentityPacketSerializer.MAX_NAME_BYTES + 1))
+	var high_byte: PackedByteArray = _frame_under(_named_reference(name_bytes.slice(0, 4) + PackedByteArray([0x80])))
+	_sync._handle_full_sync(OTHER_PEER, _tick_bytes(tick + 3) + high_byte + good)
+	_check(_has_sync(tick + 3), "a name with a byte of 0x80 is refused, its frame skipped, and the frame after it is read in place")
+	var valid_utf8: PackedByteArray = _frame_under(_named_reference("/caf\u00e9".to_utf8_buffer()))
+	_sync._handle_full_sync(OTHER_PEER, _tick_bytes(tick + 4) + valid_utf8 + good)
+	_check(_has_sync(tick + 4), "a name that is valid UTF-8 but not ASCII is refused, its frame skipped, and the frame after it is read in place")
+	_sync._handle_full_sync(OTHER_PEER, _tick_bytes(tick + 5) + PackedByteArray([0]) + name_bytes)
+	_check(not _has_sync(tick + 5) and _warnings.errors == 0, "a name with no NUL before the end of the packet is empty: no subject, no engine error (%d)" % _warnings.errors)
+	_check(_warnings.bad_utf8 == 0, "none of the bad names printed a line (%d)" % _warnings.bad_utf8)
 
 # A raw command packet is the prefix, the command index and the data.
 func _command_prefix_checks() -> void:

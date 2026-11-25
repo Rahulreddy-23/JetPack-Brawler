@@ -557,21 +557,29 @@ class _CStringSerializer extends NetworkSchemaSerializer:
 		b.put_data(str(v).to_utf8_buffer())
 		b.put_u8(0)
 
+	# PATCH (see addons/NETFOX_PATCHES.md): the engine prints an error line for every
+	# invalid UTF-8 byte it decodes, and this decoder reads the name of a subject that a
+	# peer sends at the start of every frame of a snapshot (id 0 means "named by full
+	# name"), before anyone checks who the sender is. A name is now read up to its NUL
+	# in full, so the frame stays aligned, and used only if it is at most
+	# _IdentityPacketSerializer.MAX_NAME_BYTES long and ASCII, judged on the raw bytes
+	# before they are decoded. Otherwise, and when there is no NUL before the end of
+	# the buffer, the name is empty, which no subject has: the frame is skipped.
 	func decode(b: StreamPeerBuffer) -> Variant:
-		# PATCH (geminiceo G-31): bound length and refuse non-ASCII bytes before decoding,
-		# matching _IdentityPacketSerializer. Otherwise a 15 KB rollback input packet with
-		# id=0 and 0xff bytes prints 15,000 Unicode parsing error lines (~100 ms) per packet.
-		var data := PackedByteArray()
-		var valid := true
-		while b.get_available_bytes() > 0:
-			var c := b.get_u8()
-			if c == 0: break
-			if c >= 0x80 or data.size() >= _IdentityPacketSerializer.MAX_NAME_BYTES:
-				valid = false
-			elif valid:
-				data.append(c)
-
-		return data.get_string_from_ascii() if valid else ""
+		var raw := b.data_array
+		var start := b.get_position()
+		var end := raw.find(0, start)
+		if end < 0:
+			b.seek(raw.size())
+			return ""
+		b.seek(end + 1)
+		if end - start > _IdentityPacketSerializer.MAX_NAME_BYTES:
+			return ""
+		var name_bytes := raw.slice(start, end)
+		for byte in name_bytes:
+			if byte >= 0x80:
+				return ""
+		return name_bytes.get_string_from_ascii()
 
 class _BoolSerializer extends NetworkSchemaSerializer:
 	func encode(v: Variant, b: StreamPeerBuffer) -> void:

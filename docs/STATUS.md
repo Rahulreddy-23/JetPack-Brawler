@@ -49,7 +49,7 @@ Current stage: Prototype, phase 1. Gate not passed.
       floods. Reviewed twice; approved for play with friends. The last stall the review
       named (malformed fixed-size values, about 1,000 log lines per packet) is fixed too.
       One more stall of the same kind was found afterwards by the external reviewer (a
-      subject named by full name in a snapshot frame, G-31) and is being fixed. With no
+      subject named by full name in a snapshot frame, G-31) and is fixed too. With no
       per-peer packet rate limit and the engine's own network layer unexamined, the game
       is not yet fit for strangers. Builds up to 21:01 on 25 Nov have the crash.
 - [ ] Device checkpoint 1 (Rahul): sticks, jetpack and dash on two phones over a hotspot.
