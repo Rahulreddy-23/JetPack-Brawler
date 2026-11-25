@@ -13,18 +13,27 @@ extends RefCounted
 
 const CombatMath: GDScript = preload("res://combat/combat_math.gd")
 
-## Collect this tick's hits from bombs, blasts and plates, in this order: gadget use, rocket
-## contact, blasts, plate launches, the phase 1 cycle reset. bots are sorted by peer id. The
-## slots take the arena's solid rectangles from WorldObjects.solids, so the solids passed in
-## are not needed here.
+## Collect this tick's hits from bombs, blasts and plates, in this order: phase 1 cycle clean-up
+## of objects from an earlier cycle, gadget use, rocket contact, blasts, plate launches. bots are
+## sorted by peer id. The slots take the arena's solid rectangles from WorldObjects.solids, so the
+## solids passed in are not needed here.
 static func collect(tick: int, bots: Array[Bot], objects: WorldObjects, _solids: Array[Rect2], cfg: TuningConfig, hits: Array[Hit]) -> void:
+	# Phase 1 test cycle: every object launched before the start of the current cycle goes, before
+	# anything else runs this tick. Keyed on the object's own spawn tick, not on hitting the boundary
+	# tick exactly, so a stalled host that skipped it still clears the field (like BotVitals' cycle
+	# index), and an object thrown on the boundary tick itself (by a bot that has just respawned)
+	# survives. It reads only state and the tick, so a re-run of the tick gives the same result.
+	var into_cycle: int = MatchSettings.hazard_ticks(tick)
+	if into_cycle >= 0:
+		var cycle_start: int = tick - into_cycle
+		if cycle_start > MatchSettings.round_start_tick:
+			for slot: WorldObject in objects.slots():
+				if slot.active and slot.spawn_tick < cycle_start:
+					slot.active = false
 	_use_gadgets(tick, bots, objects, cfg)
 	_rocket_contacts(tick, bots, objects, cfg)
 	_blasts(tick, bots, objects, cfg, hits)
 	_plates(tick, bots, objects, cfg, hits)
-	# Phase 1 test cycle: when the hazard cycle restarts (not at its first start), clear the field.
-	if MatchSettings.hazard_ticks(tick) == 0 and MatchSettings.hazard_ticks(tick - 1) >= 0:
-		objects.reset()
 
 # A bomb is thrown, a plate dropped or tossed, along the direction the gadget was used in.
 static func _use_gadgets(tick: int, bots: Array[Bot], objects: WorldObjects, cfg: TuningConfig) -> void:
@@ -40,14 +49,20 @@ static func _use_gadgets(tick: int, bots: Array[Bot], objects: WorldObjects, cfg
 				objects.launch(ItemIds.OBJECT_PLATE, bot.slot, bot.peer_id, bot.center(), direction * cfg.plate_throw_speed * px, tick, cfg)
 
 # A rocket that touches a bot sets itself off, at the contact point. Its owner is safe until the
-# rocket is armed. Contact sweeps the path the rocket traveled this tick against each bot's
-# end-of-tick rectangle grown by the rocket's radius. Deflection affects the next move.
+# rocket is armed. Contact sweeps the path the rocket traveled this tick (from rocket_step_start to
+# where it is now) against each bot's end-of-tick rectangle grown by the rocket's radius. A rocket
+# that its own motion stopped this tick (a wall, or the end of its range: explode_tick == tick) is
+# swept too, so a bot in front of the wall wins over the wall and the blast lands at the bot.
+# Only the slot's motion and a launch inside a solid set explode_tick, so nothing else can already
+# have exploded it this tick; the sweep is a pure function of rocket_step_start and the position,
+# and moves the position only back along that segment, so repeating it changes nothing.
+# Deflection affects the next move.
 # What this misses: a bot's own movement during the tick is not subtracted, so a bot that crossed
 # the path and ended beyond it is missed unless the end-of-tick rectangle still meets the path;
 # the grown rectangle has square corners, so a near miss past a corner counts as a hit.
 static func _rocket_contacts(tick: int, bots: Array[Bot], objects: WorldObjects, cfg: TuningConfig) -> void:
 	for slot: WorldObject in objects.slots():
-		if not slot.active or slot.kind != ItemIds.OBJECT_ROCKET or slot.explode_tick >= 0:
+		if not slot.active or slot.kind != ItemIds.OBJECT_ROCKET or (slot.explode_tick >= 0 and slot.explode_tick != tick):
 			continue
 		var radius: float = WorldObjects.round_radius(slot, cfg)
 		var end: Vector2 = slot.global_position

@@ -136,8 +136,8 @@ func _step_rocket(delta: float, tick: int, cfg: TuningConfig, pool: WorldObjects
 	if hit.index < 0:
 		global_position = to
 		# A rocket that has flown its range explodes where it is (fuse_tick is its range limit,
-		# 0 for a rocket that does not move).
-		if fuse_tick > 0 and tick >= fuse_tick:
+		# which every rocket has).
+		if tick >= fuse_tick:
 			explode_tick = tick
 		return
 	global_position = from + (to - from) * hit.t

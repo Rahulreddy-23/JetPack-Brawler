@@ -40,6 +40,8 @@ var bounds_px: Rect2 = Rect2()
 
 var _slots: Array[WorldObject] = []
 # half extents -> the solids grown by them; one array per shape size, rebuilt only when solids change.
+# It is cleared only when `solids` is reassigned (the setter); changing the array in place, or the
+# bot height in the config, leaves stale rectangles.
 var _grown_cache: Dictionary = {}
 
 func _ready() -> void:
@@ -299,7 +301,11 @@ static func _rocket_range_tick(velocity_px: Vector2, tick: int, cfg: TuningConfi
 	var stats: WeaponStats = cfg.weapon_stats(ItemIds.ROCKET_TUBE)
 	var range_px: float = stats.range_bh * cfg.bot_height_px
 	var normal_step: float = stats.projectile_speed * cfg.bot_height_px / float(cfg.tick_rate)
-	var lifetime: int = maxi(ceili(range_px / normal_step), 1)
+	# A tube speed of 0 (a card could set it) has no flight time to take: such a rocket lives as long
+	# as a bomb's fuse instead of dividing by zero.
+	var lifetime: int = seconds_to_ticks(cfg.bomb_fuse_time, cfg)
+	if normal_step > 0.0 and is_finite(normal_step):
+		lifetime = maxi(ceili(range_px / normal_step), 1)
 	var step: float = velocity_px.length() / float(cfg.tick_rate)
 	if step > 0.0 and is_finite(step):
 		lifetime = mini(lifetime, maxi(ceili(range_px / step), 1))
