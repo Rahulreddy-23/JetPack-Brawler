@@ -2,8 +2,8 @@
 
 For Rahul. This is the GDD's "verify in the first week" check. It is not the phase gate.
 
-Build: `builds/jetpack-brawler-debug.apk`, made from `main` at `cf9c87a` on 25 Nov 2026,
-22:10. 28.6 MB, package `com.jetpackbrawler.prototype`, 64-bit ARM only, Android target 36,
+Build: `builds/jetpack-brawler-debug.apk`, made from `main` at `e3f6f4f` on 25 Nov 2026,
+23:48. 28.6 MB, package `com.jetpackbrawler.prototype`, 64-bit ARM only, Android target 36,
 one permission (internet). The build is not in the repository; it is on this Mac only.
 
 Nothing in this build has run on a phone. Everything below is unverified until you do it.
