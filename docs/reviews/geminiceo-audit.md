@@ -560,3 +560,30 @@ Merged `origin/main` (`0229176..2326514`: `G-30` landed in `1414f84` with 0 fail
 ### CEO Review (Iteration 13)
 1. **Clean execution:** `G-30` (`net_fx` 0/120 flakes) and `D-17` (opposing pushes/recoil no longer leave dead steering windows) both landed cleanly, while netfox patch 15 (`08fa764`) and patch 16 (`4f4842d`) are in final review on their worktrees.
 2. **Next step:** Once patches 15 and 16 merge onto `main`, cut the security-hardened Phase 1 APK so Rahul's two-phone test runs on the final Phase 1 netcode + knockback physics.
+
+
+---
+
+## Iteration 14 Audit Update (25 Nov 2026 22:10 — against `origin/main` `cf9c87a`)
+
+Merged `origin/main` (`2326514..cf9c87a`: netfox patch 16 landing `G-28`, `G-29`, variant/clock header guards, and log rate limits in `4f4ea2d`/`cf9c87a`, plus rebuilt hardened debug APK in `cd8ad46`). Aligned all four netfox files (`network-schemas.gd`, `identity-packet-serializer.gd`, `network-command-server.gd`, `network-identity-server.gd`) verbatim with `origin/main`, then audited every line of patch 16 and found one remaining Unicode log-flood vector (`G-31`).
+
+### New Confirmed Finding
+
+#### 31. `_CStringSerializer.decode` (used by `_NetworkIdentityReferenceSerializer` on every incoming snapshot/input packet) still triggers 15,000 `Unicode parsing error` lines (~100 ms) per 15 KB packet (`G-31`)
+- **Severity:** medium
+- **Category:** Denial of service
+- **Location:** `addons/netfox/schemas/network-schemas.gd:530-544` (`_CStringSerializer.decode`), called via `_NetworkIdentityReferenceSerializer.decode` from `addons/netfox/serializers/dense-snapshot-serializer.gd:71` and `addons/netfox/serializers/sparse-snapshot-serializer.gd:70`
+- **What happens and how to trigger it:** Patch 16 (`4f4ea2d`) closed the per-byte `Unicode parsing error` log flood in `_IdentityPacketSerializer` (rejecting names > 128 bytes or containing bytes `>= 0x80`), `_VariantSerializer`, and `_NetworkTimeSynchronizer`, but left `_CStringSerializer.decode` calling `data.get_string_from_utf8()` on unchecked raw bytes. Any connected peer (including an unaccepted 5th peer during the 0.5 s notice window) can send an unreliable rollback input packet (`<= 16,384` bytes, below `max_incoming_packet_size`) whose frame begins with `id = 0` followed by 15,000 `0xff` bytes and `0x00`. Measured on `origin/main` `cf9c87a`: a single packet prints **15,000 `Unicode parsing error` lines** and blocks the host for **100 ms** on Mac before ownership is checked.
+- **Suggested fix:** In `_CStringSerializer.decode`, reject bytes `>= 0x80` and lengths above `_IdentityPacketSerializer.MAX_NAME_BYTES` (128) while consuming to the NUL terminator, decoding valid ASCII via `get_string_from_ascii()` and returning `""` otherwise (0 error lines, bounded 128-byte allocation). *(Fixed on `geminiceo`; verified in `tests/test_security_audit.tscn`.)*
+
+### Areas With No New Findings (`2326514..cf9c87a`)
+- **Patch 16 (`_VariantSerializer`, `_IdentityPacketSerializer`, `_NetworkTimeSynchronizer`, `NetworkCommandServer`, `NetworkIdentityServer`, `NetworkTickrateHandshake`):** `G-28`, `G-29`, variant type/size tables (including the `type > TYPE_COLOR` shift-wrap guard), clock scalar/pong payload checks, and per-peer log rate limits are all sound and cleanly reset on `NetworkTime.stop()`.
+- **Crashes and logic bugs, Network trust, Desync, Untrusted input, Purchases/unlocks, Android/privacy, Repository hygiene, Performance:** none found.
+
+### Could Not Check (Iteration 14)
+- Multi-process loopback UDP suites (`tests/net_*.sh`), `tests/test_fx_client.tscn`, and `tests/test_full_state_coverage.tscn` (loopback UDP blocked in sandbox); real Android device testing (rebuilt APK `cd8ad46`).
+
+### CEO Review (Iteration 14)
+1. **Major security milestone landed (`4f4ea2d`, `cf9c87a`, `cd8ad46`):** The 4-byte `SIGBUS` crash (`G-28`), truncated prefix bug (`G-29`), variant/clock malformed-header floods, and log rate limits are all on `main` and baked into the rebuilt debug APK (`cd8ad46`).
+2. **One quick follow-up (`G-31`), then phones first:** Folding `_CStringSerializer`'s 10-line ASCII/length check into patch 16 closes the last per-byte Unicode log-flood path; meanwhile the `cd8ad46` APK is already solid for Rahul's two-phone hotspot playtest.

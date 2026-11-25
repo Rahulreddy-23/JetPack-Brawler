@@ -558,13 +558,20 @@ class _CStringSerializer extends NetworkSchemaSerializer:
 		b.put_u8(0)
 
 	func decode(b: StreamPeerBuffer) -> Variant:
+		# PATCH (geminiceo G-31): bound length and refuse non-ASCII bytes before decoding,
+		# matching _IdentityPacketSerializer. Otherwise a 15 KB rollback input packet with
+		# id=0 and 0xff bytes prints 15,000 Unicode parsing error lines (~100 ms) per packet.
 		var data := PackedByteArray()
+		var valid := true
 		while b.get_available_bytes() > 0:
 			var c := b.get_u8()
 			if c == 0: break
-			data.append(c)
+			if c >= 0x80 or data.size() >= _IdentityPacketSerializer.MAX_NAME_BYTES:
+				valid = false
+			elif valid:
+				data.append(c)
 
-		return data.get_string_from_utf8()
+		return data.get_string_from_ascii() if valid else ""
 
 class _BoolSerializer extends NetworkSchemaSerializer:
 	func encode(v: Variant, b: StreamPeerBuffer) -> void:
