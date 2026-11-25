@@ -148,6 +148,21 @@ shake_strength_knockout_px = 18.0
 shake_decay_per_second = 60.0
 hit_freeze_frames = 3
 hit_flash_seconds = 0.08
+; --- task E --- (first guesses)
+hit_freeze_min_push = 1.5
+tracer_seconds = 0.1
+tracer_width_px = 3.0
+muzzle_flash_seconds = 0.06
+muzzle_flash_radius_px = 14.0
+muzzle_offset_bh = 0.5
+melee_arc_seconds = 0.12
+melee_arc_width_px = 6.0
+blast_shake_range_bh = 14.0
+fx_pool_size = 16
+health_bar_size_px = Vector2(48.0, 6.0)
+health_bar_offset_px = 8.0
+health_bar_hold_seconds = 1.5
+
 ; --- task D ---
 rocket_arm_time = 0.2
 bomb_rest_speed = 1.5

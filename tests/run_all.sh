@@ -66,7 +66,10 @@ run net_blast_bomb_loss env PORT="$((BASE + 78))" WEAPON=bomb SIM_LATENCY_MS=75 
 run net_blast_rocket env PORT="$((BASE + 80))" WEAPON=rocket SIM_LATENCY_MS=75 "$ROOT/tests/net_combat_objects.sh"
 run net_blast_rocket_loss env PORT="$((BASE + 82))" WEAPON=rocket SIM_LATENCY_MS=75 SIM_LOSS=5 "$ROOT/tests/net_combat_objects.sh"
 run effects    "$GODOT" --headless --path "$ROOT" --script res://tests/test_effects.gd
-run geometry   "$GODOT" --headless --path "$ROOT" --script res://tests/test_combat_geometry.gd
+run fx_director "$GODOT" --headless --path "$ROOT" res://tests/test_fx_director.tscn
+run fx_client  "$GODOT" --headless --path "$ROOT" res://tests/test_fx_client.tscn -- --port="$((BASE + 90))"
+run net_fx     env PORT="$((BASE + 92))" "$ROOT/tests/net_fx.sh"
+run geometry  "$GODOT" --headless --path "$ROOT" --script res://tests/test_combat_geometry.gd
 run foundation "$GODOT" --headless --path "$ROOT" res://tests/test_foundation.tscn
 run combat_rules "$GODOT" --headless --path "$ROOT" res://tests/test_combat_rules.tscn
 run net_combat env PORT="$((BASE + 40))" "$ROOT/tests/net_combat.sh"

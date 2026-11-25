@@ -79,6 +79,18 @@ triggers once per increase, and records without triggering the first time it see
 shooter's own `shots_fired` and `melee_serial` are predicted, so muzzle flash and swing are
 immediate. Known imperfection: the host phone, and a shooter's own muzzle flash, can show one
 effect for an event a later re-run removes.
+"The first time it sees a node" means, on a client, the first frame on which the node's
+counters come from the host: `NetworkHistoryServer.has_authoritative_state` is true for the
+node netfox registers for those properties (a bot's `Vitals` and `Arsenal`, the slot itself
+for a world object) and one rollback loop has finished since, because netfox copies merged
+state onto the live node only at the end of a loop. On the host a node is real at once. All
+marks are cleared when a session starts and when it stops. Two known limits: a counter that
+rises in that one extra loop is recorded without its effect (in practice a rocket fired into
+a slot a late joiner has not been sent yet), and the check is per node, not per tick.
+The health bar above a bot is fed the same way: only from real state, once per frame after
+the restore, so a value that moves and returns inside a re-run never shows it. It appears
+when the health seen on a frame differs from the last frame's, holds for a config time on
+the frame clock, and is hidden at first sight, while knocked out and after a session reset.
 
 D8. `round_start_tick`, and later Chaos Card entries, are plain host values sent by reliable
 RPC ahead of time and read by tick. Score (phase 2) is committed on the host only for ticks
