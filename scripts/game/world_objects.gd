@@ -40,6 +40,8 @@ var bounds_px: Rect2 = Rect2()
 
 var _slots: Array[WorldObject] = []
 # half extents -> the solids grown by them; one array per shape size, rebuilt only when solids change.
+# It is cleared only when `solids` is reassigned (the setter); changing the array in place, or the
+# bot height in the config, leaves stale rectangles.
 var _grown_cache: Dictionary = {}
 
 func _ready() -> void:
@@ -293,13 +295,19 @@ func reset() -> void:
 
 # The tick at which a rocket launched or deflected at this tick with this velocity has flown the
 # rocket tube's range, never later than a rocket at the tube's own speed would. Every rocket has
-# a finite lifetime: one that does not move, or is too slow, lives as long as a normal one.
+# a finite lifetime: one that does not move, or is too slow, lives as long as a rocket at the
+# tube's own speed (see below for a tube with no speed).
 # A deflection starts the range again from where the rocket is.
 static func _rocket_range_tick(velocity_px: Vector2, tick: int, cfg: TuningConfig) -> int:
 	var stats: WeaponStats = cfg.weapon_stats(ItemIds.ROCKET_TUBE)
 	var range_px: float = stats.range_bh * cfg.bot_height_px
 	var normal_step: float = stats.projectile_speed * cfg.bot_height_px / float(cfg.tick_rate)
-	var lifetime: int = maxi(ceili(range_px / normal_step), 1)
+	# The lifetime of a rocket at the tube's own speed. When that speed is 0 (a card could set it) there
+	# is no flight time to take it from, so the fallback is a bomb's fuse time (an existing config
+	# number of the same size, about 3 s) instead of a division by zero.
+	var lifetime: int = seconds_to_ticks(cfg.bomb_fuse_time, cfg)
+	if normal_step > 0.0 and is_finite(normal_step):
+		lifetime = maxi(ceili(range_px / normal_step), 1)
 	var step: float = velocity_px.length() / float(cfg.tick_rate)
 	if step > 0.0 and is_finite(step):
 		lifetime = mini(lifetime, maxi(ceili(range_px / step), 1))

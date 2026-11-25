@@ -4,14 +4,13 @@ For Rahul. This is the play test behind the phase 1 gate: is flying around and k
 dummy bot into the hazard fun for 10 minutes, and does it stay in sync between two phones.
 It is not the gate itself; you decide that afterwards.
 
-Build: `builds/jetpack-brawler-debug.apk`, made from `main` at `8ccb4b7` on 25 Nov 2026,
-16:14. 28.6 MB, package `com.jetpackbrawler.prototype`, 64-bit ARM only, Android target 36,
+Build: `builds/jetpack-brawler-debug.apk`, made from `main` at `b90d525` on 25 Nov 2026,
+16:59. 28.6 MB, package `com.jetpackbrawler.prototype`, 64-bit ARM only, Android target 36,
 one permission (internet). The build is not in the repository; it is on this Mac only. On
-the Mac the full test suite passes on this commit's parent (51 of 51) and the tests the
-last change touches pass on this commit.
+the Mac the full test suite passes on this commit (51 of 51).
 
 Nothing in this build has run on a phone. Everything below is unverified until you do it.
-Two fixes are still in progress and are not in this build; see "Known limits".
+One fix is still in progress and is not in this build; see "Known limits".
 
 If you have not done device checkpoint 1 (sticks, jetpack and dash), do it first with this
 same build: its checks 6 to 16 still apply and are not repeated here.
@@ -123,10 +122,6 @@ Performance
   a burst of a player's input packets is late, the host sends positions that are one step
   behind until the input arrives. Measured on the Mac with packets held on purpose: up to
   about 30 pixels. The cause is known and the fix is in progress; it is not in this build.
-- Not in this build, in progress: a plate left on a spawn point can launch a bot that has
-  just come back at the 45-second reset, and a gadget thrown on the exact reset tick is
-  lost; a fast rocket that passes a bot and reaches a wall in the same tick explodes at the
-  wall, slightly past the bot.
 
 ## What I need back
 

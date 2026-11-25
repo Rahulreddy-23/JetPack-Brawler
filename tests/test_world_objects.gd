@@ -37,6 +37,8 @@ func _run() -> void:
 	await _test_rocket_wall()
 	await _test_rocket_range()
 	await _test_rocket_sweep()
+	await _test_rocket_bot_before_stop()
+	await _test_rocket_range_without_speed()
 	await _test_launch_inside_solid()
 	await _test_narrow_column()
 	await _test_push_out_passes()
@@ -54,6 +56,7 @@ func _run() -> void:
 	await _test_deflect_and_destroy()
 	await _test_gadgets()
 	await _test_cycle_reset()
+	await _test_cycle_order_in_resolver()
 	await _test_rerun_idempotent()
 	print("%d checks, %d failures" % [_checks, _failures])
 	get_tree().quit(1 if _failures > 0 else 0)
@@ -110,6 +113,8 @@ func _tick(tick: int) -> Array[Hit]:
 	for bot: Bot in _bots:
 		bot.gadgets._rollback_tick(_dt, tick, true)
 	var hits: Array[Hit] = []
+	# As the resolver does, the cycle clean-up comes first.
+	GadgetRules.clear_old_cycle(tick, _pool)
 	GadgetRules.collect(tick, _sorted_bots(), _pool, _pool.solids, _cfg, hits)
 	return hits
 
@@ -274,13 +279,15 @@ func _test_rocket_sweep() -> void:
 	var second: WorldObject = _pool.launch(ItemIds.OBJECT_ROCKET, 0, 10, Vector2(0, 500), Vector2(100.0 * float(_cfg.tick_rate), 0), 10, _cfg)
 	_tick(11)
 	_check(second.explode_tick == 11 and second.global_position.x < far_bot.body_rect().position.x - radius and near_bot.global_position.x == 40.0, "it explodes on the nearest bot along the path")
-	# A rocket does explode on a dashing bot (it is not a bullet).
+	# A rocket does explode on a dashing bot (it is not a bullet), found by the sweep alone: the
+	# rocket ends its tick at x = 100, outside the dasher's grown rectangle (14.8 to 85.2).
 	await _begin()
-	var dasher: Bot = _add_bot(11, 1, Vector2(100, 500))
+	var dasher: Bot = _add_bot(11, 1, Vector2(50, 500))
 	dasher.dash_left = 0.1
-	var third: WorldObject = _pool.launch(ItemIds.OBJECT_ROCKET, 0, 10, Vector2(60, 500), Vector2(768, 0), 10, _cfg)
+	var third: WorldObject = _pool.launch(ItemIds.OBJECT_ROCKET, 0, 10, Vector2(0, 500), Vector2(100.0 * float(_cfg.tick_rate), 0), 10, _cfg)
 	var dash_hits: Array[Hit] = _tick(11)
-	_check(third.explode_tick == 11 and _hit_for(dash_hits, dasher) != null, "a rocket explodes on a dashing bot")
+	_check(third.explode_tick == 11 and _hit_for(dash_hits, dasher) != null, "a rocket that crosses a dashing bot in one tick explodes on it")
+	_near(third.global_position.x, dasher.body_rect().position.x - radius, 0.001, "at the dasher's edge, not at its end point")
 	# A rocket launched this tick has not moved: bots behind the muzzle are not swept.
 	await _begin()
 	var behind: Bot = _add_bot(11, 1, Vector2(20, 500))
@@ -300,6 +307,59 @@ func _test_rocket_sweep() -> void:
 		var deflected_hits: Array[Hit] = []
 		GadgetRules.collect(11, _sorted_bots(), _pool, _pool.solids, _cfg, deflected_hits)
 		_check((flying.explode_tick == 11) == on_path and (_hit_for(deflected_hits, target) != null) == on_path, "deflected rocket contact uses the traveled path (bot on path %s)" % on_path)
+
+# A bot in front of a wall (or of the end of the range) wins over the wall: the rocket's own stop on
+# this tick must not hide it.
+func _test_rocket_bot_before_stop() -> void:
+	var wall: Array[Rect2] = [Rect2(1000, -500, 200, 2000)]
+	await _begin(wall)
+	var radius: float = _cfg.weapon_stats(ItemIds.ROCKET_TUBE).projectile_radius * _px
+	# A bot flush against the wall; the rocket reaches the wall in the same tick (60 px, about 0.9 bh, in one tick).
+	var flush: Bot = _add_bot(11, 1, Vector2(1000.0 - _cfg.bot_width_bh * _px / 2.0, 500))
+	var rocket: WorldObject = _pool.launch(ItemIds.OBJECT_ROCKET, 0, 10, Vector2(930, 500), Vector2(60.0 * float(_cfg.tick_rate), 0), 10, _cfg)
+	var hits: Array[Hit] = _tick(11)
+	_check(rocket.explode_tick == 11 and rocket.blasts == 1 and not rocket.active, "a rocket that reaches a wall in a tick explodes once, on that tick")
+	_near(rocket.global_position.x, flush.body_rect().position.x - radius, 0.001, "at the bot flush against the wall, not at the wall")
+	_check(_hit_for(hits, flush) != null, "and the bot is hit")
+	# Nothing in the way: the wall stays the contact.
+	await _begin(wall)
+	var clear: WorldObject = _pool.launch(ItemIds.OBJECT_ROCKET, 0, 10, Vector2(930, 500), Vector2(60.0 * float(_cfg.tick_rate), 0), 10, _cfg)
+	_tick(11)
+	_near(clear.global_position.x, 1000.0 - radius, 0.001, "a rocket with no bot in front of the wall still stops at the wall")
+	# The tick the range ends.
+	await _begin()
+	var bot: Bot = _add_bot(11, 1, Vector2(50, 500))
+	var ending: WorldObject = _pool.launch(ItemIds.OBJECT_ROCKET, 0, 10, Vector2(0, 500), Vector2(100.0 * float(_cfg.tick_rate), 0), 10, _cfg)
+	ending.fuse_tick = 11
+	var range_hits: Array[Hit] = _tick(11)
+	_check(ending.explode_tick == 11 and _hit_for(range_hits, bot) != null, "a rocket whose range ends this tick explodes once")
+	_near(ending.global_position.x, bot.body_rect().position.x - radius, 0.001, "and on a bot in its path, not at the end of its range")
+	var again: Array[Hit] = []
+	GadgetRules.collect(11, _sorted_bots(), _pool, _pool.solids, _cfg, again)
+	_check(ending.blasts == 1 and ending.explode_tick == 11, "running the rules again for the tick explodes nothing twice")
+	# Already exploded on an earlier tick: left alone.
+	await _begin()
+	var old: WorldObject = _pool.launch(ItemIds.OBJECT_ROCKET, 0, 10, Vector2(0, 500), Vector2(100.0 * float(_cfg.tick_rate), 0), 10, _cfg)
+	_add_bot(11, 1, Vector2(50, 500))
+	old.explode_tick = 5
+	var old_position: Vector2 = old.global_position
+	_tick(11)
+	_check(old.global_position == old_position and old.explode_tick == 5, "a rocket that exploded on an earlier tick is not touched")
+
+func _test_rocket_range_without_speed() -> void:
+	await _begin()
+	var saved: TuningConfig = _cfg
+	var cfg: TuningConfig = _cfg.duplicate() as TuningConfig
+	var stats: WeaponStats = (_cfg.weapons[ItemIds.ROCKET_TUBE] as WeaponStats).duplicate() as WeaponStats
+	stats.projectile_speed = 0.0
+	cfg.weapons = _cfg.weapons.duplicate()
+	cfg.weapons[ItemIds.ROCKET_TUBE] = stats
+	var rocket: WorldObject = _pool.launch(ItemIds.OBJECT_ROCKET, 0, 1, Vector2(0, 0), Vector2.ZERO, 10, cfg)
+	var fuse: int = WorldObjects.seconds_to_ticks(cfg.bomb_fuse_time, cfg)
+	_check(rocket.fuse_tick == 10 + fuse, "a tube speed of 0 gives the rocket a bomb-fuse lifetime, not a division by zero (fuse %d)" % rocket.fuse_tick)
+	_pool.deflect(rocket, Vector2(0, 640), 2, 20, cfg)
+	_check(rocket.fuse_tick > 20 and rocket.fuse_tick <= 20 + fuse, "and a deflected one is still finite (fuse %d)" % rocket.fuse_tick)
+	_check(saved == _cfg, "the real config was not touched")
 
 func _test_launch_inside_solid() -> void:
 	var wall: Array[Rect2] = [Rect2(1000, -500, 200, 2000), Rect2(-5000, 2000, 10000, 500)]
@@ -913,12 +973,13 @@ func _test_cycle_reset() -> void:
 	var start: int = 100
 	var saved: int = MatchSettings.round_start_tick
 	MatchSettings.round_start_tick = start
+	bomb.spawn_tick = start + 5
 	_tick(start)
 	_check(bomb.active, "nothing is reset at the first start of the cycle")
 	_tick(start + cycle - 1)
 	_check(bomb.active, "nothing is reset just before the cycle ends")
 	_tick(start + cycle)
-	_check(not bomb.active, "everything is reset when the cycle restarts")
+	_check(not bomb.active, "an object of the old cycle is gone when the cycle restarts")
 	bomb = _pool.launch(ItemIds.OBJECT_BOMB, 0, 1, Vector2.ZERO, Vector2.ZERO, start + cycle + 1, _cfg)
 	bomb.fuse_tick = 100000
 	_tick(start + cycle + 1)
@@ -926,6 +987,106 @@ func _test_cycle_reset() -> void:
 	MatchSettings.round_start_tick = -1
 	_tick(start + 2 * cycle)
 	_check(bomb.active, "nothing is reset when no round has started")
+
+	# (a) Objects of the old cycle do nothing on the boundary tick: a plate left on a spawn point
+	# does not launch the bot that has just respawned on it.
+	var floor_solids: Array[Rect2] = [Rect2(-5000, 1000, 10000, 500)]
+	await _begin(floor_solids)
+	MatchSettings.round_start_tick = start
+	var fresh: Bot = _add_bot(11, 1, Vector2(600, 968))
+	var plate: WorldObject = _pool.launch(ItemIds.OBJECT_PLATE, 0, 10, Vector2(600, 990), Vector2.ZERO, start + 50, _cfg)
+	plate.landed = true
+	plate.arm_tick = start + 60
+	_check(_hit_for(_tick(start + cycle - 1), fresh) != null, "the old plate does launch a bot standing on it during its own cycle")
+	var boundary_hits: Array[Hit] = _tick(start + cycle)
+	_check(_hit_for(boundary_hits, fresh) == null and not plate.active, "on the boundary tick the old plate is gone before it can launch the bot that respawned there")
+
+	# (b) A gadget thrown on the boundary tick itself survives it.
+	await _begin()
+	MatchSettings.round_start_tick = start
+	var thrower: Bot = _add_bot(10, 0, Vector2(300, 300))
+	thrower.input.gadget = true
+	thrower.input.aim = Vector2(1, 0)
+	_tick(start + cycle)
+	var thrown: WorldObject = _slot_of(ItemIds.OBJECT_BOMB, 0, 0)
+	_check(thrown.active and thrown.spawn_tick == start + cycle, "a bomb thrown on the boundary tick is not wiped by the reset")
+	thrower.input.gadget = false
+	_tick(start + cycle + 1)
+	_check(thrown.active, "and it is still there on the next tick")
+
+	# (c) A stall that skips the boundary tick still clears old objects, a plate included.
+	await _begin(floor_solids)
+	MatchSettings.round_start_tick = start
+	var old_plate: WorldObject = _pool.launch(ItemIds.OBJECT_PLATE, 0, 10, Vector2(600, 990), Vector2.ZERO, start + 50, _cfg)
+	old_plate.landed = true
+	old_plate.arm_tick = start + 60
+	var survivor: WorldObject = _pool.launch(ItemIds.OBJECT_PLATE, 1, 11, Vector2(900, 990), Vector2.ZERO, start + cycle + 2, _cfg)
+	_tick(start + cycle - 1)
+	_check(old_plate.active, "the old plate is live before the boundary")
+	_tick(start + cycle + 5)
+	_check(not old_plate.active, "a plate of the old cycle is cleared by the first tick after a skipped boundary")
+	_check(survivor.active, "an object launched after the boundary is kept")
+	# Idempotent: running the tick again gives the same.
+	var snapshot: Dictionary = _snapshot()
+	_tick(start + cycle + 5)
+	_check(_snapshot() == snapshot, "running that tick again changes nothing")
+	MatchSettings.round_start_tick = saved
+
+# The real resolver, on the boundary tick of the test cycle: a shot at a bot behind a plate of the old
+# cycle must hit the bot, because the plate is already gone when the weapon rules look (with the
+# clean-up after them the bullet is used up on the plate, which then disappears, and nobody is hit).
+func _test_cycle_order_in_resolver() -> void:
+	var layout: ArenaLayout = load("res://config/smelter.tres") as ArenaLayout
+	var cycle: int = roundi(_cfg.hazard_cycle_time * float(_cfg.tick_rate))
+	var start: int = 100
+	var saved: int = MatchSettings.round_start_tick
+	await _begin(layout.solid_rects_px(_px))
+	MatchSettings.round_start_tick = start
+	var pickups: Pickups = Pickups.new()
+	pickups.layout = layout
+	add_child(pickups)
+	_nodes.append(pickups)
+	var resolver: CombatResolver = CombatResolver.new()
+	resolver.objects = _pool
+	resolver.pickups = pickups
+	resolver.layout = layout
+	add_child(resolver)
+	_nodes.append(resolver)
+	await get_tree().process_frame
+	var y: float = 15.5 * _px
+	var shooter: Bot = _add_bot(10, 0, Vector2(13.0 * _px, y))
+	var victim: Bot = _add_bot(11, 1, Vector2(18.0 * _px, y))
+	var plate: WorldObject = _pool.launch(ItemIds.OBJECT_PLATE, 1, 11, Vector2(15.0 * _px, y), Vector2.ZERO, start + 50, _cfg)
+	plate.landed = true
+	plate.arm_tick = start + 60
+	var boundary: int = start + cycle
+	shooter.arsenal.last_shot_tick = boundary
+	shooter.arsenal.shot_dir = Vector2.RIGHT
+	var health: float = victim.vitals.health
+	resolver.resolve(boundary, _sorted_bots())
+	_check(not plate.active, "on the boundary tick the old plate is gone")
+	_check(victim.vitals.health < health, "and a shot on that tick at the bot behind it hits the bot (health %.1f of %.1f)" % [victim.vitals.health, health])
+	# A rocket fired on the boundary tick is launched after the clean-up and survives it.
+	await _begin(layout.solid_rects_px(_px))
+	MatchSettings.round_start_tick = start
+	var rocket_pickups: Pickups = Pickups.new()
+	rocket_pickups.layout = layout
+	add_child(rocket_pickups)
+	_nodes.append(rocket_pickups)
+	var rocket_resolver: CombatResolver = CombatResolver.new()
+	rocket_resolver.objects = _pool
+	rocket_resolver.pickups = rocket_pickups
+	rocket_resolver.layout = layout
+	add_child(rocket_resolver)
+	_nodes.append(rocket_resolver)
+	await get_tree().process_frame
+	var gunner: Bot = _add_bot(10, 0, Vector2(13.0 * _px, y))
+	gunner.arsenal.give_weapon(ItemIds.ROCKET_TUBE, _cfg)
+	gunner.arsenal.last_shot_tick = boundary
+	gunner.arsenal.shot_dir = Vector2.RIGHT
+	rocket_resolver.resolve(boundary, _sorted_bots())
+	var fired: WorldObject = _slot_of(ItemIds.OBJECT_ROCKET, 0, 0)
+	_check(fired.active and fired.spawn_tick == boundary, "a rocket fired on the boundary tick is launched after the clean-up and survives it")
 	MatchSettings.round_start_tick = saved
 
 # ---- idempotence ----

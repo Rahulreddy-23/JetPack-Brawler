@@ -237,12 +237,12 @@ func _on_knockout(bot: Bot, cfg: TuningConfig) -> void:
 # Every shot gets a muzzle flash. Only the rivet gun and the bolt thrower, which fire one instant
 # line, also get a tracer, from the muzzle to the first wall or the weapon's range. A tracer for
 # the rocket tube would cross the arena while the rocket is still at the muzzle and read as a hit,
-# and one centre line would misrepresent the scrap blaster's pellets. The weapon is read from state
-# on the displayed tick (a spent weapon stays in its slot until the next tick starts).
+# and one centre line would misrepresent the scrap blaster's pellets. Use the weapon that fired,
+# since a pickup or swap can change what the bot holds before the shot is drawn.
 func _on_shot(bot: Bot, cfg: TuningConfig) -> void:
 	var dir: Vector2 = _direction(bot.arsenal.shot_dir, bot.aim_dir)
 	var from: Vector2 = bot.center()
-	var weapon: int = bot.arsenal.active_weapon()
+	var weapon: int = bot.arsenal.last_shot_weapon
 	var stats: WeaponStats = cfg.weapon_stats(weapon)
 	var offset: float = cfg.muzzle_offset_bh * cfg.bot_height_px
 	var color: Color = BotVisual.body_color(bot.slot, cfg)

@@ -16,7 +16,7 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `af6d2c8` | 25 Nov 2026 16:14 | One reviewer commit, `af6d2c8` (finding D-13, accepted). `4a54e6a` only merges `main`. |
+| `dev` | `6bbcd11` | 25 Nov 2026 16:40 | One reviewer commit, `6bbcd11` (finding D-14, accepted). `d90012c` and `25a1d63` only merge `main`. |
 | `geminiceo` | `5dc5155` | 25 Nov 2026 10:03 | One reviewer commit, `5dc5155` (iteration 5: finding G-25, the same fault as D-10; the rest brings the branch in line with the decisions on G-18 and G-19). `2275445` only merges `main`. |
 
 ## Findings
@@ -217,6 +217,23 @@ these.
   line now tells the truth. Whether actions should instead keep the last aimed direction is
   a feel question for the phone test.
 
+### D-14 (dev, `6bbcd11`): a shot's effect was drawn for the weapon held afterwards
+
+- Change: the arsenal records the weapon that fired (`last_shot_weapon`, a new rollback state
+  property on `Bot/Arsenal`), and the effects use it for the muzzle flash and the tracer
+  instead of asking what the bot holds when the frame is drawn. One new test in
+  `tests/test_fx_director.gd`; the state lists in three tests and in
+  `docs/ARCHITECTURE.md` are updated.
+- Verified: yes. A pickup is resolved after the arsenal's tick, so a bot that fires its last
+  rocket standing on the bolt thrower's spot holds the bolt thrower by the time the shot is
+  drawn, and the rocket got a tracer across the arena. The same happens whenever the frame
+  shows a tick after the one that spent the weapon. With the change the effects, weapons and
+  foundation tests pass (114, 197 and 122 checks); with the effects reading the held weapon
+  again the new check fails; the two-process fire, effects, smoke and combat tests pass with
+  the extra state property.
+- Outcome: accepted and cherry-picked onto `main`. It adds one integer per bot to the state
+  sent each tick. The debug APK of 16:14 does not have it.
+
 ## geminiceo audit (`e66eee1`)
 
 Status at 18:50: every finding was checked against the current code by an independent Opus
@@ -283,17 +300,17 @@ failures of 19 on `main`.
 
 | Id | Finding | Verified against `main` | Outcome |
 |---|---|---|---|
-| G-15 | A bot flush against a wall fires its rocket from 16 px inside the wall | Partly: no tunnelling (the rocket explodes at once, by design), but the blast centre sits inside the wall, so self-damage is 32.7 instead of 36.0 | Accepted as is, low. In the fix round |
+| G-15 | A bot flush against a wall fires its rocket from 16 px inside the wall | Partly: no tunnelling (the rocket explodes at once, by design), but the blast centre sits inside the wall, so self-damage is 32.7 instead of 36.0 | Accepted as is, low. Merged (`4bd6e34`) |
 | G-16 | The reject timer has no tree or peer guard | Same as G-13.3; the reviewer reverted it | Rejected (already decided) |
-| G-17 | The pickup cycle reset is missed when a stall skips the boundary tick | Confirmed by run: a spot stayed on cooldown up to 15 s into the next cycle | Accepted, low. In the fix round, with the limit noted (the take tick is inferred from the respawn time) |
+| G-17 | The pickup cycle reset is missed when a stall skips the boundary tick | Confirmed by run: a spot stayed on cooldown up to 15 s into the next cycle | Accepted, low. Merged (`4bd6e34`), with the limit noted (the take tick is inferred from the respawn time) |
 | G-18 | The HUD does not redraw on resize; divide by zero on maximum health | Not real: a Control redraws on resize, and the draw returns before the value is used | Rejected |
-| G-19 | A flick that curves past the fire ring fires at the crossing angle | Confirmed by run | Accepted with a smaller fix: the reviewer's version gives an extra shot when the thumb is pulled back inside the ring between two ticks. In the fix round |
+| G-19 | A flick that curves past the fire ring fires at the crossing angle | Confirmed by run | Accepted with a smaller fix: the reviewer's version gives an extra shot when the thumb is pulled back inside the ring between two ticks. Merged (`4bd6e34`) |
 | G-20 | Reapply the 1.1b-N netfox hardening | Already on `main` as patches 1 to 13 | Already fixed |
-| G-21a, b | A rocket that passes a bot and reaches a wall or its range in the same tick explodes past the bot | Confirmed by run; the blast lands at most one tick of travel past the bot (about 5 to 10 of 40 damage) | Accepted with a smaller fix on top of D-11. The independent review of task D found the same fault. In the fix round |
+| G-21a, b | A rocket that passes a bot and reaches a wall or its range in the same tick explodes past the bot | Confirmed by run; the blast lands at most one tick of travel past the bot (about 5 to 10 of 40 damage) | Accepted with a smaller fix on top of D-11. The independent review of task D found the same fault. Merged |
 | G-21c | A deflected rocket is swept along its new velocity | Was real | Already fixed (D-11, the same code) |
-| G-22 | The gadget cycle reset runs after blasts, plates and throws, and misses skipped ticks | Confirmed by run: a plate on a spawn point launches the fresh bot, a gadget thrown on the boundary tick is wiped, a stall leaves old plates | Accepted. In the fix round |
-| G-23 | Pickups never reset between sessions | Confirmed by reading: after Leave then Host a spot can stay empty up to 45 s | Accepted, needed before the phone test. In the fix round |
-| G-24 | The oversized-packet warning is not rate limited | Confirmed by run: 1000 packets printed 8003 log lines in 45 ms on the Mac; any device on the hotspot can do it | Accepted, as a new recorded netfox patch. In the fix round |
+| G-22 | The gadget cycle reset runs after blasts, plates and throws, and misses skipped ticks | Confirmed by run: a plate on a spawn point launches the fresh bot, a gadget thrown on the boundary tick is wiped, a stall leaves old plates | Accepted. Merged, with the ordering detail from its review (the clean-up also runs before that tick's shots) |
+| G-23 | Pickups never reset between sessions | Confirmed by reading: after Leave then Host a spot can stay empty up to 45 s | Accepted, needed before the phone test. Merged (`4bd6e34`) |
+| G-24 | The oversized-packet warning is not rate limited | Confirmed by run: 1000 packets printed 8003 log lines in 45 ms on the Mac; any device on the hotspot can do it | Accepted, as a new recorded netfox patch. Merged (`a73b845`, patch 14) |
 
 The reviewer's `tests/test_security_audit.gd` is not taken as it is: several of its checks
 pass on `main` without the fix they name, and two error out instead of failing. Each

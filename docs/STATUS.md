@@ -26,21 +26,22 @@ Current stage: Prototype, phase 1. Gate not passed.
 - [ ] When a burst of a client's input packets is late, the host sends states for that bot
       that are one step behind, for every player (dev finding D-10). It is upstream netfox
       behaviour. Cause found and reproduced on demand; fix in progress as netfox patch 15.
-- [ ] `net_blast_bomb_loss` fails about 3 runs in 16 on `main`: on the client, the history row
-      for the tick after the blast shows its own bot at full health. Probably a row whose
-      state packet was lost and which the check should not read; not yet proven. With the
-      task D implementer.
+- [x] `net_blast_bomb_loss` failed about 3 runs in 16. Cause: the test read the one tick
+      after the blast, and under loss the client can hold its own guess for that tick until
+      the next state arrives. The game was right. The check now reads the first tick whose
+      value came from the host and fails if that takes more than 4 ticks; 0 failures in 80.
 - [ ] Device checkpoint 1 (Rahul): sticks, jetpack and dash on two phones over a hotspot.
-      Script `docs/reviews/device-checkpoint-1.md`; build of 25 Nov at `8ccb4b7`; not yet run.
+      Script `docs/reviews/device-checkpoint-1.md`; build of 25 Nov at `b90d525`; not yet run.
 - [x] B Combat core, hazard wiring, dummy, push window. Reviewed, merged (`a170e4b`).
 - [x] C Weapons, melee, pickups. Reviewed, merged (`2ad983e`).
-- [ ] D World objects and gadgets. Merged; the fix round still needs its independent review.
+- [x] D World objects and gadgets. Reviewed twice, merged with its follow-ups and the
+      ordering fix from the last review (the cycle clean-up runs before that tick's shots).
 - [x] E Presentation: effects from state counters, first sight from the host's real state,
       and a health bar that shows only while a bot's health changes. Reviewed, merged.
       Nothing in it can be judged without a phone.
 - [x] F Input and HUD for fire, melee, gadget, swap. Reviewed, merged (`5f92739`).
 - [x] Full test suite on `main` with A to F, netfox patches 1 to 14 and the reviewer fixes:
-      51 of 51 (Mac, headless; nothing on a phone).
+      51 of 51, last at the task D follow-ups (Mac, headless; nothing on a phone).
 - [ ] Device checkpoint 2 (Rahul): the knockback sandbox, 10 minutes of play. Script
       `docs/reviews/device-checkpoint-2.md`; the same build; not yet run.
 - [ ] 1.6 Dabba fight, built last.
@@ -56,9 +57,9 @@ since.
 
 In progress, each on its own branch, none on `main`:
 
-1. Task D follow-ups (`worktree-agent-aaec92fe475a64453`): a bot in front of a wall is
-   tested before the wall, the gadget cycle reset moves before the tick's blasts, two tests
-   tightened. From the independent review of D's fix round and geminiceo G-21, G-22.
+1. Done and on `main`: task D's follow-ups (a bot in front of a wall is hit before the wall,
+   the object cycle clean-up, tighter end-to-end tests) and the ordering fix from their
+   review.
 2. Done and on `main` (`4bd6e34`): pickup session and cycle resets, rocket muzzle, curved
    flick (geminiceo G-15, G-17, G-19, G-23).
 3. Done and on `main` (`a73b845`): rate limit on netfox's oversized-packet warning, patch

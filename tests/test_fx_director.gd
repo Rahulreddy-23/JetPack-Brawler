@@ -45,6 +45,7 @@ func _run() -> void:
 	await _test_freeze_edge()
 	await _test_knockout()
 	await _test_shots()
+	await _test_shot_and_pickup_same_tick()
 	await _test_swing()
 	await _test_picture_hides()
 	await _test_health_bar()
@@ -390,6 +391,7 @@ func _test_knockout() -> void:
 # ---- shots and the tracer ----
 
 func _shoot(bot: Bot, dir: Vector2) -> int:
+	bot.arsenal.last_shot_weapon = bot.arsenal.active_weapon()
 	bot.arsenal.shot_dir = dir
 	bot.arsenal.shots_fired += 1
 	_director.scan()
@@ -440,12 +442,27 @@ func _test_shots() -> void:
 	_check(absf(fx.shot_end(index).x - pillar_face) < EPS and absf(fx.shot_end(index).y - bot.global_position.y) < EPS, "a tracer ends at the first wall in its path (the left pillar's face)")
 	index = _shoot(bot, Vector2.RIGHT)
 	_check(absf(fx.shot_end(index).x - 28.0 * _px) < EPS, "and the right pillar's face the other way")
-	bot.arsenal.shot_dir = Vector2.ZERO
 	bot.aim_dir = Vector2.LEFT
-	bot.arsenal.shots_fired += 1
-	_director.scan()
-	index = fx.last_shot_index()
+	index = _shoot(bot, Vector2.ZERO)
 	_check(absf(fx.shot_end(index).x - pillar_face) < EPS, "with no shot direction the aim direction is used")
+	await _clear_bots()
+
+func _test_shot_and_pickup_same_tick() -> void:
+	var resolver: CombatResolver = _main.get_node("Resolver") as CombatResolver
+	var pickups: Pickups = resolver.pickups
+	var spot: PickupSpot = pickups.spots()[pickups.layout.pickup_items.find(ItemIds.BOLT_THROWER)]
+	var bot: Bot = await _add_bot(2, 1, spot.global_position)
+	bot.arsenal.give_weapon(ItemIds.ROCKET_TUBE, _cfg)
+	_director.scan()
+	bot.input.aim = Vector2.UP
+	bot.input.fire = true
+	bot.arsenal._rollback_tick(1.0 / float(_cfg.tick_rate), 1, true)
+	resolver.resolve(1, [bot])
+	_check(bot.arsenal.fired_at(1) and bot.arsenal.active_weapon() == ItemIds.BOLT_THROWER, "the bot fires its rocket and picks up the bolt thrower on the same tick")
+	_director.scan()
+	var fx: ShotFx = _director.shot_fx()
+	_check(_count(&"shot", bot) == 1 and not fx.shot_has_tracer(fx.last_shot_index()), "the rocket gets no tracer even after the same-tick bolt thrower pickup")
+	spot.ready_tick = 0
 	await _clear_bots()
 
 func _test_swing() -> void:

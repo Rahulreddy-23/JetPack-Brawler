@@ -13,6 +13,7 @@
 #    is the same on both sides.
 # SIM_LATENCY_MS (default 75) and SIM_LOSS run it through the latency simulator on both sides
 # (the proxy listens on PORT + 1, so keep that port free too).
+# KEEP_LOGS=1 keeps the logs of a passing run too (the DIAG lines show the history rows around the blast).
 # Usage: PORT=26070 WEAPON=rocket SIM_LATENCY_MS=75 SIM_LOSS=5 tests/net_combat_objects.sh
 # Exit code 0 = pass, 1 = fail. Never leaves processes running.
 set -u
@@ -62,5 +63,17 @@ if grep -q "SCRIPT ERROR\|^ERROR\|^FAIL" "$TMP/host.log" "$TMP/client.log"; then
 	fail "errors in the logs"
 fi
 grep -h "^COMBAT_RESULT" "$TMP/host.log" "$TMP/client.log"
-python3 -I "$ROOT/tests/check_combat_objects.py" "$TMP/host.log" "$TMP/client.log" "$WEAPON" || fail "see above"
+# A tick the client has only guessed (a lost state packet) is not compared; the host's state for a
+# group of values must show up within MAX_LAG ticks after the explosion (none without loss). With
+# 5 percent loss a group's packet is missing for k ticks in a row with probability 0.05^k, so a
+# bound of 4 fails by chance about once in three million runs per group. The host's own rows must
+# always show 0.
+MAX_LAG=0
+# A loss of 0 (or nothing) is no loss.
+if [ -n "${SIM_LOSS:-}" ] && [ "${SIM_LOSS}" != "0" ]; then MAX_LAG=4; fi
+if ! python3 -I "$ROOT/tests/check_combat_objects.py" "$TMP/host.log" "$TMP/client.log" "$WEAPON" "$MAX_LAG"; then
+	grep -h "^DIAG" "$TMP/host.log" "$TMP/client.log"
+	fail "see above"
+fi
+if [ -n "${KEEP_LOGS:-}" ]; then echo "logs kept in $TMP"; trap - EXIT; cleanup; exit 0; fi
 echo "PASS"

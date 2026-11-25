@@ -60,8 +60,9 @@ phase 1.
 
 D5. Firing is the shooter's own state. `BotArsenal._rollback_tick` decides, on the client and
 on the host, whether the bot fires at T from the fire input, `fire_ready_tick` and ammo, and
-writes `last_shot_tick`, `shots_fired`, `shot_dir`, ammo and the next ready tick; the scrap
-blaster's recoil goes into the shooter's velocity there. The resolver treats
+writes `last_shot_tick`, `shots_fired`, `last_shot_weapon`, `shot_dir`, ammo and the next ready
+tick. Effects use the recorded weapon even if a pickup changes the bot's loadout that tick.
+The scrap blaster's recoil goes into the shooter's velocity there. The resolver treats
 `last_shot_tick == tick` as "fired this tick". No RewindableAction and no NetworkWeapon.
 
 D6. Rockets, bombs and plates live in a fixed pool of slot nodes created identically on every
@@ -108,7 +109,7 @@ damage. `push_speed_scale` is a first guess to tune.
 |---|---|---|
 | position, velocity (with knockback), fuel, dash and the rest of movement | `Bot` | rollback state (exists) |
 | health, knocked_out, respawn_tick, ko_serial, hits_taken, last_hit_push, last_hit_damage, last_attacker, last_attack_tick, knockouts | `Bot/Vitals` | rollback state, written by the resolver |
-| active_slot, picked_weapon, picked_ammo, fire_ready_tick, last_shot_tick, shots_fired, shot_dir, melee_ready_tick, last_melee_tick, melee_serial | `Bot/Arsenal` | rollback state, written by the bot's own tick |
+| active_slot, picked_weapon, picked_ammo, fire_ready_tick, last_shot_tick, shots_fired, last_shot_weapon, shot_dir, melee_ready_tick, last_melee_tick, melee_serial | `Bot/Arsenal` | rollback state, written by the bot's own tick |
 | gadget_a, gadget_b, gadget_ready_tick, last_gadget_tick, gadget_dir, gadget_serial | `Bot/Gadgets` | rollback state |
 | active, kind, owner_peer, position, velocity, spawn_tick, arm_tick, fuse_tick, explode_tick, landed, launches, blasts | `Objects/ObjN` | rollback state, inputless, host-owned |
 | pickup spot ready_tick | `Pickups/SpotN` | rollback state, inputless, host-owned |
