@@ -40,22 +40,18 @@ static func _use_gadgets(tick: int, bots: Array[Bot], objects: WorldObjects, cfg
 				objects.launch(ItemIds.OBJECT_PLATE, bot.slot, bot.peer_id, bot.center(), direction * cfg.plate_throw_speed * px, tick, cfg)
 
 # A rocket that touches a bot sets itself off, at the contact point. Its owner is safe until the
-# rocket is armed. Contact is the rocket's path of this tick (its end position minus one tick of
-# velocity, up to its end position) swept against each bot's rectangle grown by the rocket's
-# radius, with the bot at its end-of-tick position (the rules run after every bot has moved).
+# rocket is armed. Contact sweeps the path the rocket traveled this tick against each bot's
+# end-of-tick rectangle grown by the rocket's radius. Deflection affects the next move.
 # What this misses: a bot's own movement during the tick is not subtracted, so a bot that crossed
 # the path and ended beyond it is missed unless the end-of-tick rectangle still meets the path;
-# a rocket deflected this tick is swept along its new velocity, not the one it moved with; the
-# grown rectangle has square corners, so a near miss past a corner counts as a hit.
+# the grown rectangle has square corners, so a near miss past a corner counts as a hit.
 static func _rocket_contacts(tick: int, bots: Array[Bot], objects: WorldObjects, cfg: TuningConfig) -> void:
-	var step: float = 1.0 / float(cfg.tick_rate)
 	for slot: WorldObject in objects.slots():
 		if not slot.active or slot.kind != ItemIds.OBJECT_ROCKET or slot.explode_tick >= 0:
 			continue
 		var radius: float = WorldObjects.round_radius(slot, cfg)
 		var end: Vector2 = slot.global_position
-		# A rocket launched this tick has not moved yet.
-		var start: Vector2 = end if slot.spawn_tick == tick else end - slot.velocity * step
+		var start: Vector2 = slot.rocket_step_start
 		var first: float = -1.0
 		for bot: Bot in bots:
 			if bot.vitals.knocked_out or (bot.peer_id == slot.owner_peer and tick < slot.arm_tick):

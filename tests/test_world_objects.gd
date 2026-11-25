@@ -290,6 +290,17 @@ func _test_rocket_sweep() -> void:
 	GadgetRules.collect(10, _sorted_bots(), _pool, _pool.solids, _cfg, fresh_hits)
 	_check(fresh.explode_tick == -1 and fresh_hits.is_empty(), "a rocket launched this tick does not hit a bot behind its muzzle")
 
+	# Deflection happens after the rocket has moved. Only the actual path can hit a bot.
+	for on_path: bool in [false, true]:
+		await _begin()
+		var target: Bot = _add_bot(11, 1, Vector2(40, 500) if on_path else Vector2(100, 560))
+		var flying: WorldObject = _pool.launch(ItemIds.OBJECT_ROCKET, 0, 10, Vector2(0, 500), Vector2(100, 0) / _dt, 10, _cfg)
+		flying._rollback_tick(_dt, 11, true)
+		_pool.deflect(flying, Vector2(0, -100) / _dt, 12, 11, _cfg)
+		var deflected_hits: Array[Hit] = []
+		GadgetRules.collect(11, _sorted_bots(), _pool, _pool.solids, _cfg, deflected_hits)
+		_check((flying.explode_tick == 11) == on_path and (_hit_for(deflected_hits, target) != null) == on_path, "deflected rocket contact uses the traveled path (bot on path %s)" % on_path)
+
 func _test_launch_inside_solid() -> void:
 	var wall: Array[Rect2] = [Rect2(1000, -500, 200, 2000), Rect2(-5000, 2000, 10000, 500)]
 	await _begin(wall)

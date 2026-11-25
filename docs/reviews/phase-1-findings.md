@@ -16,7 +16,7 @@ these.
 
 | Branch | Last reviewed commit | Checked | Result |
 |---|---|---|---|
-| `dev` | `beaf6cb` | 24 Nov 2026 22:52 | One reviewer commit, `beaf6cb` (finding D-9, accepted). `d04c17f` only merges `main` into `dev`. |
+| `dev` | `782da7b` | 25 Nov 2026 09:25 | Two reviewer commits: `2ce67fc` (finding D-10, open, being reproduced) and `782da7b` (finding D-11, accepted). `521903f` and later merge commits only merge `main`. |
 | `geminiceo` | `60fabd3` | 24 Nov 2026 23:26 | One reviewer commit, `60fabd3` (follow-up check: findings G-13 and G-14, decided below; its one code change only brings the branch's future-tick bound in line with `main`). `290ac58` only merges `main`. |
 
 ## Findings
@@ -136,6 +136,22 @@ these.
 - Outcome: accepted and cherry-picked onto `main`. It follows the existing ruling that a
   push ends a dash and that recoil is a push on the shooter. Consequence to know: firing the
   scrap blaster mid-dash cuts the dash short, so its bullet immunity ends on that tick.
+
+### D-11 (dev, `782da7b`): a deflected rocket was checked against a path it never flew
+
+- Change: the slot records where the rocket's move of this tick started
+  (`rocket_step_start`, written at launch and at the start of every rocket step), and the
+  contact sweep uses that point instead of rebuilding it from the end position and the
+  velocity. One new check, two cases, in `tests/test_world_objects.gd`.
+- Verified: yes. A melee deflect changes the rocket's velocity after it has moved for the
+  tick, so "end minus one tick of velocity" pointed along the new direction: a bot beside
+  the real path could be hit and a bot on it missed. With the reviewer's test and the
+  scripts from before the change both cases fail; with the change all 253 checks pass, and
+  the two-process object tests and the rocket blast tests at 75 ms, with and without 5%
+  loss, still pass. The new field is not rollback state, which is safe here: only the host
+  runs the contact rule, and the host rewrites the field on launch and on every step,
+  re-simulated ones included, before the rule reads it.
+- Outcome: accepted and cherry-picked onto `main`.
 
 ## geminiceo audit (`e66eee1`)
 

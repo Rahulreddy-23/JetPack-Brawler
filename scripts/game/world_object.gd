@@ -42,6 +42,10 @@ var launches: int = 0
 ## Counts blasts of this slot. Never reset; effects compare it with the highest value seen.
 var blasts: int = 0
 
+## Start of the rocket's motion for contact tests on this tick. The host writes it on launch
+## and before every replayed move, so it does not need to be synchronized.
+var rocket_step_start: Vector2 = Vector2.ZERO
+
 # Presentation only: the highest launches value this peer has drawn.
 var _seen_launches: int = 0
 # Host only, not state: whether peers are sent this slot this tick. An idle slot is sent only
@@ -126,6 +130,7 @@ func _rollback_tick(delta: float, tick: int, _is_fresh: bool) -> void:
 func _step_rocket(delta: float, tick: int, cfg: TuningConfig, pool: WorldObjects) -> void:
 	var radius: float = WorldObjects.round_radius(self, cfg)
 	var from: Vector2 = global_position
+	rocket_step_start = from
 	var to: Vector2 = from + velocity * delta
 	var hit: CastResult = CombatGeometry.cast(from, to, pool.grown_solids(Vector2(radius, radius)))
 	if hit.index < 0:
