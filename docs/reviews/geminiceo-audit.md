@@ -328,3 +328,41 @@ Merged `origin/main` (`f479130..0c8e6a4`: `D-11` deflected rocket swept path `39
 ### CEO Review (Iteration 5)
 1. **Tight review-to-architecture loop:** Seven `geminiceo` findings (`G-15, G-17, G-19, G-21a/b, G-22, G-23, G-24`) and `D-11` are now locked into `docs/ARCHITECTURE.md` and entering `main`'s fix rounds.
 2. **Pragmatic call on `D-10` for Phase 1:** `D-10` is a 1-tick (~10 px, 33 ms) transient snap under heavy 150 ms packet-reordering jitter that self-heals on the very next tick (`enable_diff_states = false`). Fixing the host input-hole `is_auth` check (bounded by a small reorder window so 5% packet loss never starves state updates) is cheap and worthwhile; do **not** let `D-10` block finishing Task E and getting the build onto two real Android phones for Device Checkpoints 1 & 2.
+
+
+---
+
+## Iteration 6 Audit Update (25 Nov 2026 16:05 — against `origin/main` `2a9e175`)
+
+Merged `origin/main` (`0c8e6a4..2a9e175`: Device Checkpoint 2 draft & Rahul's changing-health-bar decision `0635a6e`/`0b10721`, netfox patch 14 `G-24` `a73b845`, `D-10` root-cause confirmation `406ecc5`, `D-12` + `G-25` acceptance `549cb15`, `G-15/17/19/23` landing `4bd6e34`, and open `net_blast_bomb_loss` flake `2a9e175`). Aligned `network-synchronization-server.gd`, `pickups.gd`, and `weapon_rules.gd` verbatim with `origin/main` so `geminiceo` carries zero drift on landed fixes; also audited the remaining unaudited modules (`combat/combat_math.gd`, `hazard/hazard_math.gd`, `effects/*.gd`, `scripts/game/arena_layout.gd`, `item_ids.gd`, `weapon_stats.gd`, `project.godot`, `export_presets.cfg`).
+
+### New Confirmed Findings (Most Severe First)
+
+#### 26. Root cause & fix for `net_blast_bomb_loss` intermittent failure (`2a9e175`): client history reads un-merged local prediction (`is_auth == false`) when Packet 2 (`client.vitals`) is dropped
+- **Severity:** medium (test flake masking real convergence; gameplay itself self-heals on `explode + 2`)
+- **Category:** Desync / Crashes and logic bugs (test harness)
+- **Location:** `tests/test_combat_objects.gd:142-160, 187-221` (`_read_history`, `_dump`)
+- **What happens and how to trigger it:** Under `SIM_LATENCY_MS=75` + `SIM_LOSS=5`:
+  1. **Asymmetric send count + 508-byte packet split:** On tick `explode`, `_watch` (`Obj6`, inputless) and `dummy.vitals` (host-owned input) are marked `is_auth = true` and sent on **Host Pass 1** (at real-time tick `explode`) *and* again on **Host Pass 2** (when `client.input[explode]` arrives 75 ms later), giving them two transmissions (`0.05^2 = 0.25%` loss). By contrast, `client.vitals` is linked to `client.input` in `RollbackSimulationServer._input_graph`, so on Host Pass 1 `_is_predicting` is `true` and `client.vitals` is **omitted**; it is sent **only once** (on Pass 2), and because the full state across `Spot0..3`, `Obj6`, `Bot1`, `Bot0`, `Bot2` exceeds `max_sync_packet_size = 508` bytes, `_DenseSnapshotSerializer` puts `Bot2` (`client.vitals`) in a separate UDP packet from `_watch` and `dummy.vitals`.
+  2. **Unchecked `require_auth` reads local prediction:** Because `CombatResolver` does not run on clients, local prediction of tick `explode` writes `client.vitals` with `health = 100.0` and `is_auth = false` into `_rb_state_snapshots[explode + 1]`. When `SIM_LOSS=5` drops Pass 2's single UDP packet for `client.vitals` at `explode + 1`, `test_combat_objects.gd:144` calls `snapshot.has_subject(client.vitals)` (default `require_auth = false`), accepting the un-merged `100.0` HP prediction even though `explode + 2` received the authoritative `79.17` HP. Real gameplay and effects (`Hud`, `EffectsDirector`) self-heal cleanly one tick (33 ms) later.
+- **Suggested fix:** Record per-subject `snapshot.has_subject(..., true)` flags in `_read_history`, skip non-authoritative rows in `_rises`, and in `_dump()` read `client_hp` / `dummy_hp` from the nearest authoritative row within `explode + 1..explode + 6` when `explode + 1`'s packet for that subject was lost. *(Fixed on `geminiceo`; verified in `tests/test_security_audit.gd`.)*
+
+#### 27. `4bd6e34` flick aim refresh misses a curved flick pulled back inside the fire ring before the next tick
+- **Severity:** low
+- **Category:** Crashes and logic bugs
+- **Location:** `scripts/ui/touch_controls.gd:174-177, 193-199` (`_touch`, `_update_aim`)
+- **What happens and how to trigger it:** In `4bd6e34`, `pending_touch_fire_aim` is only refreshed on thumb lift (`_touch(..., pressed=false)`), not during `_drag`. Trigger: within one network tick (< 33 ms), drag right past the fire ring (`(1, 0)`), curve up while still outside the ring (`(0, -1)`), then pull back inside the fire ring before lifting (or before the tick fires). Because `_is_fire_held()` is now `false` on lift, `_touch` skips the refresh and `BotInput` fires at the stale initial crossing angle `(1, 0)`.
+- **Suggested fix:** Refresh `InputActions.pending_touch_fire_aim = _aim.value(_cfg.stick_radius_px)` inside `_update_aim` whenever `_is_fire_held() and (not was_firing or InputActions.pending_touch_fire_aim != Vector2.ZERO)`, removing the redundant lift-only branch in `_touch`. Preserves zero extra shots on pull-back after a sampled tick and zero extra shots after a held lift. *(Fixed on `geminiceo`; passes both `test_touch_input.tscn` and `test_security_audit.tscn`.)*
+
+### Areas With No New Findings (Iteration 6)
+- **Full pass of remaining game modules (`combat/combat_math.gd`, `hazard/hazard_math.gd`, `effects/debris_piece.gd`, `effects/parts_burst.gd`, `effects/hit_flash.gd`, `effects/hit_freeze.gd`, `effects/screen_shake.gd`, `effects/debris_layers.gd`, `scripts/game/arena_layout.gd`, `item_ids.gd`, `weapon_stats.gd`):** Clean finite/zero guards, proper `DEBRIS` layer isolation (`1 << 15`), bounded debris cap (`max_debris = 60`), safe material/transform restore on `_exit_tree()`.
+- **Android and privacy (`export_presets.cfg`):** Only `permissions/internet=true`, `user_data_backup/allow=false`, `arm64-v8a=true`, no secrets or keystores.
+- **Network trust, DoS, Untrusted input, Purchases/unlocks, Repository hygiene, Performance:** None found.
+
+### Could Not Check (Iteration 6)
+- Multi-process loopback UDP tests (`net_*.sh`, including `net_combat_objects.sh`) and `test_full_state_coverage.tscn` (loopback UDP blocked in sandbox); real Android device testing (Device Checkpoints 1 & 2).
+
+### CEO Review (Iteration 6)
+1. **Great product decision on health bars (`0b10721`):** Showing a bot's health bar only while health is changing (~1.5 s) with a color flip at `<= 25` HP keeps the grey-box/final arena uncluttered while solving the core readability gap for the 2x low-health knockback push.
+2. **`net_blast_bomb_loss` is a test-harness artifact, not a gameplay blocker:** Because `Hud` and `EffectsDirector` self-heal on `explode + 2` (33 ms later), fixing `test_combat_objects.gd` to check `has_subject(..., true)` removes the 3-in-16 flake cleanly without adding redundant server bandwidth.
+3. **Ship the Device Checkpoint 2 APK next:** Once Task D's follow-up (`G-21`/`G-22`), Task E (effects + changing health bars), and netfox patch 15 (`D-10`) merge, cut the debug APK immediately and get two phones running the 10-minute knockback sandbox — nothing else should come before real thumb feel and hotspot validation.

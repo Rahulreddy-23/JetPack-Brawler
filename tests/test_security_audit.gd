@@ -1,38 +1,19 @@
 extends Node
-## Regression tests for active geminiceo fixes (G-15, G-17, G-19, G-21a/b, G-22, G-23, G-24)
-## against origin/main (0c8e6a4). Every check fails on origin/main without its fix.
+## Regression tests for active unmerged geminiceo fixes (G-21a/b, G-22, G-26, G-27)
+## against origin/main (2a9e175). Every check fails on origin/main without its fix.
 ## Run:
 ##   godot --headless --path . res://tests/test_security_audit.tscn
 ## Exits 0 when every check passes, 1 otherwise.
 
 const BOT_SCENE: PackedScene = preload("res://scenes/bot.tscn")
-const LAYOUT: ArenaLayout = preload("res://config/smelter.tres")
+const COMBAT_OBJECTS_SCRIPT: GDScript = preload("res://tests/test_combat_objects.gd")
 const TIMEOUT_SECONDS: float = 30.0
-const EPS: float = 0.01
-
-class RocketCapture extends WorldObjects:
-	var launched_pos: Vector2 = Vector2.INF
-	var launch_count: int = 0
-
-	func launch(_kind: int, _owner_slot: int, _owner_peer: int, pos_px: Vector2, _vel_px: Vector2, _tick: int, _cfg: TuningConfig) -> WorldObject:
-		launched_pos = pos_px
-		launch_count += 1
-		return null
-
-class SizeWarningCounter extends Logger:
-	var count: int = 0
-
-	func _log_error(_fn: String, _file: String, _line: int, code: String, rationale: String, _editor_notify: bool, error_type: int, _script_backtraces: Array[ScriptBacktrace]) -> void:
-		if error_type == Logger.ERROR_TYPE_WARNING and ("over the limit" in code or "over the limit" in rationale):
-			count += 1
 
 var _failures: int = 0
 var _checks: int = 0
 var _cfg: TuningConfig = TuningConfig.get_default()
-var _size_warnings: SizeWarningCounter = SizeWarningCounter.new()
 
 func _ready() -> void:
-	OS.add_logger(_size_warnings)
 	get_tree().create_timer(TIMEOUT_SECONDS).timeout.connect(_on_timeout)
 	_run()
 
@@ -50,35 +31,12 @@ func _check(ok: bool, label: String) -> void:
 
 func _run() -> void:
 	InputActions.ensure_registered()
-	_test_rocket_muzzle_wall_clamp()
 	await _test_rocket_hits_bot_before_wall_and_range()
 	await _test_gadget_cycle_reset_ordering_and_skipped_tick()
-	_test_pickup_reset_after_skipped_cycle_tick()
-	_test_pickups_reset_between_sessions()
-	_test_touch_flick_updates_aim_without_extra_shot()
-	_test_netfox_oversized_packet_warning_rate_limit()
+	_test_touch_flick_curve_then_pull_back_inside_ring()
+	_test_combat_objects_skips_unmerged_client_prediction()
 	print("%d checks, %d failures" % [_checks, _failures])
 	get_tree().quit(1 if _failures > 0 else 0)
-
-func _test_rocket_muzzle_wall_clamp() -> void:
-	var px: float = _cfg.bot_height_px
-	var solids: Array[Rect2] = LAYOUT.solid_rects_px(px)
-	var bot: Bot = BOT_SCENE.instantiate() as Bot
-	bot.peer_id = 1
-	bot.slot = 0
-	add_child(bot)
-	var wall_left: float = 11.0 * px
-	var half_w: float = _cfg.bot_width_bh * px / 2.0
-	bot.global_position = Vector2(wall_left - half_w, 12.0 * px)
-	bot.arsenal.give_weapon(ItemIds.ROCKET_TUBE, _cfg)
-	bot.arsenal.last_shot_tick = 10
-	bot.arsenal.shot_dir = Vector2.RIGHT
-	var capture: RocketCapture = RocketCapture.new()
-	var hits: Array[Hit] = []
-	WeaponRules.collect(10, [bot], capture, solids, _cfg, hits)
-	_check(capture.launch_count == 1 and capture.launched_pos.x <= wall_left + EPS,
-		"G-15: rocket fired flush against a wall does not spawn inside the wall (x=%.2f, wall=%.2f)" % [capture.launched_pos.x, wall_left])
-	bot.free()
 
 func _test_rocket_hits_bot_before_wall_and_range() -> void:
 	var dt: float = 1.0 / float(_cfg.tick_rate)
@@ -170,46 +128,7 @@ func _test_gadget_cycle_reset_ordering_and_skipped_tick() -> void:
 	bot.free()
 	pool.free()
 
-func _test_pickup_reset_after_skipped_cycle_tick() -> void:
-	var pickups: Pickups = Pickups.new()
-	pickups.layout = LAYOUT
-	add_child(pickups)
-	var bot: Bot = BOT_SCENE.instantiate() as Bot
-	bot.peer_id = 1
-	bot.slot = 0
-	add_child(bot)
-	MatchSettings.round_start_tick = 0
-	var cycle: int = roundi(_cfg.hazard_cycle_time * float(_cfg.tick_rate))
-	var spot: PickupSpot = pickups.spots()[0]
-	bot.global_position = spot.global_position
-	pickups.resolve(cycle - 10, [bot], _cfg)
-	bot.global_position = Vector2(-5000.0, -5000.0)
-	pickups.resolve(cycle + 3, [bot], _cfg)
-	_check(spot.ready_tick <= cycle + 3,
-		"G-17: pickup resets when boundary tick is skipped (ready_tick=%d, tick=%d)" % [spot.ready_tick, cycle + 3])
-	MatchSettings.round_start_tick = -1
-	bot.free()
-	pickups.free()
-
-func _test_pickups_reset_between_sessions() -> void:
-	var pickups: Pickups = Pickups.new()
-	pickups.layout = LAYOUT
-	add_child(pickups)
-	var wired: bool = (NetworkEvents.on_server_start.is_connected(pickups.reset_session)
-		and NetworkEvents.on_server_stop.is_connected(pickups.reset_session)
-		and NetworkEvents.on_client_start.is_connected(pickups._on_client_start)
-		and NetworkEvents.on_client_stop.is_connected(pickups.reset_session))
-	for spot: PickupSpot in pickups.spots():
-		spot.ready_tick = 5450
-	pickups.reset_session()
-	var all_zero: bool = true
-	for spot: PickupSpot in pickups.spots():
-		all_zero = all_zero and spot.ready_tick == 0
-	_check(wired and all_zero,
-		"G-23: pickups connect all four session signals and reset stale ready_tick values")
-	pickups.free()
-
-func _test_touch_flick_updates_aim_without_extra_shot() -> void:
+func _test_touch_flick_curve_then_pull_back_inside_ring() -> void:
 	var touch: TouchControls = TouchControls.new()
 	touch.size = Vector2(1280.0, 720.0)
 	add_child(touch)
@@ -217,37 +136,41 @@ func _test_touch_flick_updates_aim_without_extra_shot() -> void:
 	var out_dist: float = _cfg.stick_radius_px * (_cfg.fire_ring_fraction + 0.15)
 	var in_dist: float = _cfg.stick_radius_px * (_cfg.fire_ring_fraction - 0.15)
 	InputActions.pending_touch_fire_aim = Vector2.ZERO
-	# 1. Quick flick: cross ring right, curve up before next tick, lift -> keeps latest aim.
 	touch._touch(1, origin, true)
 	touch._drag(1, origin + Vector2(out_dist, 0.0))
 	touch._drag(1, origin + Vector2(0.0, -out_dist))
-	touch._touch(1, origin + Vector2(0.0, -out_dist), false)
+	touch._drag(1, origin + Vector2(0.0, -in_dist))
+	touch._touch(1, origin + Vector2(0.0, -in_dist), false)
 	var captured: Vector2 = InputActions.pending_touch_fire_aim
 	_check(captured.y < -0.5 and absf(captured.x) < 0.2,
-		"G-19a: quick flick curving past the fire ring keeps latest aim direction (got %s)" % [captured])
-	# 2. Held fire already sampled on a tick (pending cleared), then dragged past ring and pulled back inside -> no extra pending shot.
-	InputActions.pending_touch_fire_aim = Vector2.ZERO
-	touch._touch(2, origin, true)
-	touch._drag(2, origin + Vector2(out_dist, 0.0))
-	InputActions.pending_touch_fire_aim = Vector2.ZERO # BotInput sampled tick 1
-	touch._drag(2, origin + Vector2(out_dist, 10.0))   # Slight move while still past ring
-	touch._drag(2, origin + Vector2(in_dist, 0.0))     # Pulled back inside ring before tick 2
-	_check(InputActions.pending_touch_fire_aim == Vector2.ZERO and not Input.is_action_pressed(InputActions.FIRE),
-		"G-19b: pulling thumb back inside the ring after a sampled tick does not queue an extra shot")
-	touch._touch(2, origin + Vector2(in_dist, 0.0), false)
+		"G-27: curved flick pulled back inside ring before tick keeps curved aim (got %s)" % [captured])
 	InputActions.pending_touch_fire_aim = Vector2.ZERO
 	touch.free()
 
-func _test_netfox_oversized_packet_warning_rate_limit() -> void:
-	var peer_id: int = 777
-	NetworkSynchronizationServer.erase_peer(peer_id)
-	var big: PackedByteArray = PackedByteArray()
-	big.resize(NetworkSynchronizationServer._max_packet_size * 4 + 16)
-	_size_warnings.count = 0
-	for _i: int in 20:
-		NetworkSynchronizationServer._handle_full_state(peer_id, big)
-	_check(_size_warnings.count == 1,
-		"G-24a: oversized-packet warnings are rate-limited to at most 1 per second per peer (got %d)" % _size_warnings.count)
-	NetworkSynchronizationServer.erase_peer(peer_id)
-	_check(not NetworkSynchronizationServer._last_size_warning_msec.has(peer_id),
-		"G-24b: erase_peer clears oversized-packet warning timestamp for disconnected peer")
+func _test_combat_objects_skips_unmerged_client_prediction() -> void:
+	var probe: Node = COMBAT_OBJECTS_SCRIPT.new()
+	var rows: Dictionary = {}
+	rows[100] = {
+		"active": true, "explode": -1, "spawn": 10, "blasts": 0, "slot_pos": Vector2(100, 100),
+		"dummy_pos": Vector2(64, 100), "dummy_hp": 100.0, "dummy_hits": 0, "dummy_attacker": -1,
+		"client_pos": Vector2(128, 100), "client_hp": 100.0, "client_hits": 0,
+		"watch_auth": true, "dummy_auth": true, "client_auth": true,
+	}
+	rows[101] = {
+		"active": false, "explode": 100, "spawn": 10, "blasts": 1, "slot_pos": Vector2(100, 100),
+		"dummy_pos": Vector2(64, 100), "dummy_hp": 75.0, "dummy_hits": 1, "dummy_attacker": 2,
+		"client_pos": Vector2(128, 100), "client_hp": 100.0, "client_hits": 0,
+		"watch_auth": true, "dummy_auth": true, "client_auth": false,
+	}
+	rows[102] = {
+		"active": false, "explode": 100, "spawn": 10, "blasts": 1, "slot_pos": Vector2(100, 100),
+		"dummy_pos": Vector2(54, 100), "dummy_hp": 75.0, "dummy_hits": 1, "dummy_attacker": 2,
+		"client_pos": Vector2(128, 100), "client_hp": 79.17, "client_hits": 1,
+		"watch_auth": true, "dummy_auth": true, "client_auth": true,
+	}
+	probe.set("_rows", rows)
+	var picked: Dictionary = probe.call("_nearest_auth", "client_auth", 101, 106, 1) as Dictionary
+	var rises: int = probe.call("_rises", "client_hits", "client_auth", 90, 110) as int
+	_check(not picked.is_empty() and absf((picked["client_hp"] as float) - 79.17) < 0.01 and rises == 1,
+		"G-26: combat objects test skips non-authoritative client.vitals row at explode+1 and reads 79.17 HP / 1 rise")
+	probe.free()

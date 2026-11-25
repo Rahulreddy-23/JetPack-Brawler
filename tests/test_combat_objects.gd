@@ -139,6 +139,8 @@ func _prop(snapshot: _Snapshot, node: Node, name: String) -> Variant:
 	return null
 
 # What netfox's history holds for each settled tick: the blast slot, the dummy and the client's bot.
+# Each subject's authoritative flag is kept so a row whose UDP packet was lost under SIM_LOSS does
+# not substitute the client's un-merged local prediction (full health) for the host's state.
 func _read_history(client: Bot, dummy: Bot) -> void:
 	for tick: int in range(NetworkTime.tick - SETTLE_TICKS - READ_WIDTH, NetworkTime.tick - SETTLE_TICKS):
 		var snapshot: _Snapshot = NetworkHistoryServer._get_rollback_state_snapshot(tick)
@@ -157,6 +159,9 @@ func _read_history(client: Bot, dummy: Bot) -> void:
 			"client_pos": _prop(snapshot, client, "global_position"),
 			"client_hp": _prop(snapshot, client.vitals, "health"),
 			"client_hits": _prop(snapshot, client.vitals, "hits_taken"),
+			"watch_auth": snapshot.has_subject(_watch, true),
+			"dummy_auth": snapshot.has_subject(dummy.vitals, true) and snapshot.has_subject(dummy, true),
+			"client_auth": snapshot.has_subject(client.vitals, true),
 		}
 
 # The blast's numbers for this kind of object: radius in bot heights, push, damage at the centre.
@@ -166,17 +171,31 @@ func _blast_numbers() -> Array[float]:
 		return [stats.blast_radius, stats.blast_push, stats.blast_damage]
 	return [_cfg.bomb_blast_radius, _cfg.bomb_blast_push, _cfg.bomb_blast_damage]
 
-func _rises(key: String, from_tick: int, to_tick: int) -> int:
+func _rises(key: String, auth_key: String, from_tick: int, to_tick: int) -> int:
 	var count: int = 0
 	var previous: int = -1
 	for tick: int in range(from_tick, to_tick):
 		if not _rows.has(tick):
 			continue
-		var value: int = (_rows[tick] as Dictionary)[key] as int
+		var row: Dictionary = _rows[tick]
+		if not (row[auth_key] as bool):
+			continue
+		var value: int = row[key] as int
 		if previous >= 0 and value > previous:
 			count += 1
 		previous = value
 	return count
+
+# First row in [from_tick, to_tick] (inclusive, step +-1) where auth_key is true, or {}.
+func _nearest_auth(auth_key: String, from_tick: int, to_tick: int, step: int) -> Dictionary:
+	var tick: int = from_tick
+	while (tick <= to_tick) if step > 0 else (tick >= to_tick):
+		if _rows.has(tick):
+			var row: Dictionary = _rows[tick]
+			if row[auth_key] as bool:
+				return row
+		tick += step
+	return {}
 
 func _dump() -> void:
 	var weapon: String = "rocket" if _rocket else "bomb"
@@ -186,15 +205,23 @@ func _dump() -> void:
 	ticks.sort()
 	for tick: int in ticks:
 		var row: Dictionary = _rows[tick]
-		if not (row["active"] as bool) and (row["explode"] as int) >= 0 and (row["blasts"] as int) >= 1:
+		if (row["watch_auth"] as bool) and not (row["active"] as bool) and (row["explode"] as int) >= 0 and (row["blasts"] as int) >= 1:
 			explode = row["explode"] as int
 			spawn = row["spawn"] as int
 			break
 	if explode < 0 or not _rows.has(explode) or not _rows.has(explode + 1):
 		print("COMBAT_RESULT role=%s weapon=%s explode=%d missing_rows=1" % ["host" if _is_host else "client", weapon, explode])
 		return
-	var before: Dictionary = _rows[explode]
 	var after: Dictionary = _rows[explode + 1]
+	# client.vitals is sent once for explode + 1 (separate 508-byte packet); if SIM_LOSS drops
+	# that packet, read the client's health from the nearest authoritative row (within 6 ticks).
+	var client_before: Dictionary = _nearest_auth("client_auth", explode, explode - 6, -1)
+	var client_after: Dictionary = _nearest_auth("client_auth", explode + 1, explode + 6, 1)
+	var dummy_before: Dictionary = _nearest_auth("dummy_auth", explode, explode - 6, -1)
+	var dummy_after: Dictionary = _nearest_auth("dummy_auth", explode + 1, explode + 6, 1)
+	if client_before.is_empty() or client_after.is_empty() or dummy_before.is_empty() or dummy_after.is_empty():
+		print("COMBAT_RESULT role=%s weapon=%s explode=%d missing_rows=1" % ["host" if _is_host else "client", weapon, explode])
+		return
 	var numbers: Array[float] = _blast_numbers()
 	var px: float = _cfg.bot_height_px
 	var centre: Vector2 = after["slot_pos"] as Vector2
@@ -206,13 +233,13 @@ func _dump() -> void:
 		expect_dummy = numbers[2] * (1.0 - d_dummy / numbers[0])
 	if d_client < numbers[0]:
 		expect_client = _cfg.self_damage_scale * numbers[2] * (1.0 - d_client / numbers[0])
-	var drop_dummy: float = (before["dummy_hp"] as float) - (after["dummy_hp"] as float)
-	var drop_client: float = (before["client_hp"] as float) - (after["client_hp"] as float)
+	var drop_dummy: float = (dummy_before["dummy_hp"] as float) - (dummy_after["dummy_hp"] as float)
+	var drop_client: float = (client_before["client_hp"] as float) - (client_after["client_hp"] as float)
 	var line: PackedStringArray = PackedStringArray()
 	line.append("COMBAT_RESULT role=%s weapon=%s client_peer=%d spawn=%d explode=%d" % ["host" if _is_host else "client", weapon, _client_peer, spawn, explode])
 	line.append("d_dummy=%.4f d_client=%.4f expect_dummy=%.4f drop_dummy=%.4f expect_client=%.4f drop_client=%.4f" % [d_dummy, d_client, expect_dummy, drop_dummy, expect_client, drop_client])
-	line.append("dummy_hp=%.4f client_hp=%.4f attacker=%d" % [after["dummy_hp"] as float, after["client_hp"] as float, after["dummy_attacker"] as int])
-	line.append("dummy_hit_rises=%d client_hit_rises=%d blasts=%d" % [_rises("dummy_hits", explode - 10, explode + 90), _rises("client_hits", explode - 10, explode + 90), after["blasts"] as int])
+	line.append("dummy_hp=%.4f client_hp=%.4f attacker=%d" % [dummy_after["dummy_hp"] as float, client_after["client_hp"] as float, dummy_after["dummy_attacker"] as int])
+	line.append("dummy_hit_rises=%d client_hit_rises=%d blasts=%d" % [_rises("dummy_hits", "dummy_auth", explode - 10, explode + 90), _rises("client_hits", "client_auth", explode - 10, explode + 90), after["blasts"] as int])
 	line.append("slot_x=%.3f slot_y=%.3f" % [centre.x, centre.y])
 	for offset: int in [1, 10, 20, 30, 45]:
 		var at: Dictionary = _rows.get(explode + offset, {}) as Dictionary
